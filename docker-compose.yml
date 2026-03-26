@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # 1. Base de données SQL Server
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=P@ssw0rdPFA2026!
+    ports:
+      - "1433:1433"
+    networks:
+      - pfa_public
+
+  # 2. Backend ASP.NET Core 8
+  backend:
+    build: 
+      context: ./backend
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=db;Database=PFA_DB;User=sa;Password=P@ssw0rdPFA2026!;TrustServerCertificate=True;
+      - ML_API_URL=http://ml_service:8000
+    depends_on:
+      - db
+    networks:
+      - pfa_public
+      - pfa_internal_ml
+
+  # 3. Microservice IA (Python 3.11 / FastAPI)
+  ml_service:
+    build:
+      context: ./ml_service
+    expose:
+      - "8000" # Expose le port uniquement au réseau interne
+    networks:
+      - pfa_internal_ml
+
+  # 4. Frontend React.js
+  frontend:
+    build:
+      context: ./frontend
+    networks:
+      - pfa_public
+
+  # 5. Reverse Proxy Nginx
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - pfa_public
+
+networks:
+  pfa_public:
+    driver: bridge
+  pfa_internal_ml:
+    driver: bridge 
