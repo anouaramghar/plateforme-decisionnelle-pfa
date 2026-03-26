@@ -1,0 +1,8 @@
+{
+  "name": "pfa-frontend-mock",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "mkdir -p dist && echo '<h1>Frontend en construction...</h1>' > dist/index.html"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,6 @@
+@PlateformePFA.API_HostAddress = http://localhost:5135
+
+GET {{PlateformePFA.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
