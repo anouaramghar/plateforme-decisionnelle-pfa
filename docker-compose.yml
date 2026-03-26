@@ -6,21 +6,28 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       - ACCEPT_EULA=Y
-      - SA_PASSWORD=P@ssw0rdPFA2026!
+      - SA_PASSWORD=${SA_PASSWORD}
     ports:
       - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${SA_PASSWORD} -Q 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
-      - pfa_public
+      - pfa_internal_ml
 
   # 2. Backend ASP.NET Core 8
   backend:
-    build: 
+    build:
       context: ./backend
     environment:
-      - ConnectionStrings__DefaultConnection=Server=db;Database=PFA_DB;User=sa;Password=P@ssw0rdPFA2026!;TrustServerCertificate=True;
+      - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;
       - ML_API_URL=http://ml_service:8000
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - pfa_public
       - pfa_internal_ml
@@ -58,4 +65,5 @@ networks:
   pfa_public:
     driver: bridge
   pfa_internal_ml:
-    driver: bridge 
+    driver: bridge
+    internal: true
