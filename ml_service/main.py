@@ -15,5 +15,3 @@ def health():
 @app.get("/")
 def root():
     return {"message": "ML Service is running"}
-
-# Les routers seront ajoutés dans la Phase 3
