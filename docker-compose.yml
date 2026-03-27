@@ -25,6 +25,9 @@ services:
     environment:
       - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;
       - ML_API_URL=http://ml-service:8000
+      - ASPNETCORE_URLS=http://+:8080
+      - JWT_SECRET=${JWT_SECRET}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
     depends_on:
       db:
         condition: service_healthy
@@ -35,7 +38,7 @@ services:
   # 3. Microservice IA (Python 3.11 / FastAPI)
   ml-service:
     build:
-      context: ./ml-service
+      context: ./ml_service
     expose:
       - "8000" # Expose le port uniquement au réseau interne
     networks:
