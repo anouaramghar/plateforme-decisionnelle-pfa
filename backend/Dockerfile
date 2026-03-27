@@ -9,7 +9,7 @@ RUN dotnet restore "PlateformePFA.API/PlateformePFA.API.csproj"
 # Copie du code et publication
 COPY . .
 WORKDIR "/src/PlateformePFA.API"
-RUN dotnet publish "PlateformePFA.API.csproj" -c Release -o /app/publish
+RUN dotnet publish "PlateformePFA.API.csproj" -c Release --no-restore -o /app/publish
 
 # Étape d'exécution (Runtime)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final

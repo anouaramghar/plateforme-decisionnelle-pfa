@@ -10,7 +10,7 @@ services:
     ports:
       - "1433:1433"
     healthcheck:
-      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${SA_PASSWORD}", "-Q", "SELECT 1", "-C"]
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=${SA_PASSWORD} /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q 'SELECT 1' -C"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -31,6 +31,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ml-service:
+        condition: service_healthy
     networks:
       - pfa_public
       - pfa_internal_ml
@@ -40,7 +42,13 @@ services:
     build:
       context: ./ml_service
     expose:
-      - "8000" # Expose le port uniquement au réseau interne
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - pfa_internal_ml
 
