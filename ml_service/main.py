@@ -1,7 +1,19 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+app = FastAPI(
+    title="PFA ML Service",
+    description="Microservice ML — Plateforme Décisionnelle ENIAD",
+    version="1.0.0"
+)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "ml-service"}
+
 
 @app.get("/")
-def read_root():
-    return {"message": "API ML en construction..."}
+def root():
+    return {"message": "ML Service is running"}
+
+# Les routers seront ajoutés dans la Phase 3
