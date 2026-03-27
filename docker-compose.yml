@@ -27,6 +27,8 @@ services:
       - ML_API_URL=${ML_API_URL}
       - ASPNETCORE_URLS=http://+:8080
       - JWT_SECRET=${JWT_SECRET}
+      - JWT_ISSUER=${JWT_ISSUER}
+      - JWT_AUDIENCE=${JWT_AUDIENCE}
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
     depends_on:
       db:

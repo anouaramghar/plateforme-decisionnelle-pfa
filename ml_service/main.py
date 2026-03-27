@@ -10,8 +10,3 @@ app = FastAPI(
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "ml-service"}
-
-
-@app.get("/")
-def root():
-    return {"message": "ML Service is running"}
