@@ -45,6 +45,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // 3. CREATE (POST) : Ajouter une nouvelle filière
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
         public async Task<ActionResult<Filiere>> PostFiliere(Filiere filiere)
         {

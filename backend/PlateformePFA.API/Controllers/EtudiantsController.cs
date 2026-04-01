@@ -42,6 +42,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // 3. CREATE (POST)
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
         public async Task<ActionResult<Etudiant>> PostEtudiant(Etudiant etudiant)
         {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
@@ -7,13 +8,16 @@ namespace PlateformePFA.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Admin")]
     public class UtilisateursController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<UtilisateursController> _logger;
 
-        public UtilisateursController(AppDbContext context)
+        public UtilisateursController(AppDbContext context, ILogger<UtilisateursController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         // GET: api/Utilisateurs
@@ -27,7 +31,6 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Utilisateur>> PostUtilisateur(Utilisateur utilisateur)
         {
-            // 🔒 HACHAGE DU MOT DE PASSE : On utilise BCrypt qu'on vient d'installer
             if (!string.IsNullOrEmpty(utilisateur.MotDePasseHash))
             {
                 utilisateur.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(utilisateur.MotDePasseHash);
@@ -35,6 +38,8 @@ namespace PlateformePFA.API.Controllers
 
             _context.Utilisateurs.Add(utilisateur);
             await _context.SaveChangesAsync();
+
+            _logger.LogInformation("New user created — Email: {Email}, Role: {Role}", utilisateur.Email, utilisateur.Role);
 
             return CreatedAtAction(nameof(GetUtilisateurs), new { id = utilisateur.Id }, utilisateur);
         }

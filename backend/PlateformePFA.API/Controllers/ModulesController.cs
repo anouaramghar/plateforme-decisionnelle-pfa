@@ -47,6 +47,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // POST: api/Modules
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
         public async Task<ActionResult<Module>> PostModule(Module module)
         {
