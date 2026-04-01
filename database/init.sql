@@ -24,6 +24,15 @@ CREATE TABLE Utilisateurs (
 );
 GO
 
+-- ─── Filieres ────────────────────────────────────────────────
+CREATE TABLE Filieres (
+    Id            INT IDENTITY(1,1) PRIMARY KEY,
+    Code          NVARCHAR(20)  NOT NULL UNIQUE,
+    Intitule      NVARCHAR(200) NOT NULL,
+    ResponsableId INT           REFERENCES Utilisateurs(Id)
+);
+GO
+
 -- ─── Etudiants ───────────────────────────────────────────────
 CREATE TABLE Etudiants (
     Id        INT IDENTITY(1,1) PRIMARY KEY,
@@ -31,7 +40,7 @@ CREATE TABLE Etudiants (
     Nom       NVARCHAR(100) NOT NULL,
     Prenom    NVARCHAR(100) NOT NULL,
     Email     NVARCHAR(200),
-    Filiere   NVARCHAR(100) NOT NULL,
+    FiliereId INT           NOT NULL REFERENCES Filieres(Id),
     Niveau    NVARCHAR(10)  NOT NULL,  -- L1 L2 L3 M1 M2
     Annee     NVARCHAR(9)   NOT NULL,  -- ex: 2025/2026
     CreeLe    DATETIME2     NOT NULL DEFAULT GETUTCDATE()
@@ -43,7 +52,7 @@ CREATE TABLE Modules (
     Id          INT IDENTITY(1,1) PRIMARY KEY,
     Code        NVARCHAR(20)  NOT NULL UNIQUE,
     Nom         NVARCHAR(200) NOT NULL,
-    Filiere     NVARCHAR(100) NOT NULL,
+    FiliereId   INT           NOT NULL REFERENCES Filieres(Id),
     Niveau      NVARCHAR(10)  NOT NULL,
     Coefficient DECIMAL(4,2)  NOT NULL DEFAULT 1,
     Semestre    NVARCHAR(5)   NOT NULL  -- S1 S2
@@ -99,9 +108,9 @@ CREATE TABLE Predictions (
     EtudiantId  INT          NOT NULL REFERENCES Etudiants(Id),
     TypeModele  NVARCHAR(50) NOT NULL
                 CHECK (TypeModele IN ('RisqueEchec', 'Regression', 'Clustering')),
-    ScoreRisque DECIMAL(5,4),   -- probabilité 0.0–1.0
-    Cluster     INT,            -- segment de clustering
-    NotePredite DECIMAL(5,2),   -- note prédite (régression)
+    ScoreRisque DECIMAL(5,4),
+    Cluster     INT,
+    NotePredite DECIMAL(5,2),
     Confiance   DECIMAL(5,4),
     Annee       NVARCHAR(9)  NOT NULL,
     CreeLe      DATETIME2    NOT NULL DEFAULT GETUTCDATE()
@@ -109,7 +118,5 @@ CREATE TABLE Predictions (
 GO
 
 -- ─── Données initiales ───────────────────────────────────────
-INSERT INTO Utilisateurs (Nom, Prenom, Email, MotDePasseHash, Role)
-VALUES ('Admin', 'System', 'admin@eniad.dz',
-        '$2a$12$placeholder_hash_to_be_replaced', 'Admin');
+-- Admin créé par DataSeeder.cs au démarrage (hash BCrypt réel)
 GO

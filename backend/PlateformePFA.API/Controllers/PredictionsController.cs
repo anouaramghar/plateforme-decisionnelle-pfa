@@ -13,9 +13,9 @@ namespace PlateformePFA.API.Controllers
     [ApiController]
     public class PredictionsController : ControllerBase
     {
-        private readonly AppDbContext _context;
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IConfiguration _configuration;
+        private readonly AppDbContext        _context;
+        private readonly IHttpClientFactory  _httpClientFactory;
+        private readonly IConfiguration      _configuration;
         private readonly ILogger<PredictionsController> _logger;
 
         public PredictionsController(
@@ -24,10 +24,10 @@ namespace PlateformePFA.API.Controllers
             IConfiguration configuration,
             ILogger<PredictionsController> logger)
         {
-            _context = context;
+            _context           = context;
             _httpClientFactory = httpClientFactory;
-            _configuration = configuration;
-            _logger = logger;
+            _configuration     = configuration;
+            _logger            = logger;
         }
 
         // GET: api/predictions
@@ -36,7 +36,7 @@ namespace PlateformePFA.API.Controllers
         {
             return await _context.PredictionsML
                 .Include(p => p.Etudiant)
-                .OrderByDescending(p => p.DatePrediction)
+                .OrderByDescending(p => p.CreeLe)
                 .ToListAsync();
         }
 
@@ -49,7 +49,6 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (prediction == null) return NotFound(new { message = "Prédiction introuvable." });
-
             return prediction;
         }
 
@@ -60,7 +59,7 @@ namespace PlateformePFA.API.Controllers
             return await _context.PredictionsML
                 .Include(p => p.Etudiant)
                 .Where(p => p.EtudiantId == etudiantId)
-                .OrderByDescending(p => p.DatePrediction)
+                .OrderByDescending(p => p.CreeLe)
                 .ToListAsync();
         }
 
@@ -70,69 +69,72 @@ namespace PlateformePFA.API.Controllers
         {
             var etudiant = await _context.Etudiants
                 .Include(e => e.Notes)
-                .Include(e => e.Presences)
+                .Include(e => e.Absences)
                 .FirstOrDefaultAsync(e => e.Id == etudiantId);
 
             if (etudiant == null) return NotFound(new { message = "Étudiant introuvable." });
 
-            var notes = etudiant.Notes ?? new List<Note>();
-            var presences = etudiant.Presences ?? new List<Presence>();
+            var notes    = etudiant.Notes    ?? new List<Note>();
+            var absences = etudiant.Absences ?? new List<Absence>();
 
-            float moyenneGenerale = notes.Any() ? notes.Average(n => n.Valeur) : 0f;
-            int totalPresences = presences.Count;
-            int presentsCount = presences.Count(p => p.Statut == "Present");
-            float tauxPresence = totalPresences > 0 ? (float)presentsCount / totalPresences : 0f;
-            int nbModules = notes.Select(n => n.ModuleId).Distinct().Count();
+            // Calcul des features
+            decimal moyenneGenerale = notes.Any()
+                ? notes.Where(n => n.NoteFinal.HasValue).Average(n => n.NoteFinal!.Value)
+                : 0m;
+            int totalHeures           = absences.Sum(a => a.NombreHeures);
+            int heuresNonJustifiees   = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            decimal tauxAbsence       = totalHeures > 0 ? (decimal)heuresNonJustifiees / totalHeures : 0m;
+            int nbModules             = notes.Select(n => n.ModuleId).Distinct().Count();
 
             var features = new
             {
                 moyenne_generale = moyenneGenerale,
-                taux_presence = tauxPresence,
-                nb_modules = nbModules
+                taux_absence     = tauxAbsence,
+                nb_modules       = nbModules
             };
 
-            float probabilite = 0f;
-            string featuresJson = JsonSerializer.Serialize(features);
+            decimal scoreRisque  = 0m;
+            string  featuresJson = JsonSerializer.Serialize(features);
 
             try
             {
                 var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
-                var client = _httpClientFactory.CreateClient("MLService");
-
-                var content = new StringContent(featuresJson, Encoding.UTF8, "application/json");
+                var client   = _httpClientFactory.CreateClient("MLService");
+                var content  = new StringContent(featuresJson, Encoding.UTF8, "application/json");
                 var response = await client.PostAsync($"{mlApiUrl}/predict", content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(responseBody);
+                    var body = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(body);
                     if (doc.RootElement.TryGetProperty("probabilite", out var prob))
-                        probabilite = prob.GetSingle();
+                        scoreRisque = prob.GetDecimal();
                 }
                 else
                 {
-                    _logger.LogWarning("ML service returned {StatusCode} for etudiantId={EtudiantId}", response.StatusCode, etudiantId);
+                    _logger.LogWarning("ML service returned {Code} for etudiantId={Id}", response.StatusCode, etudiantId);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "ML service unreachable for etudiantId={EtudiantId}, storing prediction with probabilite=0", etudiantId);
+                _logger.LogWarning(ex, "ML service unreachable for etudiantId={Id}, scoreRisque=0", etudiantId);
             }
+
+            var annee = $"{DateTime.UtcNow.Year}/{DateTime.UtcNow.Year + 1}";
 
             var prediction = new PredictionML
             {
-                EtudiantId = etudiantId,
-                Modele = "RisqueEchec",
-                Probabilite = probabilite,
-                DatePrediction = DateTime.UtcNow,
-                FeaturesJSON = featuresJson
+                EtudiantId  = etudiantId,
+                TypeModele  = "RisqueEchec",
+                ScoreRisque = scoreRisque,
+                Annee       = annee,
+                CreeLe      = DateTime.UtcNow
             };
 
             _context.PredictionsML.Add(prediction);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Prédiction stockée : EtudiantId={EtudiantId}, Probabilite={Probabilite}", etudiantId, probabilite);
-
+            _logger.LogInformation("Prédiction stockée : EtudiantId={Id}, ScoreRisque={Score}", etudiantId, scoreRisque);
             return CreatedAtAction(nameof(GetPrediction), new { id = prediction.Id }, prediction);
         }
     }

@@ -12,6 +12,7 @@ bin/
 obj/
 *.user
 .vs/
+appsettings.Development.json
 
 # Python
 __pycache__/

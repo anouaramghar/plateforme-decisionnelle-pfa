@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -57,6 +58,9 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddHttpClient("MLService");
 
+// ── Services métier ──────────────────────────────────────────
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
@@ -70,13 +74,16 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ── Seed données initiales (admin system) ────────────────────
+await DataSeeder.SeedAsync(app.Services);
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseCors("FrontendPolicy");         // ← AVANT Auth (préflight OPTIONS sinon rejeté en 401)
+
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.UseCors("FrontendPolicy");
 
 app.MapControllers();
 

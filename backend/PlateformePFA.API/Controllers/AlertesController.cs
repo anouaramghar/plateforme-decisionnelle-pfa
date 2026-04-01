@@ -17,19 +17,19 @@ namespace PlateformePFA.API.Controllers
         public AlertesController(AppDbContext context, ILogger<AlertesController> logger)
         {
             _context = context;
-            _logger = logger;
+            _logger  = logger;
         }
 
-        // GET: api/alertes?statut=NonResolue
+        // GET: api/alertes?resolue=false
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertes([FromQuery] string? statut = null)
+        public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertes([FromQuery] bool? resolue = null)
         {
             var query = _context.Alertes.Include(a => a.Etudiant).AsQueryable();
 
-            if (!string.IsNullOrEmpty(statut))
-                query = query.Where(a => a.Statut == statut);
+            if (resolue.HasValue)
+                query = query.Where(a => a.Resolue == resolue.Value);
 
-            return await query.OrderByDescending(a => a.DateGeneration).ToListAsync();
+            return await query.OrderByDescending(a => a.CreeLe).ToListAsync();
         }
 
         // GET: api/alertes/5
@@ -41,7 +41,6 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (alerte == null) return NotFound(new { message = "Alerte introuvable." });
-
             return alerte;
         }
 
@@ -52,7 +51,7 @@ namespace PlateformePFA.API.Controllers
             return await _context.Alertes
                 .Include(a => a.Etudiant)
                 .Where(a => a.EtudiantId == etudiantId)
-                .OrderByDescending(a => a.DateGeneration)
+                .OrderByDescending(a => a.CreeLe)
                 .ToListAsync();
         }
 
@@ -61,14 +60,14 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Alerte>> PostAlerte(Alerte alerte)
         {
-            alerte.DateGeneration = DateTime.UtcNow;
-            alerte.Statut = "NonResolue";
+            alerte.CreeLe  = DateTime.UtcNow;
+            alerte.Resolue = false;
 
             _context.Alertes.Add(alerte);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Alerte créée : Id={AlerteId}, Type={Type}, EtudiantId={EtudiantId}",
-                alerte.Id, alerte.TypeAlerte, alerte.EtudiantId);
+            _logger.LogInformation("Alerte créée : Id={Id}, Type={Type}, Niveau={Niveau}, EtudiantId={EtudiantId}",
+                alerte.Id, alerte.Type, alerte.Niveau, alerte.EtudiantId);
 
             return CreatedAtAction(nameof(GetAlerte), new { id = alerte.Id }, alerte);
         }
@@ -80,12 +79,12 @@ namespace PlateformePFA.API.Controllers
             var alerte = await _context.Alertes.FindAsync(id);
             if (alerte == null) return NotFound(new { message = "Alerte introuvable." });
 
-            alerte.Statut = "Resolue";
+            alerte.Resolue    = true;
+            alerte.ResolueeLe = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Alerte résolue : Id={AlerteId}, EtudiantId={EtudiantId}", alerte.Id, alerte.EtudiantId);
-
+            _logger.LogInformation("Alerte résolue : Id={Id}, EtudiantId={EtudiantId}", alerte.Id, alerte.EtudiantId);
             return NoContent();
         }
 
@@ -99,7 +98,6 @@ namespace PlateformePFA.API.Controllers
 
             _context.Alertes.Remove(alerte);
             await _context.SaveChangesAsync();
-
             return NoContent();
         }
     }

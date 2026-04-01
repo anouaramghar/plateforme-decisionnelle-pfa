@@ -8,8 +8,10 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD}
-    ports:
-      - "1433:1433"
+    expose:
+      - "1433"
+    # ports:                  # ← Décommenter UNIQUEMENT pour debug local (SSMS / Azure Data Studio)
+    #   - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
     healthcheck:

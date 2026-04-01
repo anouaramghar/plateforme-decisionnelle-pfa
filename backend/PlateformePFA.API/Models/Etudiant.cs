@@ -1,36 +1,23 @@
-using System.Text.Json.Serialization; 
+using System.Text.Json.Serialization;
 
 namespace PlateformePFA.API.Models
 {
     public class Etudiant
     {
-        public int Id { get; set; }
-        public string Nom { get; set; } = string.Empty;
-        public string Prenom { get; set; } = string.Empty;
-        public string CNE { get; set; } = string.Empty;
-        public string Ville { get; set; } = string.Empty;
-        public int Age { get; set; }
-        public string Promotion { get; set; } = string.Empty;
-        public string Statut { get; set; } = "Actif"; // Actif, Décrocheur, Diplômé
+        public int      Id        { get; set; }
+        public string   Matricule { get; set; } = string.Empty;
+        public string   Nom       { get; set; } = string.Empty;
+        public string   Prenom    { get; set; } = string.Empty;
+        public string?  Email     { get; set; }
+        public int      FiliereId { get; set; }
+        public string   Niveau    { get; set; } = string.Empty; // L1 L2 L3 M1 M2
+        public string   Annee     { get; set; } = string.Empty; // ex: 2025/2026
+        public DateTime CreeLe    { get; set; } = DateTime.UtcNow;
 
-        // La clé étrangère
-        public int FiliereId { get; set; }
-
-        // --- LES RELATIONS MASQUÉES POUR SWAGGER ---
-
-        [JsonIgnore]
-        public Filiere? Filiere { get; set; }
-
-        [JsonIgnore]
-        public ICollection<Note>? Notes { get; set; }
-
-        [JsonIgnore]
-        public ICollection<Presence>? Presences { get; set; }
-
-        [JsonIgnore]
-        public ICollection<Alerte>? Alertes { get; set; }
-
-        [JsonIgnore]
-        public ICollection<PredictionML>? PredictionsML { get; set; }
+        [JsonIgnore] public Filiere?                  Filiere       { get; set; }
+        [JsonIgnore] public ICollection<Note>?         Notes         { get; set; }
+        [JsonIgnore] public ICollection<Absence>?      Absences      { get; set; }
+        [JsonIgnore] public ICollection<Alerte>?       Alertes       { get; set; }
+        [JsonIgnore] public ICollection<PredictionML>? PredictionsML { get; set; }
     }
 }

@@ -13,14 +13,24 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-echo "Running init.sql..."
-SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
-    -S localhost -U sa -C -i /scripts/init.sql
+echo "Checking if database already initialized..."
+RESULT=$(SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost -U sa -C \
+    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name='PFA_DB'" \
+    -h -1 2>/dev/null | tr -d ' \r\n')
 
-echo "Running init_dw.sql..."
-SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
-    -S localhost -U sa -C -i /scripts/init_dw.sql
+if [ "$RESULT" = "0" ]; then
+    echo "Running init.sql..."
+    SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+        -S localhost -U sa -C -i /scripts/init.sql
 
-echo "Database initialization complete."
+    echo "Running init_dw.sql..."
+    SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+        -S localhost -U sa -C -i /scripts/init_dw.sql
+
+    echo "Database initialization complete."
+else
+    echo "Database PFA_DB already exists — skipping initialization."
+fi
 
 wait $MSSQL_PID
