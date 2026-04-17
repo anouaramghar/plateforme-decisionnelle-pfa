@@ -26,3 +26,6 @@ ml-service/saved_models/*.pkl
 # OS
 .DS_Store
 Thumbs.db
+
+# Git worktrees (Claude Code)
+.claude/worktrees/
