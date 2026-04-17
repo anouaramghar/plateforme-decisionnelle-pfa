@@ -1,6 +1,9 @@
 -- ============================================================
 -- PFA_DB — Base de données OLTP
 -- Plateforme Décisionnelle ENIAD 2025/2026
+--
+-- Idempotent: safe to run on every container start.
+-- Expects sqlcmd variable :APP_PASSWORD (passed by entrypoint.sh).
 -- ============================================================
 
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'PFA_DB')
@@ -11,6 +14,7 @@ USE PFA_DB;
 GO
 
 -- ─── Utilisateurs (authentification) ────────────────────────
+IF OBJECT_ID('dbo.Utilisateurs', 'U') IS NULL
 CREATE TABLE Utilisateurs (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
     Nom            NVARCHAR(100)  NOT NULL,
@@ -25,6 +29,7 @@ CREATE TABLE Utilisateurs (
 GO
 
 -- ─── Etudiants ───────────────────────────────────────────────
+IF OBJECT_ID('dbo.Etudiants', 'U') IS NULL
 CREATE TABLE Etudiants (
     Id        INT IDENTITY(1,1) PRIMARY KEY,
     Matricule NVARCHAR(20)  NOT NULL UNIQUE,
@@ -39,6 +44,7 @@ CREATE TABLE Etudiants (
 GO
 
 -- ─── Modules ─────────────────────────────────────────────────
+IF OBJECT_ID('dbo.Modules', 'U') IS NULL
 CREATE TABLE Modules (
     Id          INT IDENTITY(1,1) PRIMARY KEY,
     Code        NVARCHAR(20)  NOT NULL UNIQUE,
@@ -51,6 +57,7 @@ CREATE TABLE Modules (
 GO
 
 -- ─── Notes ───────────────────────────────────────────────────
+IF OBJECT_ID('dbo.Notes', 'U') IS NULL
 CREATE TABLE Notes (
     Id         INT IDENTITY(1,1) PRIMARY KEY,
     EtudiantId INT          NOT NULL REFERENCES Etudiants(Id),
@@ -67,6 +74,7 @@ CREATE TABLE Notes (
 GO
 
 -- ─── Absences ────────────────────────────────────────────────
+IF OBJECT_ID('dbo.Absences', 'U') IS NULL
 CREATE TABLE Absences (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     EtudiantId   INT       NOT NULL REFERENCES Etudiants(Id),
@@ -79,6 +87,7 @@ CREATE TABLE Absences (
 GO
 
 -- ─── Alertes ─────────────────────────────────────────────────
+IF OBJECT_ID('dbo.Alertes', 'U') IS NULL
 CREATE TABLE Alertes (
     Id         INT IDENTITY(1,1) PRIMARY KEY,
     EtudiantId INT          NOT NULL REFERENCES Etudiants(Id),
@@ -93,7 +102,20 @@ CREATE TABLE Alertes (
 );
 GO
 
+-- ─── Refresh Tokens ──────────────────────────────────────────
+IF OBJECT_ID('dbo.RefreshTokens', 'U') IS NULL
+CREATE TABLE RefreshTokens (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    UtilisateurId INT         NOT NULL REFERENCES Utilisateurs(Id),
+    Token        NVARCHAR(500) NOT NULL UNIQUE,
+    ExpiresAt    DATETIME2    NOT NULL,
+    RevokedAt    DATETIME2    NULL,        -- NULL = still valid
+    CreeLe       DATETIME2    NOT NULL DEFAULT GETUTCDATE()
+);
+GO
+
 -- ─── Predictions (résultats ML) ──────────────────────────────
+IF OBJECT_ID('dbo.Predictions', 'U') IS NULL
 CREATE TABLE Predictions (
     Id          INT IDENTITY(1,1) PRIMARY KEY,
     EtudiantId  INT          NOT NULL REFERENCES Etudiants(Id),
@@ -108,8 +130,31 @@ CREATE TABLE Predictions (
 );
 GO
 
--- ─── Données initiales ───────────────────────────────────────
-INSERT INTO Utilisateurs (Nom, Prenom, Email, MotDePasseHash, Role)
-VALUES ('Admin', 'System', 'admin@eniad.dz',
-        '$2a$12$placeholder_hash_to_be_replaced', 'Admin');
+-- ─── Least-privilege application login ───────────────────────
+-- The backend connects as pfa_app (db_datareader + db_datawriter),
+-- NOT as sa. Password is passed via sqlcmd variable :APP_PASSWORD.
+USE master;
 GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app')
+BEGIN
+    DECLARE @sql NVARCHAR(MAX) =
+        N'CREATE LOGIN pfa_app WITH PASSWORD = ''' + REPLACE('$(APP_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = OFF;';
+    EXEC sp_executesql @sql;
+END
+GO
+
+USE PFA_DB;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app')
+    CREATE USER pfa_app FOR LOGIN pfa_app;
+GO
+
+ALTER ROLE db_datareader ADD MEMBER pfa_app;
+ALTER ROLE db_datawriter ADD MEMBER pfa_app;
+GO
+
+-- NOTE: No admin user seeded here. Create the first admin account via
+-- the backend registration endpoint (which writes a real bcrypt hash),
+-- or run a one-shot script with a freshly generated hash.

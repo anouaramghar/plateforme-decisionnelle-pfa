@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 1. Base de données SQL Server
   db:
@@ -8,8 +6,10 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD}
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD}
+    # Bind to localhost only — never expose SQL Server on the public interface.
     ports:
-      - "1433:1433"
+      - "127.0.0.1:1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
     healthcheck:
@@ -18,16 +18,19 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
     networks:
-      - pfa_internal_ml
+      - pfa_internal_db
 
   # 2. Backend ASP.NET Core 8
   backend:
     build:
       context: ./backend
     environment:
-      - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;
+      # Backend connects as least-privilege pfa_app — NOT as sa.
+      - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=pfa_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True;
       - ML_API_URL=${ML_API_URL}
+      - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
       - ASPNETCORE_URLS=http://+:8080
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ISSUER=${JWT_ISSUER}
@@ -38,48 +41,77 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_healthy
+    healthcheck:
+      # aspnet:8.0 has no curl — use the built-in dotnet diagnostics.
+      test: ["CMD-SHELL", "wget -qO- --timeout=3 http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
     networks:
       - pfa_public
+      - pfa_internal_db
       - pfa_internal_ml
 
   # 3. Microservice IA (Python 3.11 / FastAPI)
   ml-service:
     build:
       context: ./ml_service
+    environment:
+      - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
+      - MODEL_DIR=/app/saved_models
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
     networks:
       - pfa_internal_ml
 
-  # 4. Frontend React.js
+  # 4. Frontend React.js (nginx-unprivileged serves on 8080)
   frontend:
     build:
       context: ./frontend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--timeout=3", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
     networks:
       - pfa_public
 
   # 5. Reverse Proxy Nginx
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - pfa_public
 
 networks:
+  # Public-facing traffic: only nginx, frontend, backend.
   pfa_public:
     driver: bridge
+  # DB plane: only backend ↔ db. No external access, no ML reach.
+  pfa_internal_db:
+    driver: bridge
+    internal: true
+  # ML plane: only backend ↔ ml-service.
   pfa_internal_ml:
     driver: bridge
     internal: true

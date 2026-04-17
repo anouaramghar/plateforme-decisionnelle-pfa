@@ -1,11 +1,13 @@
-# Environment
+# Environment (never commit real secrets)
 .env
-*.env.local
+.env.*
+!.env.example
 
 # Node
 node_modules/
 dist/
 .vite/
+coverage/
 
 # .NET
 bin/
@@ -18,9 +20,12 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
 
 # ML Models (trop lourds pour Git)
-ml-service/saved_models/*.pkl
+ml_service/saved_models/*.pkl
+ml_service/saved_models/*.joblib
 
 # OS
 .DS_Store

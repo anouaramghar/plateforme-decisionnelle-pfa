@@ -1,6 +1,8 @@
 -- ============================================================
 -- PFA_DW — Entrepôt de données (schéma en étoile)
 -- Plateforme Décisionnelle ENIAD 2025/2026
+--
+-- Idempotent: safe to run on every container start.
 -- ============================================================
 
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'PFA_DW')
@@ -12,6 +14,7 @@ GO
 
 -- ─── Dimensions ──────────────────────────────────────────────
 
+IF OBJECT_ID('dbo.DimEtudiant', 'U') IS NULL
 CREATE TABLE DimEtudiant (
     EtudiantKey INT IDENTITY(1,1) PRIMARY KEY,
     Matricule   NVARCHAR(20)  NOT NULL,
@@ -22,6 +25,7 @@ CREATE TABLE DimEtudiant (
 );
 GO
 
+IF OBJECT_ID('dbo.DimModule', 'U') IS NULL
 CREATE TABLE DimModule (
     ModuleKey   INT IDENTITY(1,1) PRIMARY KEY,
     Code        NVARCHAR(20)  NOT NULL,
@@ -31,6 +35,7 @@ CREATE TABLE DimModule (
 );
 GO
 
+IF OBJECT_ID('dbo.DimTemps', 'U') IS NULL
 CREATE TABLE DimTemps (
     TempsKey INT IDENTITY(1,1) PRIMARY KEY,
     Annee    NVARCHAR(9) NOT NULL,
@@ -40,6 +45,7 @@ CREATE TABLE DimTemps (
 GO
 
 -- ─── Table de faits : Notes ───────────────────────────────────
+IF OBJECT_ID('dbo.FaitNotes', 'U') IS NULL
 CREATE TABLE FaitNotes (
     Id          INT IDENTITY(1,1) PRIMARY KEY,
     EtudiantKey INT          NOT NULL REFERENCES DimEtudiant(EtudiantKey),
@@ -50,4 +56,20 @@ CREATE TABLE FaitNotes (
     ScoreRisque DECIMAL(5,4),
     Cluster     INT
 );
+GO
+
+-- ─── Read access for the application login ───────────────────
+USE PFA_DW;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app')
+   AND NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app')
+    CREATE USER pfa_app FOR LOGIN pfa_app;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app')
+BEGIN
+    ALTER ROLE db_datareader ADD MEMBER pfa_app;
+    ALTER ROLE db_datawriter ADD MEMBER pfa_app;
+END
 GO

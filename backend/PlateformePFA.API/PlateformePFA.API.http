@@ -1,6 +1,7 @@
 @PlateformePFA.API_HostAddress = http://localhost:5135
 
-GET {{PlateformePFA.API_HostAddress}}/weatherforecast/
+### Health probe
+GET {{PlateformePFA.API_HostAddress}}/health
 Accept: application/json
 
 ###

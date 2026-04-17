@@ -1,13 +1,18 @@
 FROM python:3.11-slim
+
 WORKDIR /app
 
-# Installation des dépendances (Nécessite un fichier requirements.txt avec fastapi, uvicorn, scikit-learn, xgboost)
+# Install deps first for layer caching.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie du code FastAPI
+# Copy application code.
 COPY . .
 
+# Create a non-root user and hand over /app.
+RUN adduser --system --no-create-home --group appuser \
+ && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
-# Lancement de l'API ML
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
