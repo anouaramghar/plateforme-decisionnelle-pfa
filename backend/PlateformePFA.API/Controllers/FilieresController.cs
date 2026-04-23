@@ -22,9 +22,8 @@ namespace PlateformePFA.API.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Filiere>>> GetFilieres()
         {
-            // Include permet de joindre la table Utilisateur pour avoir les infos du Responsable
             return await _context.Filieres
-                .Include(f => f.Responsable) 
+                .Include(f => f.Responsable)
                 .ToListAsync();
         }
 
@@ -56,6 +55,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // 4. UPDATE (PUT) : Modifier une filière existante
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
         public async Task<IActionResult> PutFiliere(int id, Filiere filiere)
         {
@@ -72,20 +72,17 @@ namespace PlateformePFA.API.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!FiliereExists(id))
-                {
+                if (!await _context.Filieres.AnyAsync(e => e.Id == id))
                     return NotFound(new { message = "Filière introuvable." });
-                }
                 else
-                {
                     throw;
-                }
             }
 
-            return NoContent(); // 204 No Content = Succès mais rien à renvoyer
+            return NoContent();
         }
 
         // 5. DELETE : Supprimer une filière
+        [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteFiliere(int id)
         {
@@ -99,12 +96,6 @@ namespace PlateformePFA.API.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
-        }
-
-        // Méthode utilitaire privée
-        private bool FiliereExists(int id)
-        {
-            return _context.Filieres.Any(e => e.Id == id);
         }
     }
 }

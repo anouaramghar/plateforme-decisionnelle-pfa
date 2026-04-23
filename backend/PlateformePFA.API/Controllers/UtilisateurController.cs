@@ -29,7 +29,6 @@ namespace PlateformePFA.API.Controllers
 
         // POST: api/Utilisateurs
         [HttpPost]
-        [AllowAnonymous]
         public async Task<ActionResult<Utilisateur>> PostUtilisateur(PlateformePFA.API.DTOs.Auth.RegisterRequestDto dto)
         {
             var utilisateur = new Utilisateur

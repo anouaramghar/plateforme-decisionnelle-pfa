@@ -1,24 +1,33 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Bogus;
-using PlateformePFA.API.Models; 
-// using PlateformePFA.API.Data; 
+using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Data
 {
     public static class DataSeeder
     {
-        public static void Initialize(AppDbContext context) 
+        public static void Initialize(AppDbContext context)
         {
             if (context.Filieres.Any()) return;
 
+            if (!context.Utilisateurs.Any())
+            {
+                context.Utilisateurs.Add(new Utilisateur
+                {
+                    Nom = "Admin",
+                    Prenom = "ENIAD",
+                    Email = "admin@eniad.ma",
+                    MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("Admin@2026!"),
+                    Role = "Admin",
+                    EstActif = true,
+                    CreeLe = DateTime.UtcNow
+                });
+                context.SaveChanges();
+            }
+
             var responsableId = context.Utilisateurs
-                .Where(u => u.Role == "Responsable" || u.Role == "Enseignant")
+                .Where(u => u.Role == "Responsable" || u.Role == "Enseignant" || u.Role == "Admin")
                 .Select(u => u.Id)
                 .FirstOrDefault();
-            
-            if (responsableId == 0) responsableId = 1; 
 
             // ==========================================
             // 1. CRÉATION DES FILIÈRES (Inclus le Tronc Commun)

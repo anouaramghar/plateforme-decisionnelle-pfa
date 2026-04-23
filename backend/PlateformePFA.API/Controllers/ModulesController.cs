@@ -22,10 +22,8 @@ namespace PlateformePFA.API.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Module>>> GetModules()
         {
-            // On inclut la Filière ET l'Enseignant pour l'affichage complet
             return await _context.Modules
                 .Include(m => m.Filiere)
-
                 .ToListAsync();
         }
 
@@ -35,7 +33,6 @@ namespace PlateformePFA.API.Controllers
         {
             var module = await _context.Modules
                 .Include(m => m.Filiere)
-
                 .FirstOrDefaultAsync(m => m.Id == id);
 
             if (module == null)
@@ -58,6 +55,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // PUT: api/Modules/5
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
         public async Task<IActionResult> PutModule(int id, Module module)
         {
@@ -71,7 +69,7 @@ namespace PlateformePFA.API.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!_context.Modules.Any(e => e.Id == id)) return NotFound();
+                if (!await _context.Modules.AnyAsync(e => e.Id == id)) return NotFound();
                 else throw;
             }
 
@@ -79,6 +77,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // DELETE: api/Modules/5
+        [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteModule(int id)
         {

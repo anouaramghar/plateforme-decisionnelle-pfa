@@ -22,7 +22,6 @@ namespace PlateformePFA.API.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Etudiant>>> GetEtudiants()
         {
-            // On inclut la Filière pour que le Frontend puisse afficher "Génie Informatique" au lieu de juste "1"
             return await _context.Etudiants
                 .Include(e => e.Filiere)
                 .ToListAsync();
@@ -53,6 +52,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // 4. UPDATE (PUT)
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
         public async Task<IActionResult> PutEtudiant(int id, Etudiant etudiant)
         {
@@ -66,7 +66,7 @@ namespace PlateformePFA.API.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!_context.Etudiants.Any(e => e.Id == id)) return NotFound();
+                if (!await _context.Etudiants.AnyAsync(e => e.Id == id)) return NotFound();
                 else throw;
             }
 
@@ -74,6 +74,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // 5. DELETE
+        [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEtudiant(int id)
         {

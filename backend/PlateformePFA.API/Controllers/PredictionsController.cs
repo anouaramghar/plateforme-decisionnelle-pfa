@@ -77,9 +77,9 @@ namespace PlateformePFA.API.Controllers
             var notes    = etudiant.Notes    ?? new List<Note>();
             var absences = etudiant.Absences ?? new List<Absence>();
 
-            // Calcul des features
-            decimal moyenneGenerale = notes.Any()
-                ? notes.Where(n => n.NoteFinal.HasValue).Average(n => n.NoteFinal!.Value)
+            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
+            decimal moyenneGenerale = notesAvecFinal.Any()
+                ? notesAvecFinal.Average(n => n.NoteFinal!.Value)
                 : 0m;
             int totalHeures           = absences.Sum(a => a.NombreHeures);
             int heuresNonJustifiees   = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);

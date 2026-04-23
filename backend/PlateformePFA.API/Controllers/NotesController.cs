@@ -88,7 +88,7 @@ namespace PlateformePFA.API.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!_context.Notes.Any(n => n.Id == id)) return NotFound();
+                if (!await _context.Notes.AnyAsync(n => n.Id == id)) return NotFound();
                 else throw;
             }
 
