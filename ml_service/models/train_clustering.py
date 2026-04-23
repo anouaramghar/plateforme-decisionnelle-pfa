@@ -15,9 +15,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 import joblib
-import matplotlib
-matplotlib.use("Agg")  # headless — no display needed
-import matplotlib.pyplot as plt
 
 RANDOM_SEED = 42
 N_SAMPLES = 1000
@@ -59,6 +56,10 @@ def elbow_method(df: pd.DataFrame) -> None:
 
     We hardcode K=4 above, but this function lets you verify the choice.
     """
+    import matplotlib
+    matplotlib.use("Agg")  # headless — no display needed
+    import matplotlib.pyplot as plt
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(df)
 

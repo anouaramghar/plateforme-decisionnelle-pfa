@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Request, HTTPException
+import os
+
+from fastapi import APIRouter, Request, HTTPException, Header
 from sklearn.pipeline import Pipeline
 import numpy as np
 import pandas as pd
@@ -6,6 +8,8 @@ import pandas as pd
 from schemas.prediction_schema import ForecastRequest, ForecastResponse
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
+
+_INTERNAL_TOKEN = os.environ.get("ML_INTERNAL_TOKEN", "")
 
 
 def _get_forecast_model(request: Request) -> Pipeline:
@@ -20,7 +24,11 @@ def _get_forecast_model(request: Request) -> Pipeline:
 
 
 @router.post("", response_model=ForecastResponse)
-def forecast_grade(payload: ForecastRequest, request: Request) -> ForecastResponse:
+def forecast_grade(
+    payload: ForecastRequest,
+    request: Request,
+    x_internal_token: str = Header(default=""),
+) -> ForecastResponse:
     """
     Predicts a student's final average grade given mid-semester data.
 
@@ -34,6 +42,9 @@ def forecast_grade(payload: ForecastRequest, request: Request) -> ForecastRespon
     The returned grade is clipped to [0, 20] — XGBoost regressors can
     occasionally predict slightly outside the training range.
     """
+    if _INTERNAL_TOKEN and x_internal_token != _INTERNAL_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     model: Pipeline = _get_forecast_model(request)
 
     features = pd.DataFrame([{

@@ -76,8 +76,6 @@ app = FastAPI(
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
-# Each router handles one ML feature. Add cluster and forecast here
-# once their models are trained.
 app.include_router(predict.router)
 app.include_router(cluster.router)
 app.include_router(forecast.router)

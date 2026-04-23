@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Request, HTTPException
+import os
+
+from fastapi import APIRouter, Request, HTTPException, Header
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
@@ -6,15 +8,13 @@ from schemas.prediction_schema import PredictionRequest, PredictionResponse
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
 
+_INTERNAL_TOKEN = os.environ.get("ML_INTERNAL_TOKEN", "")
+
 
 def _get_risk_model(request: Request) -> Pipeline:
     """
-    Dependency: pulls the pre-loaded model from app.state.
-
-    FastAPI calls this automatically for any endpoint that declares
-    `model: Pipeline = Depends(_get_risk_model)`.
-    If the model was never loaded (startup failed), we return 503
-    instead of crashing with an AttributeError.
+    Pulls the pre-loaded model from app.state.
+    Raises 503 if the model was never loaded (startup failed).
     """
     model = getattr(request.app.state, "risk_model", None)
     if model is None:
@@ -47,7 +47,11 @@ def _score_to_label(probability: float) -> str:
 
 
 @router.post("", response_model=PredictionResponse)
-def predict_risk(payload: PredictionRequest, request: Request) -> PredictionResponse:
+def predict_risk(
+    payload: PredictionRequest,
+    request: Request,
+    x_internal_token: str = Header(default=""),
+) -> PredictionResponse:
     """
     Predicts the failure-risk probability for a single student.
 
@@ -56,23 +60,22 @@ def predict_risk(payload: PredictionRequest, request: Request) -> PredictionResp
         Body: { "moyenne_generale": 11.5, "taux_absence": 0.25, "nb_modules": 6 }
 
     Returns:
-        { "probabilite": 0.63, "label": "Eleve" }
+        { "probabilite": 0.63, "niveau_risque": "Eleve" }
     """
+    if _INTERNAL_TOKEN and x_internal_token != _INTERNAL_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     model: Pipeline = _get_risk_model(request)
 
-    # Build a one-row DataFrame — the model expects the same column names
-    # it was trained on (order matters for StandardScaler).
     features = pd.DataFrame([{
         "moyenne_generale": payload.moyenne_generale,
         "taux_absence":     payload.taux_absence,
         "nb_modules":       payload.nb_modules,
     }])
 
-    # predict_proba returns [[prob_class_0, prob_class_1]]
-    # We take index [0][1] = probability of class 1 (at risk).
     probability = float(model.predict_proba(features)[0][1])
 
     return PredictionResponse(
         probabilite=round(probability, 4),
-        label=_score_to_label(probability),
+        niveau_risque=_score_to_label(probability),
     )

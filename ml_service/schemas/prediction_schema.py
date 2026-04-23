@@ -17,7 +17,7 @@ class PredictionResponse(BaseModel):
 
     probabilite: float = Field(..., ge=0, le=1,
         description="Probability of failure risk (0 = low risk, 1 = high risk)")
-    label: str = Field(...,
+    niveau_risque: str = Field(...,
         description="Human-readable risk level: Faible / Moyen / Eleve / Critique")
 
 
