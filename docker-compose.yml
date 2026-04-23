@@ -6,8 +6,9 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD}
+<<<<<<< HEAD
       - APP_DB_PASSWORD=${APP_DB_PASSWORD}
-    # Bind to localhost only — never expose SQL Server on the public interface.
+    # Bound to localhost only — dev convenience for SSMS / Azure Data Studio.
     ports:
       - "127.0.0.1:1433:1433"
     volumes:
@@ -21,6 +22,7 @@ services:
     restart: unless-stopped
     networks:
       - pfa_internal_db
+      - pfa_public          # required for host port binding (127.0.0.1:1433)
 
   # 2. Backend ASP.NET Core 8
   backend:

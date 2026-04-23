@@ -14,6 +14,7 @@ bin/
 obj/
 *.user
 .vs/
+appsettings.Development.json
 
 # Python
 __pycache__/
@@ -30,3 +31,6 @@ ml_service/saved_models/*.joblib
 # OS
 .DS_Store
 Thumbs.db
+
+# Git worktrees (Claude Code)
+.claude/worktrees/
