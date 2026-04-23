@@ -1,54 +1,161 @@
-using Microsoft.EntityFrameworkCore;
-using PlateformePFA.API.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Bogus;
+using PlateformePFA.API.Models; 
+// using PlateformePFA.API.Data; 
 
 namespace PlateformePFA.API.Data
 {
-    /// <summary>
-    /// Injecte les données initiales au démarrage si elles n'existent pas encore.
-    /// Remplace l'INSERT SQL avec hash placeholder de init.sql.
-    /// </summary>
     public static class DataSeeder
     {
-        public static async Task SeedAsync(IServiceProvider serviceProvider)
+        public static void Initialize(AppDbContext context) 
         {
-            using var scope = serviceProvider.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<AppDbContext>>();
+            if (context.Filieres.Any()) return;
 
-            try
+            var responsableId = context.Utilisateurs
+                .Where(u => u.Role == "Responsable" || u.Role == "Enseignant")
+                .Select(u => u.Id)
+                .FirstOrDefault();
+            
+            if (responsableId == 0) responsableId = 1; 
+
+            // ==========================================
+            // 1. CRÉATION DES FILIÈRES (Inclus le Tronc Commun)
+            // ==========================================
+            var filieres = new List<Filiere>
             {
-                // Attendre que la BDD soit disponible (max 30s)
-                var retries = 0;
-                while (retries < 6)
-                {
-                    try { await context.Database.CanConnectAsync(); break; }
-                    catch { retries++; await Task.Delay(5000); }
-                }
+                new Filiere { Code = "TCP", Intitule = "Tronc Commun Préparatoire", ResponsableId = responsableId },
+                new Filiere { Code = "GI", Intitule = "Génie Informatique", ResponsableId = responsableId },
+                new Filiere { Code = "IA", Intitule = "Intelligence Artificielle", ResponsableId = responsableId },
+                new Filiere { Code = "ROC", Intitule = "Robotique et Objets Connectés", ResponsableId = responsableId },
+                new Filiere { Code = "IRSI", Intitule = "Ingénierie en Réseaux et Systèmes d'Information", ResponsableId = responsableId }
+            };
+            context.Filieres.AddRange(filieres);
+            context.SaveChanges(); 
 
-                // ── Admin système ─────────────────────────────────────────
-                if (!await context.Utilisateurs.AnyAsync(u => u.Email == "admin@eniad.dz"))
-                {
-                    context.Utilisateurs.Add(new Utilisateur
-                    {
-                        Nom           = "Admin",
-                        Prenom        = "System",
-                        Email         = "admin@eniad.dz",
-                        MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("Admin@ENIAD2025"),
-                        Role          = "Admin"
-                    });
-
-                    await context.SaveChangesAsync();
-                    logger.LogInformation("[DataSeeder] Admin créé → admin@eniad.dz / Admin@ENIAD2025");
-                }
-                else
-                {
-                    logger.LogInformation("[DataSeeder] Données déjà présentes — aucun seed nécessaire.");
-                }
-            }
-            catch (Exception ex)
+            // ==========================================
+            // 2. CRÉATION DES MODULES PAR FILIÈRE
+            // ==========================================
+            var modules = new List<Module>
             {
-                logger.LogError(ex, "[DataSeeder] Erreur lors du seed — le backend continue quand même.");
-            }
+                // Modules Tronc Commun (CP)
+                new Module { Code = "TCP11", Nom = "Analyse Mathématique", FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
+                new Module { Code = "TCP12", Nom = "Algèbre Linéaire", FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
+                new Module { Code = "TCP21", Nom = "Physique Quantique & Mécanique", FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 4m, Semestre = "S3" },
+                new Module { Code = "TCP22", Nom = "Initiation à l'Algorithmique", FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 3m, Semestre = "S4" },
+
+                // Modules Génie Informatique (GI)
+                new Module { Code = "GI01", Nom = "Architecture Logicielle", FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "GI02", Nom = "Développement Fullstack", FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" },
+
+                // Modules Intelligence Artificielle (IA)
+                new Module { Code = "IA01", Nom = "Fondamentaux du Machine Learning", FiliereId = filieres[2].Id, Niveau = "CI1", Coefficient = 5m, Semestre = "S1" },
+                new Module { Code = "IA02", Nom = "Deep Learning & Vision par Ordinateur", FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" },
+
+                // Modules Robotique et Objets Connectés (ROC)
+                new Module { Code = "ROC01", Nom = "Systèmes Embarqués", FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "ROC02", Nom = "Protocoles IoT & Microcontrôleurs", FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S3" },
+
+                // Modules Ingénierie en Réseaux et SI (IRSI)
+                new Module { Code = "IRSI01", Nom = "Architecture des Réseaux Avancés", FiliereId = filieres[4].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "IRSI02", Nom = "Cybersécurité et Cryptographie", FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" }
+            };
+            context.Modules.AddRange(modules);
+            context.SaveChanges();
+
+            // ==========================================
+            // 3. DICTIONNAIRES DE NOMS MAROCAINS
+            // ==========================================
+            var prenomsMarocains = new[] { 
+                "Youssef", "Fatima", "Amine", "Salma", "Karim", "Aya", "Mehdi", "Khadija", "Hamza", "Imane", 
+                "Omar", "Sara", "Yassine", "Meryem", "Ilyas", "Hiba", "Marouane", "Anouar", "Aymen", "Reda", 
+                "Zineb", "Saad", "Kenza", "Zakaria", "Hajar", "Ayoub", "Nada", "Oussama", "Najat", "Bilal"
+            };
+
+            var nomsMarocains = new[] { 
+                "Alaoui", "Benali", "Amrani", "El Idrissi", "Bennani", "Tazi", "Ait Ali", "Amghar", "Engar", 
+                "Chraibi", "Tahiri", "Zeroual", "Berrada", "El Fassi", "Mansouri", "Ouazzani", "Guessous", 
+                "Lahlou", "El Oufir", "Benjelloun", "Belghiti", "Moutaouakil", "Zidane", "El Amrani"
+            };
+
+            // ==========================================
+            // 4. GÉNÉRATION DES ÉTUDIANTS
+            // ==========================================
+            var niveauxCP = new[] { "CP1", "CP2" };
+            var niveauxCI = new[] { "CI1", "CI2", "CI3" };
+            
+            var etudiantFaker = new Faker<Etudiant>()
+                .RuleFor(e => e.Nom, f => f.PickRandom(nomsMarocains))
+                .RuleFor(e => e.Prenom, f => f.PickRandom(prenomsMarocains))
+                .RuleFor(e => e.Matricule, f => "E" + f.Random.Number(10000, 99999).ToString())
+                .RuleFor(e => e.Email, (f, e) => f.Internet.Email(e.Prenom, e.Nom, "eniad.ma").ToLower())
+                // Tirage aléatoire du niveau (CP ou CI)
+                .RuleFor(e => e.Niveau, f => f.PickRandom(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }))
+                // Attribution intelligente de la filière en fonction du niveau
+                .RuleFor(e => e.FiliereId, (f, e) => {
+                    if (niveauxCP.Contains(e.Niveau)) return filieres[0].Id; // Tronc Commun pour CP
+                    return f.PickRandom(filieres.Skip(1)).Id; // L'une des 4 autres filières pour CI
+                })
+                .RuleFor(e => e.Annee, "2025/2026")
+                .RuleFor(e => e.CreeLe, f => f.Date.Past(1));
+
+            var etudiants = etudiantFaker.Generate(300); // 300 étudiants répartis sur les 5 niveaux
+            context.Etudiants.AddRange(etudiants);
+            context.SaveChanges();
+
+            // ==========================================
+            // 5. OPTIMISATION : MAPPING ETUDIANT -> MODULES
+            // ==========================================
+            // Pour s'assurer qu'un étudiant en GI n'a que des notes de modules GI, 
+            // et un étudiant en CP n'a que des notes de TCP.
+            var etudiantFiliereMap = etudiants.ToDictionary(e => e.Id, e => e.FiliereId);
+            var filiereModulesMap = modules.GroupBy(m => m.FiliereId).ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
+
+            // ==========================================
+            // 6. GÉNÉRATION DES NOTES
+            // ==========================================
+            var noteFaker = new Faker<Note>()
+                .RuleFor(n => n.EtudiantId, f => f.PickRandom(etudiants).Id)
+                // Attribution du module correspondant à la filière de l'étudiant
+                .RuleFor(n => n.ModuleId, (f, n) => {
+                    var filiereId = etudiantFiliereMap[n.EtudiantId];
+                    var modulesDeCetteFiliere = filiereModulesMap[filiereId];
+                    return f.PickRandom(modulesDeCetteFiliere);
+                })
+                .RuleFor(n => n.Annee, "2025/2026")
+                .RuleFor(n => n.Semestre, f => f.PickRandom(new[] { "S1", "S2" }))
+                .RuleFor(n => n.NoteExamen, f => Math.Round(f.Random.Decimal(4m, 19m), 2))
+                .RuleFor(n => n.NoteTD, f => Math.Round(f.Random.Decimal(10m, 20m), 2))
+                .RuleFor(n => n.NoteTP, f => Math.Round(f.Random.Decimal(12m, 20m), 2))
+                .RuleFor(n => n.NoteFinal, (f, n) => 
+                    Math.Round(((n.NoteExamen ?? 0m) * 0.6m) + ((n.NoteTD ?? 0m) * 0.2m) + ((n.NoteTP ?? 0m) * 0.2m), 2)
+                )
+                .RuleFor(n => n.CreeLe, f => f.Date.Past(1));
+
+            var notes = noteFaker.Generate(1200); 
+            context.Notes.AddRange(notes);
+            context.SaveChanges();
+
+            // ==========================================
+            // 7. GÉNÉRATION DES ABSENCES
+            // ==========================================
+            var absenceFaker = new Faker<Absence>()
+                .RuleFor(a => a.EtudiantId, f => f.PickRandom(etudiants).Id)
+                // Même logique stricte pour les absences
+                .RuleFor(a => a.ModuleId, (f, a) => {
+                    var filiereId = etudiantFiliereMap[a.EtudiantId];
+                    var modulesDeCetteFiliere = filiereModulesMap[filiereId];
+                    return f.PickRandom(modulesDeCetteFiliere);
+                })
+                .RuleFor(a => a.NombreHeures, f => f.PickRandom(new[] { 2, 4 })) 
+                .RuleFor(a => a.Justifiee, f => f.Random.Bool(0.3f)) 
+                .RuleFor(a => a.DateAbsence, f => f.Date.Recent(100)) 
+                .RuleFor(a => a.CreeLe, (f, a) => a.DateAbsence);
+
+            var absences = absenceFaker.Generate(400);
+            context.Absences.AddRange(absences);
+            context.SaveChanges();
         }
     }
 }

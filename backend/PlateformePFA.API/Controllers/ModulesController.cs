@@ -25,7 +25,7 @@ namespace PlateformePFA.API.Controllers
             // On inclut la Filière ET l'Enseignant pour l'affichage complet
             return await _context.Modules
                 .Include(m => m.Filiere)
-                .Include(m => m.Enseignant)
+
                 .ToListAsync();
         }
 
@@ -35,7 +35,7 @@ namespace PlateformePFA.API.Controllers
         {
             var module = await _context.Modules
                 .Include(m => m.Filiere)
-                .Include(m => m.Enseignant)
+
                 .FirstOrDefaultAsync(m => m.Id == id);
 
             if (module == null)

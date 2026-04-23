@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
-using PlateformePFA.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -11,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// 1. CONFIGURATION DE SWAGGER POUR LE JWT
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "PlateformePFA API", Version = "v1" });
@@ -34,9 +34,11 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Injection de la base de données
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// 2. CONFIGURATION DE LA VÉRIFICATION DU TOKEN
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -56,35 +58,48 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddHttpClient("MLService");
-
-// ── Services métier ──────────────────────────────────────────
-builder.Services.AddScoped<IAuthService, AuthService>();
-
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("FrontendPolicy", policy =>
-    {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:80", "http://localhost")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
-    });
+    options.AddPolicy("AllowReactApp",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:3000", "http://localhost:5135", "https://localhost:7255") 
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
 });
 
 var app = builder.Build();
 
-// ── Seed données initiales (admin system) ────────────────────
-await DataSeeder.SeedAsync(app.Services);
+app.UseCors("AllowReactApp");
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-app.UseCors("FrontendPolicy");         // ← AVANT Auth (préflight OPTIONS sinon rejeté en 401)
-
-app.UseAuthentication();
-app.UseAuthorization();
+// 3. ACTIVATION DES CADENAS (L'ordre est TRÈS important ici)
+app.UseAuthentication(); // "Qui es-tu ?"
+app.UseAuthorization();  // "As-tu le droit de faire ça ?"
 
 app.MapControllers();
+
+// --- CODE À AJOUTER JUSTE AVANT app.Run(); ---
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        // Remplacez 'AppDbContext' par le nom de votre classe de contexte (ex: PfaDbContext)
+        var context = services.GetRequiredService<AppDbContext>(); 
+        PlateformePFA.API.Data.DataSeeder.Initialize(context);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Une erreur est survenue lors de l'ensemencement de la base de données.");
+    }
+}
 
 app.Run();

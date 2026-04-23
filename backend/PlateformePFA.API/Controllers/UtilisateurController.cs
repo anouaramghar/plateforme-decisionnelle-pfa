@@ -29,13 +29,18 @@ namespace PlateformePFA.API.Controllers
 
         // POST: api/Utilisateurs
         [HttpPost]
-        public async Task<ActionResult<Utilisateur>> PostUtilisateur(Utilisateur utilisateur)
+        [AllowAnonymous]
+        public async Task<ActionResult<Utilisateur>> PostUtilisateur(PlateformePFA.API.DTOs.Auth.RegisterRequestDto dto)
         {
-            if (!string.IsNullOrEmpty(utilisateur.MotDePasseHash))
+            var utilisateur = new Utilisateur
             {
-                utilisateur.MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(utilisateur.MotDePasseHash);
-            }
-
+                Nom = dto.Nom,
+                Prenom = dto.Prenom,
+                Email = dto.Email,
+                Role = dto.Role,
+                MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(dto.MotDePasse)
+            };
+            
             _context.Utilisateurs.Add(utilisateur);
             await _context.SaveChangesAsync();
 
