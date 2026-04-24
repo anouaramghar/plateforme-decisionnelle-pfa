@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Absences;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -20,13 +21,18 @@ namespace PlateformePFA.API.Controllers
             _logger  = logger;
         }
 
-        // GET: api/absences
+        // GET: api/absences (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Absence>>> GetAbsences()
+        public async Task<ActionResult<IEnumerable<Absence>>> GetAbsences(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
             return await _context.Absences
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
@@ -68,9 +74,18 @@ namespace PlateformePFA.API.Controllers
         // POST: api/absences
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPost]
-        public async Task<ActionResult<Absence>> PostAbsence(Absence absence)
+        public async Task<ActionResult<Absence>> PostAbsence(CreateAbsenceDto dto)
         {
-            absence.CreeLe = DateTime.UtcNow;
+            var absence = new Absence
+            {
+                EtudiantId   = dto.EtudiantId,
+                ModuleId     = dto.ModuleId,
+                NombreHeures = dto.NombreHeures,
+                Justifiee    = dto.Justifiee,
+                DateAbsence  = dto.DateAbsence,
+                CreeLe       = DateTime.UtcNow
+            };
+
             _context.Absences.Add(absence);
             await _context.SaveChangesAsync();
 
@@ -83,10 +98,14 @@ namespace PlateformePFA.API.Controllers
         // PUT: api/absences/5
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutAbsence(int id, Absence absence)
+        public async Task<IActionResult> PutAbsence(int id, UpdateAbsenceDto dto)
         {
-            if (id != absence.Id) return BadRequest();
-            _context.Entry(absence).State = EntityState.Modified;
+            var absence = await _context.Absences.FindAsync(id);
+            if (absence == null) return NotFound(new { message = "Absence introuvable." });
+
+            absence.NombreHeures = dto.NombreHeures;
+            absence.Justifiee    = dto.Justifiee;
+            absence.DateAbsence  = dto.DateAbsence;
 
             try { await _context.SaveChangesAsync(); }
             catch (DbUpdateConcurrencyException)

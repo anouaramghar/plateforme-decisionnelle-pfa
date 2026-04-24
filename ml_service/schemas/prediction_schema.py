@@ -9,7 +9,7 @@ class PredictionRequest(BaseModel):
     taux_absence: float = Field(..., ge=0, le=1,
         description="Absence rate as a fraction of total hours (0 = never absent, 1 = always absent)")
     nb_modules: int = Field(..., ge=1, le=30,
-        description="Number of modules the student is enrolled in")
+        description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
 
 
 class PredictionResponse(BaseModel):
@@ -26,7 +26,8 @@ class ClusterRequest(BaseModel):
 
     moyenne_generale: float = Field(..., ge=0, le=20)
     taux_absence: float = Field(..., ge=0, le=1)
-    nb_modules: int = Field(..., ge=1, le=30)
+    nb_modules: int = Field(..., ge=1, le=30,
+        description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
 
 
 class ClusterResponse(BaseModel):
@@ -42,7 +43,8 @@ class ForecastRequest(BaseModel):
     moyenne_actuelle: float = Field(..., ge=0, le=20,
         description="Current average grade this semester")
     taux_absence: float = Field(..., ge=0, le=1)
-    nb_modules: int = Field(..., ge=1, le=30)
+    nb_modules: int = Field(..., ge=1, le=30,
+        description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
 
 
 class ForecastResponse(BaseModel):

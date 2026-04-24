@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Alertes;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -20,16 +21,25 @@ namespace PlateformePFA.API.Controllers
             _logger  = logger;
         }
 
-        // GET: api/alertes?resolue=false
+        // GET: api/alertes?resolue=false&page=1&pageSize=20
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertes([FromQuery] bool? resolue = null)
+        public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertes(
+            [FromQuery] bool? resolue = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
+
             var query = _context.Alertes.Include(a => a.Etudiant).AsQueryable();
 
             if (resolue.HasValue)
                 query = query.Where(a => a.Resolue == resolue.Value);
 
-            return await query.OrderByDescending(a => a.CreeLe).ToListAsync();
+            return await query
+                .OrderByDescending(a => a.CreeLe)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
         }
 
         // GET: api/alertes/5
@@ -58,10 +68,17 @@ namespace PlateformePFA.API.Controllers
         // POST: api/alertes
         [Authorize(Roles = "Admin")]
         [HttpPost]
-        public async Task<ActionResult<Alerte>> PostAlerte(Alerte alerte)
+        public async Task<ActionResult<Alerte>> PostAlerte(CreateAlerteDto dto)
         {
-            alerte.CreeLe  = DateTime.UtcNow;
-            alerte.Resolue = false;
+            var alerte = new Alerte
+            {
+                EtudiantId = dto.EtudiantId,
+                Type       = dto.Type,
+                Niveau     = dto.Niveau,
+                Message    = dto.Message,
+                Resolue    = false,
+                CreeLe     = DateTime.UtcNow
+            };
 
             _context.Alertes.Add(alerte);
             await _context.SaveChangesAsync();

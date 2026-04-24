@@ -6,7 +6,6 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD}
-<<<<<<< HEAD
       - APP_DB_PASSWORD=${APP_DB_PASSWORD}
     # Bound to localhost only — dev convenience for SSMS / Azure Data Studio.
     ports:

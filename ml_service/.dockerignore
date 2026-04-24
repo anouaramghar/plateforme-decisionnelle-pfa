@@ -15,6 +15,6 @@ README.md
 !.env.example
 # Keep training artifacts and raw data out of the runtime image.
 data/
-models/
-saved_models/*.pkl
-saved_models/*.joblib
+saved_models/
+*.pkl
+*.joblib

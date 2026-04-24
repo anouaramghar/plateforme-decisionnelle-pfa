@@ -2,11 +2,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Filieres;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
 {
-    [Authorize] 
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class FilieresController : ControllerBase
@@ -18,16 +19,21 @@ namespace PlateformePFA.API.Controllers
             _context = context;
         }
 
-        // 1. READ ALL (GET) : Récupérer toutes les filières
+        // 1. READ ALL (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Filiere>>> GetFilieres()
+        public async Task<ActionResult<IEnumerable<Filiere>>> GetFilieres(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
             return await _context.Filieres
                 .Include(f => f.Responsable)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
-        // 2. READ ONE (GET) : Récupérer une seule filière par son ID
+        // 2. READ ONE
         [HttpGet("{id}")]
         public async Task<ActionResult<Filiere>> GetFiliere(int id)
         {
@@ -43,28 +49,38 @@ namespace PlateformePFA.API.Controllers
             return filiere;
         }
 
-        // 3. CREATE (POST) : Ajouter une nouvelle filière
+        // 3. CREATE (POST)
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
-        public async Task<ActionResult<Filiere>> PostFiliere(Filiere filiere)
+        public async Task<ActionResult<Filiere>> PostFiliere(CreateFiliereDto dto)
         {
+            var filiere = new Filiere
+            {
+                Code          = dto.Code,
+                Intitule      = dto.Intitule,
+                ResponsableId = dto.ResponsableId
+            };
+
             _context.Filieres.Add(filiere);
             await _context.SaveChangesAsync();
 
             return CreatedAtAction(nameof(GetFiliere), new { id = filiere.Id }, filiere);
         }
 
-        // 4. UPDATE (PUT) : Modifier une filière existante
+        // 4. UPDATE (PUT)
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutFiliere(int id, Filiere filiere)
+        public async Task<IActionResult> PutFiliere(int id, UpdateFiliereDto dto)
         {
-            if (id != filiere.Id)
+            var filiere = await _context.Filieres.FindAsync(id);
+            if (filiere == null)
             {
-                return BadRequest(new { message = "L'ID de l'URL ne correspond pas à l'ID de la filière." });
+                return NotFound(new { message = "Filière introuvable." });
             }
 
-            _context.Entry(filiere).State = EntityState.Modified;
+            filiere.Code          = dto.Code;
+            filiere.Intitule      = dto.Intitule;
+            filiere.ResponsableId = dto.ResponsableId;
 
             try
             {
@@ -81,7 +97,7 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
-        // 5. DELETE : Supprimer une filière
+        // 5. DELETE
         [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteFiliere(int id)

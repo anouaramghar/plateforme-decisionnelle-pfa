@@ -2,11 +2,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Etudiants;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
 {
-    [Authorize] 
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class EtudiantsController : ControllerBase
@@ -18,12 +19,17 @@ namespace PlateformePFA.API.Controllers
             _context = context;
         }
 
-        // 1. GET ALL
+        // 1. GET ALL (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Etudiant>>> GetEtudiants()
+        public async Task<ActionResult<IEnumerable<Etudiant>>> GetEtudiants(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
             return await _context.Etudiants
                 .Include(e => e.Filiere)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
@@ -43,8 +49,20 @@ namespace PlateformePFA.API.Controllers
         // 3. CREATE (POST)
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
-        public async Task<ActionResult<Etudiant>> PostEtudiant(Etudiant etudiant)
+        public async Task<ActionResult<Etudiant>> PostEtudiant(CreateEtudiantDto dto)
         {
+            var etudiant = new Etudiant
+            {
+                Matricule = dto.Matricule,
+                Nom       = dto.Nom,
+                Prenom    = dto.Prenom,
+                Email     = dto.Email,
+                FiliereId = dto.FiliereId,
+                Niveau    = dto.Niveau,
+                Annee     = dto.Annee,
+                CreeLe    = DateTime.UtcNow
+            };
+
             _context.Etudiants.Add(etudiant);
             await _context.SaveChangesAsync();
 
@@ -54,11 +72,18 @@ namespace PlateformePFA.API.Controllers
         // 4. UPDATE (PUT)
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutEtudiant(int id, Etudiant etudiant)
+        public async Task<IActionResult> PutEtudiant(int id, UpdateEtudiantDto dto)
         {
-            if (id != etudiant.Id) return BadRequest();
+            var etudiant = await _context.Etudiants.FindAsync(id);
+            if (etudiant == null) return NotFound();
 
-            _context.Entry(etudiant).State = EntityState.Modified;
+            etudiant.Matricule = dto.Matricule;
+            etudiant.Nom       = dto.Nom;
+            etudiant.Prenom    = dto.Prenom;
+            etudiant.Email     = dto.Email;
+            etudiant.FiliereId = dto.FiliereId;
+            etudiant.Niveau    = dto.Niveau;
+            etudiant.Annee     = dto.Annee;
 
             try
             {

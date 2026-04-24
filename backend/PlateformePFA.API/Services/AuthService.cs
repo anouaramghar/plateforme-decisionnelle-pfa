@@ -10,9 +10,9 @@ namespace PlateformePFA.API.Services
 {
     public class AuthService : IAuthService
     {
-        // Refresh tokens en mémoire (clé = token, valeur = (userId, expiry))
-        // ℹ Pour une prod réelle, stocker en BDD ou Redis
-        private static readonly Dictionary<string, (string UserId, DateTime Expiry)> _refreshTokens = new();
+        // NOTE: Refresh tokens are stored in-memory and will be lost on container restart.
+        // TODO: Persist refresh tokens to a RefreshTokens DB table for production use.
+        private readonly Dictionary<string, (string UserId, DateTime Expiry)> _refreshTokens = new();
 
         private readonly AppDbContext    _context;
         private readonly IConfiguration _configuration;
@@ -89,7 +89,7 @@ namespace PlateformePFA.API.Services
         // ── Helpers privés ────────────────────────────────────────
         private JwtSecurityToken BuildJwtToken(Models.Utilisateur utilisateur)
         {
-            var key    = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+            var key    = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT_SECRET"] ?? _configuration["Jwt:Key"]!));
             var creds  = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var claims = new[]
             {
@@ -100,15 +100,15 @@ namespace PlateformePFA.API.Services
             };
 
             return new JwtSecurityToken(
-                issuer:             _configuration["Jwt:Issuer"],
-                audience:           _configuration["Jwt:Audience"],
+                issuer:             _configuration["JWT_ISSUER"] ?? _configuration["Jwt:Issuer"],
+                audience:           _configuration["JWT_AUDIENCE"] ?? _configuration["Jwt:Audience"],
                 claims:             claims,
                 expires:            DateTime.UtcNow.AddHours(24),
                 signingCredentials: creds
             );
         }
 
-        private static string BuildRefreshToken(string userId)
+        private string BuildRefreshToken(string userId)
         {
             var token = Guid.NewGuid().ToString("N"); // sans tirets
             _refreshTokens[token] = (userId, DateTime.UtcNow.AddDays(7));

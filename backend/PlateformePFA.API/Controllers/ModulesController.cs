@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Modules;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -18,12 +19,17 @@ namespace PlateformePFA.API.Controllers
             _context = context;
         }
 
-        // GET: api/Modules
+        // GET: api/Modules (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Module>>> GetModules()
+        public async Task<ActionResult<IEnumerable<Module>>> GetModules(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
             return await _context.Modules
                 .Include(m => m.Filiere)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
@@ -46,8 +52,18 @@ namespace PlateformePFA.API.Controllers
         // POST: api/Modules
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
-        public async Task<ActionResult<Module>> PostModule(Module module)
+        public async Task<ActionResult<Module>> PostModule(CreateModuleDto dto)
         {
+            var module = new Module
+            {
+                Code        = dto.Code,
+                Nom         = dto.Nom,
+                FiliereId   = dto.FiliereId,
+                Niveau      = dto.Niveau,
+                Coefficient = dto.Coefficient,
+                Semestre    = dto.Semestre
+            };
+
             _context.Modules.Add(module);
             await _context.SaveChangesAsync();
 
@@ -57,11 +73,17 @@ namespace PlateformePFA.API.Controllers
         // PUT: api/Modules/5
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutModule(int id, Module module)
+        public async Task<IActionResult> PutModule(int id, UpdateModuleDto dto)
         {
-            if (id != module.Id) return BadRequest(new { message = "L'ID ne correspond pas." });
+            var module = await _context.Modules.FindAsync(id);
+            if (module == null) return NotFound(new { message = "Module introuvable." });
 
-            _context.Entry(module).State = EntityState.Modified;
+            module.Code        = dto.Code;
+            module.Nom         = dto.Nom;
+            module.FiliereId   = dto.FiliereId;
+            module.Niveau      = dto.Niveau;
+            module.Coefficient = dto.Coefficient;
+            module.Semestre    = dto.Semestre;
 
             try
             {

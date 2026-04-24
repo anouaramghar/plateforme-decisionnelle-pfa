@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Notes;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -20,12 +21,18 @@ namespace PlateformePFA.API.Controllers
             _logger = logger;
         }
 
+        // GET all (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Note>>> GetNotes()
+        public async Task<ActionResult<IEnumerable<Note>>> GetNotes(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
+            pageSize = Math.Min(pageSize, 100);
             return await _context.Notes
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
@@ -64,23 +71,43 @@ namespace PlateformePFA.API.Controllers
 
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPost]
-        public async Task<ActionResult<Note>> PostNote(Note note)
+        public async Task<ActionResult<Note>> PostNote(CreateNoteDto dto)
         {
+            var note = new Note
+            {
+                EtudiantId = dto.EtudiantId,
+                ModuleId   = dto.ModuleId,
+                NoteExamen = dto.NoteExamen,
+                NoteTD     = dto.NoteTD,
+                NoteTP     = dto.NoteTP,
+                NoteFinal  = dto.NoteFinal,
+                Annee      = dto.Annee,
+                Semestre   = dto.Semestre,
+                CreeLe     = DateTime.UtcNow
+            };
+
             _context.Notes.Add(note);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Note créée : Id={NoteId}, EtudiantId={EtudiantId}, ModuleId={ModuleId}", note.Id, note.EtudiantId, note.ModuleId);
+            _logger.LogInformation("Note créée : Id={NoteId}, EtudiantId={EtudiantId}, ModuleId={ModuleId}",
+                note.Id, note.EtudiantId, note.ModuleId);
 
             return CreatedAtAction(nameof(GetNote), new { id = note.Id }, note);
         }
 
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutNote(int id, Note note)
+        public async Task<IActionResult> PutNote(int id, UpdateNoteDto dto)
         {
-            if (id != note.Id) return BadRequest();
+            var note = await _context.Notes.FindAsync(id);
+            if (note == null) return NotFound();
 
-            _context.Entry(note).State = EntityState.Modified;
+            note.NoteExamen = dto.NoteExamen;
+            note.NoteTD     = dto.NoteTD;
+            note.NoteTP     = dto.NoteTP;
+            note.NoteFinal  = dto.NoteFinal;
+            note.Annee      = dto.Annee;
+            note.Semestre   = dto.Semestre;
 
             try
             {
@@ -105,7 +132,8 @@ namespace PlateformePFA.API.Controllers
             _context.Notes.Remove(note);
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Note supprimée : Id={NoteId}, EtudiantId={EtudiantId}, ModuleId={ModuleId}", note.Id, note.EtudiantId, note.ModuleId);
+            _logger.LogInformation("Note supprimée : Id={NoteId}, EtudiantId={EtudiantId}, ModuleId={ModuleId}",
+                note.Id, note.EtudiantId, note.ModuleId);
 
             return NoContent();
         }

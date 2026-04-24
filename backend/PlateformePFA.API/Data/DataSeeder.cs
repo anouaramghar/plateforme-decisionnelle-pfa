@@ -7,9 +7,8 @@ namespace PlateformePFA.API.Data
     {
         public static void Initialize(AppDbContext context)
         {
-            if (context.Filieres.Any()) return;
-
-            if (!context.Utilisateurs.Any())
+            // Separate block, NOT inside the Filieres block
+            if (!context.Utilisateurs.Any(u => u.Role == "Admin"))
             {
                 context.Utilisateurs.Add(new Utilisateur
                 {
@@ -23,6 +22,8 @@ namespace PlateformePFA.API.Data
                 });
                 context.SaveChanges();
             }
+
+            if (context.Filieres.Any()) return;
 
             var responsableId = context.Utilisateurs
                 .Where(u => u.Role == "Responsable" || u.Role == "Enseignant" || u.Role == "Admin")

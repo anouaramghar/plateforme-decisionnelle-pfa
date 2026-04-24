@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException, Header
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
@@ -8,7 +8,11 @@ from schemas.prediction_schema import ClusterRequest, ClusterResponse
 
 router = APIRouter(prefix="/cluster", tags=["Clustering"])
 
-_INTERNAL_TOKEN = os.environ.get("ML_INTERNAL_TOKEN", "")
+
+def verify_token(x_internal_token: str = Header(default="")) -> None:
+    token = os.getenv("ML_INTERNAL_TOKEN")
+    if token and x_internal_token != token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _get_cluster_model(request: Request) -> Pipeline:
@@ -26,7 +30,7 @@ def _get_cluster_model(request: Request) -> Pipeline:
 def assign_cluster(
     payload: ClusterRequest,
     request: Request,
-    x_internal_token: str = Header(default=""),
+    _: None = Depends(verify_token),
 ) -> ClusterResponse:
     """
     Assigns a student to one of K pre-trained segments.
@@ -42,9 +46,6 @@ def assign_cluster(
     The backend maps cluster → label (e.g., "Top performers") using its own
     lookup table — keeping the ML service stateless.
     """
-    if _INTERNAL_TOKEN and x_internal_token != _INTERNAL_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     model: Pipeline = _get_cluster_model(request)
 
     features = pd.DataFrame([{

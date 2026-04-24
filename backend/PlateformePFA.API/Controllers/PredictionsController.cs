@@ -81,10 +81,13 @@ namespace PlateformePFA.API.Controllers
             decimal moyenneGenerale = notesAvecFinal.Any()
                 ? notesAvecFinal.Average(n => n.NoteFinal!.Value)
                 : 0m;
-            int totalHeures           = absences.Sum(a => a.NombreHeures);
-            int heuresNonJustifiees   = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
-            decimal tauxAbsence       = totalHeures > 0 ? (decimal)heuresNonJustifiees / totalHeures : 0m;
-            int nbModules             = notes.Select(n => n.ModuleId).Distinct().Count();
+            int nbModules = notes.Select(n => n.ModuleId).Distinct().Count();
+
+            // taux_absence = totalAbsenceHours / totalScheduledHours (capped at 1.0)
+            // Estimate: each module has ~2h/week for ~16 weeks = 32h per module
+            double scheduledHours = nbModules > 0 ? nbModules * 32.0 : 32.0;
+            int    absenceHours   = absences.Sum(a => a.NombreHeures);
+            double tauxAbsence    = Math.Min(absenceHours / scheduledHours, 1.0);
 
             var features = new
             {
@@ -93,15 +96,23 @@ namespace PlateformePFA.API.Controllers
                 nb_modules       = nbModules
             };
 
-            decimal scoreRisque  = 0m;
-            string  featuresJson = JsonSerializer.Serialize(features);
+            decimal scoreRisque   = 0m;
+            string? niveauRisque  = null;
+            string  featuresJson  = JsonSerializer.Serialize(features);
 
             try
             {
                 var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
                 var client   = _httpClientFactory.CreateClient("MLService");
-                var content  = new StringContent(featuresJson, Encoding.UTF8, "application/json");
-                var response = await client.PostAsync($"{mlApiUrl}/predict", content);
+
+                // Fix 1: add X-Internal-Token header required by the ML microservice
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict")
+                {
+                    Content = new StringContent(featuresJson, Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+
+                var response = await client.SendAsync(request);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -109,6 +120,8 @@ namespace PlateformePFA.API.Controllers
                     using var doc = JsonDocument.Parse(body);
                     if (doc.RootElement.TryGetProperty("probabilite", out var prob))
                         scoreRisque = prob.GetDecimal();
+                    if (doc.RootElement.TryGetProperty("niveau_risque", out var niveau))
+                        niveauRisque = niveau.GetString();
                 }
                 else
                 {
@@ -133,6 +146,28 @@ namespace PlateformePFA.API.Controllers
 
             _context.PredictionsML.Add(prediction);
             await _context.SaveChangesAsync();
+
+            // Fix 3: auto-insert an Alerte when risk probability exceeds 0.7 or niveau is Eleve/Critique
+            bool isHighRisk = scoreRisque > 0.7m
+                || niveauRisque == "Eleve"
+                || niveauRisque == "Critique";
+
+            if (isHighRisk)
+            {
+                var niveauAlerte = scoreRisque >= 0.9m ? "Critique" : (niveauRisque ?? "Eleve");
+                var alerte = new Alerte
+                {
+                    EtudiantId  = etudiantId,
+                    Type        = "RisqueEchec",
+                    Niveau      = niveauAlerte,
+                    Message     = $"Risque élevé détecté : {niveauAlerte} ({scoreRisque:P0})",
+                    Resolue     = false,
+                    CreeLe      = DateTime.UtcNow
+                };
+                _context.Alertes.Add(alerte);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Alerte créée automatiquement : EtudiantId={Id}, Niveau={Niveau}", etudiantId, niveauAlerte);
+            }
 
             _logger.LogInformation("Prédiction stockée : EtudiantId={Id}, ScoreRisque={Score}", etudiantId, scoreRisque);
             return CreatedAtAction(nameof(GetPrediction), new { id = prediction.Id }, prediction);

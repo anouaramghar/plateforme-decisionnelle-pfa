@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException, Header
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
@@ -8,7 +8,11 @@ from schemas.prediction_schema import PredictionRequest, PredictionResponse
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
 
-_INTERNAL_TOKEN = os.environ.get("ML_INTERNAL_TOKEN", "")
+
+def verify_token(x_internal_token: str = Header(default="")) -> None:
+    token = os.getenv("ML_INTERNAL_TOKEN")
+    if token and x_internal_token != token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _get_risk_model(request: Request) -> Pipeline:
@@ -50,7 +54,7 @@ def _score_to_label(probability: float) -> str:
 def predict_risk(
     payload: PredictionRequest,
     request: Request,
-    x_internal_token: str = Header(default=""),
+    _: None = Depends(verify_token),
 ) -> PredictionResponse:
     """
     Predicts the failure-risk probability for a single student.
@@ -62,9 +66,6 @@ def predict_risk(
     Returns:
         { "probabilite": 0.63, "niveau_risque": "Eleve" }
     """
-    if _INTERNAL_TOKEN and x_internal_token != _INTERNAL_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     model: Pipeline = _get_risk_model(request)
 
     features = pd.DataFrame([{
