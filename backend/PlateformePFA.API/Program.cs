@@ -41,7 +41,15 @@ builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "PlateformePFA API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title       = "PlateformePFA API",
+        Version     = "v1",
+        Description = "API de la Plateforme Décisionnelle ENIAD 2025/2026.\n\n"
+                    + "Gère les étudiants, notes, absences, alertes automatiques et les prédictions ML de risque d'échec.\n\n"
+                    + "**Authentification** : JWT Bearer — obtenez un token via `POST /api/Auth/login`.",
+        Contact     = new OpenApiContact { Name = "Équipe PFA ENIAD", Email = "contact@eniad.ma" }
+    });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: 'Bearer eyJhb...'",
@@ -66,6 +74,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAlerteService, AlerteService>();
 
 builder.Services.AddHttpClient("MLService");
 

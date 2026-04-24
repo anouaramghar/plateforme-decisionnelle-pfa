@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Absences;
 using PlateformePFA.API.Models;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -13,12 +14,14 @@ namespace PlateformePFA.API.Controllers
     public class AbsencesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IAlerteService _alerteService;
         private readonly ILogger<AbsencesController> _logger;
 
-        public AbsencesController(AppDbContext context, ILogger<AbsencesController> logger)
+        public AbsencesController(AppDbContext context, IAlerteService alerteService, ILogger<AbsencesController> logger)
         {
-            _context = context;
-            _logger  = logger;
+            _context       = context;
+            _alerteService = alerteService;
+            _logger        = logger;
         }
 
         // GET: api/absences (paginated)
@@ -92,6 +95,9 @@ namespace PlateformePFA.API.Controllers
             _logger.LogInformation("Absence enregistrée : EtudiantId={EtudiantId}, ModuleId={ModuleId}, Heures={H}",
                 absence.EtudiantId, absence.ModuleId, absence.NombreHeures);
 
+            // Auto-generate alert if cumulative unjustified absences exceed threshold
+            await _alerteService.CheckAbsenceAlertAsync(absence.EtudiantId);
+
             return CreatedAtAction(nameof(GetAbsence), new { id = absence.Id }, absence);
         }
 
@@ -113,6 +119,10 @@ namespace PlateformePFA.API.Controllers
                 if (!await _context.Absences.AnyAsync(a => a.Id == id)) return NotFound();
                 else throw;
             }
+
+            // Re-check alert after absence update
+            await _alerteService.CheckAbsenceAlertAsync(absence.EtudiantId);
+
             return NoContent();
         }
 

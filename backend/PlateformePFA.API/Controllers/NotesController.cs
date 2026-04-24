@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Notes;
 using PlateformePFA.API.Models;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -13,12 +14,14 @@ namespace PlateformePFA.API.Controllers
     public class NotesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IAlerteService _alerteService;
         private readonly ILogger<NotesController> _logger;
 
-        public NotesController(AppDbContext context, ILogger<NotesController> logger)
+        public NotesController(AppDbContext context, IAlerteService alerteService, ILogger<NotesController> logger)
         {
-            _context = context;
-            _logger = logger;
+            _context       = context;
+            _alerteService = alerteService;
+            _logger        = logger;
         }
 
         // GET all (paginated)
@@ -92,6 +95,9 @@ namespace PlateformePFA.API.Controllers
             _logger.LogInformation("Note créée : Id={NoteId}, EtudiantId={EtudiantId}, ModuleId={ModuleId}",
                 note.Id, note.EtudiantId, note.ModuleId);
 
+            // Auto-generate alert if grade is below threshold
+            await _alerteService.CheckNoteAlertAsync(note.EtudiantId, note.ModuleId);
+
             return CreatedAtAction(nameof(GetNote), new { id = note.Id }, note);
         }
 
@@ -118,6 +124,9 @@ namespace PlateformePFA.API.Controllers
                 if (!await _context.Notes.AnyAsync(n => n.Id == id)) return NotFound();
                 else throw;
             }
+
+            // Re-check alert after grade update
+            await _alerteService.CheckNoteAlertAsync(note.EtudiantId, note.ModuleId);
 
             return NoContent();
         }

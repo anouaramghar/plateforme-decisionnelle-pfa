@@ -12,8 +12,9 @@ GO
 -- ─── 1. Sync DimEtudiant ─────────────────────────────────────
 MERGE DimEtudiant AS target
 USING (
-    SELECT Matricule, Nom, Prenom, Filiere, Niveau
-    FROM PFA_DB.dbo.Etudiants
+    SELECT e.Matricule, e.Nom, e.Prenom, f.Intitule AS Filiere, e.Niveau
+    FROM PFA_DB.dbo.Etudiants e
+    JOIN PFA_DB.dbo.Filieres  f ON f.Id = e.FiliereId
 ) AS src ON target.Matricule = src.Matricule
 WHEN MATCHED THEN
     UPDATE SET Nom = src.Nom, Prenom = src.Prenom,
@@ -26,8 +27,9 @@ GO
 -- ─── 2. Sync DimModule ───────────────────────────────────────
 MERGE DimModule AS target
 USING (
-    SELECT Code, Nom, Filiere, Coefficient
-    FROM PFA_DB.dbo.Modules
+    SELECT m.Code, m.Nom, f.Intitule AS Filiere, m.Coefficient
+    FROM PFA_DB.dbo.Modules  m
+    JOIN PFA_DB.dbo.Filieres  f ON f.Id = m.FiliereId
 ) AS src ON target.Code = src.Code
 WHEN MATCHED THEN
     UPDATE SET Nom = src.Nom, Filiere = src.Filiere,

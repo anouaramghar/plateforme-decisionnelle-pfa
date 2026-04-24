@@ -59,6 +59,25 @@ namespace PlateformePFA.API.Data
             modelBuilder.Entity<RefreshToken>()
                 .HasIndex(r => r.Token)
                 .IsUnique();
+
+            // ── Decimal precision (matches SQL schema) ───────────────────────────
+            modelBuilder.Entity<Module>()
+                .Property(m => m.Coefficient).HasPrecision(4, 2);
+
+            modelBuilder.Entity<Note>(e =>
+            {
+                e.Property(n => n.NoteExamen).HasPrecision(5, 2);
+                e.Property(n => n.NoteTD).HasPrecision(5, 2);
+                e.Property(n => n.NoteTP).HasPrecision(5, 2);
+                e.Property(n => n.NoteFinal).HasPrecision(5, 2);
+            });
+
+            modelBuilder.Entity<PredictionML>(e =>
+            {
+                e.Property(p => p.ScoreRisque).HasPrecision(5, 4);
+                e.Property(p => p.NotePredite).HasPrecision(5, 2);
+                e.Property(p => p.Confiance).HasPrecision(5, 4);
+            });
         }
     }
 }

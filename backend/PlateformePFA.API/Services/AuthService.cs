@@ -2,18 +2,16 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Auth;
+using PlateformePFA.API.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace PlateformePFA.API.Services
 {
     public class AuthService : IAuthService
     {
-        // NOTE: Refresh tokens are stored in-memory and will be lost on container restart.
-        // TODO: Persist refresh tokens to a RefreshTokens DB table for production use.
-        private readonly Dictionary<string, (string UserId, DateTime Expiry)> _refreshTokens = new();
-
         private readonly AppDbContext    _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthService> _logger;
@@ -38,14 +36,14 @@ namespace PlateformePFA.API.Services
             }
 
             var token        = BuildJwtToken(utilisateur);
-            var refreshToken = BuildRefreshToken(utilisateur.Id.ToString());
+            var refreshToken = await CreateRefreshTokenAsync(utilisateur.Id);
 
             _logger.LogInformation("[AuthService] Login OK — userId={UserId}", utilisateur.Id);
 
             return new AuthResponseDto
             {
                 Token        = new JwtSecurityTokenHandler().WriteToken(token),
-                RefreshToken = refreshToken,
+                RefreshToken = refreshToken.Token,
                 Expiration   = token.ValidTo,
                 Role         = utilisateur.Role,
                 Email        = utilisateur.Email,
@@ -56,30 +54,36 @@ namespace PlateformePFA.API.Services
         // ── Refresh ───────────────────────────────────────────────
         public async Task<AuthResponseDto?> RefreshAsync(string refreshToken)
         {
-            if (!_refreshTokens.TryGetValue(refreshToken, out var entry))
-                return null;
+            var storedToken = await _context.RefreshTokens
+                .Include(rt => rt.Utilisateur)
+                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
 
-            if (entry.Expiry < DateTime.UtcNow)
+            if (storedToken == null)
             {
-                _refreshTokens.Remove(refreshToken);
+                _logger.LogWarning("[AuthService] Refresh token introuvable");
                 return null;
             }
 
-            var utilisateur = await _context.Utilisateurs.FindAsync(int.Parse(entry.UserId));
-            if (utilisateur == null) return null;
+            if (!storedToken.IsActive)
+            {
+                _logger.LogWarning("[AuthService] Refresh token expiré ou révoqué — userId={UserId}", storedToken.UtilisateurId);
+                return null;
+            }
 
-            _refreshTokens.Remove(refreshToken);
+            // Revoke the old token (single-use rotation)
+            storedToken.RevokedAt = DateTime.UtcNow;
 
-            var newToken        = BuildJwtToken(utilisateur);
-            var newRefreshToken = BuildRefreshToken(utilisateur.Id.ToString());
+            var utilisateur = storedToken.Utilisateur;
+            var newJwt          = BuildJwtToken(utilisateur);
+            var newRefreshToken = await CreateRefreshTokenAsync(utilisateur.Id);
 
             _logger.LogInformation("[AuthService] Token rafraîchi — userId={UserId}", utilisateur.Id);
 
             return new AuthResponseDto
             {
-                Token        = new JwtSecurityTokenHandler().WriteToken(newToken),
-                RefreshToken = newRefreshToken,
-                Expiration   = newToken.ValidTo,
+                Token        = new JwtSecurityTokenHandler().WriteToken(newJwt),
+                RefreshToken = newRefreshToken.Token,
+                Expiration   = newJwt.ValidTo,
                 Role         = utilisateur.Role,
                 Email        = utilisateur.Email,
                 NomComplet   = $"{utilisateur.Prenom} {utilisateur.Nom}"
@@ -87,7 +91,7 @@ namespace PlateformePFA.API.Services
         }
 
         // ── Helpers privés ────────────────────────────────────────
-        private JwtSecurityToken BuildJwtToken(Models.Utilisateur utilisateur)
+        private JwtSecurityToken BuildJwtToken(Utilisateur utilisateur)
         {
             var key    = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT_SECRET"] ?? _configuration["Jwt:Key"]!));
             var creds  = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -108,11 +112,24 @@ namespace PlateformePFA.API.Services
             );
         }
 
-        private string BuildRefreshToken(string userId)
+        private async Task<RefreshToken> CreateRefreshTokenAsync(int utilisateurId)
         {
-            var token = Guid.NewGuid().ToString("N"); // sans tirets
-            _refreshTokens[token] = (userId, DateTime.UtcNow.AddDays(7));
-            return token;
+            // Generate a cryptographically secure random token
+            var tokenBytes = RandomNumberGenerator.GetBytes(64);
+            var tokenString = Convert.ToBase64String(tokenBytes);
+
+            var refreshToken = new RefreshToken
+            {
+                UtilisateurId = utilisateurId,
+                Token         = tokenString,
+                ExpiresAt     = DateTime.UtcNow.AddDays(7),
+                CreeLe        = DateTime.UtcNow
+            };
+
+            _context.RefreshTokens.Add(refreshToken);
+            await _context.SaveChangesAsync();
+
+            return refreshToken;
         }
     }
 }
