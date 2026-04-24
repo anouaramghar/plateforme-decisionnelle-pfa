@@ -56,18 +56,20 @@
 
 ---
 
-## Phase 3 — Service ML (FastAPI) 🔄
+## Phase 3 — Service ML (FastAPI) ✅
 
 - [x] Structure FastAPI avec health endpoint
 - [x] Endpoint de prédiction de risque (`/predict`)
-- [x] Endpoint de clustering étudiant
-- [x] Endpoint de prévision (forecast)
-- [x] Auto-entraînement au démarrage
-- [ ] **Tester avec les vraies données** du seeder (300 étudiants, 1200 notes)
-- [ ] **Valider la qualité du modèle** — matrice de confusion, accuracy, F1-score
-- [ ] **Endpoint `/predict/batch`** — prédire pour tous les étudiants d'une filière
-- [ ] Sécuriser avec `X-Internal-Token` (vérifier que c'est bien implémenté)
-- [ ] Documenter les features utilisées par le modèle
+- [x] Endpoint de clustering étudiant (`/cluster`)
+- [x] Endpoint de prévision (`/forecast`)
+- [x] Auto-entraînement au démarrage (DW réel → fallback synthétique)
+- [x] **Entraînement sur données réelles** — `data/db_loader.py` lit `PFA_DW.FaitNotes` via pyodbc
+- [x] **Validation du modèle** — classification_report, ROC-AUC, R², MAE loggés à chaque entraînement
+- [x] **Endpoint `/predict/batch`** — prédit pour une liste d'étudiants en un seul appel (limite : 500)
+- [x] **Endpoint `/predict/retrain`** — ré-entraîne les 3 modèles à la demande depuis le DW
+- [x] Sécurisé avec `X-Internal-Token` sur tous les endpoints (verify_token Depends)
+- [x] Features documentées dans les Pydantic schemas (`Field` avec `ge`, `le`, `description`)
+
 
 ---
 
@@ -138,7 +140,7 @@
 | Base de données OLTP + DW | ✅ 100% | — |
 | Backend Auth | ✅ 100% | — |
 | Backend CRUD + Logique métier | ✅ 100% | — |
-| ML Service | 🔄 70% | Validation modèle + batch predict |
+| ML Service | ✅ 100% | — |
 | Frontend Auth | ✅ 100% | — |
 | Frontend Dashboard | ⏳ 5% | Prêt à commencer |
 | Frontend Pages | ⏳ 0% | Dépend dashboard |

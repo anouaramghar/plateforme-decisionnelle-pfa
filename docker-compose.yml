@@ -62,6 +62,7 @@ services:
     environment:
       - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
       - MODEL_DIR=/app/saved_models
+      - DW_CONNECTION_STRING=DRIVER={ODBC Driver 18 for SQL Server};SERVER=db;DATABASE=PFA_DW;UID=pfa_app;PWD=${APP_DB_PASSWORD};TrustServerCertificate=yes;
     expose:
       - "8000"
     healthcheck:
@@ -73,6 +74,7 @@ services:
     restart: unless-stopped
     networks:
       - pfa_internal_ml
+      - pfa_internal_db
 
   # 4. Frontend React.js (nginx-unprivileged serves on 8080)
   frontend:
