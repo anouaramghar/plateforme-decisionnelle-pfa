@@ -29,6 +29,7 @@ CREATE TABLE Utilisateurs (
 GO
 
 -- ─── Filieres ────────────────────────────────────────────────
+IF OBJECT_ID('dbo.Filieres', 'U') IS NULL
 CREATE TABLE Filieres (
     Id            INT IDENTITY(1,1) PRIMARY KEY,
     Code          NVARCHAR(20)  NOT NULL UNIQUE,
@@ -137,6 +138,40 @@ CREATE TABLE Predictions (
     Annee       NVARCHAR(9)  NOT NULL,
     CreeLe      DATETIME2    NOT NULL DEFAULT GETUTCDATE()
 );
+GO
+
+-- ─── Performance indexes ─────────────────────────────────────
+-- Idempotent: each index is wrapped in an existence check.
+
+-- Speeds up ETL DimTemps sync and FaitNotes join on (Annee, Semestre)
+IF NOT EXISTS (SELECT 1 FROM sys.indexes
+               WHERE name = 'IX_Notes_Annee_Semestre'
+                 AND object_id = OBJECT_ID('dbo.Notes'))
+    CREATE INDEX IX_Notes_Annee_Semestre ON Notes(Annee, Semestre);
+GO
+
+-- Speeds up the correlated absence-hours subquery in FaitNotes ETL
+IF NOT EXISTS (SELECT 1 FROM sys.indexes
+               WHERE name = 'IX_Absences_Etudiant_Module_Date'
+                 AND object_id = OBJECT_ID('dbo.Absences'))
+    CREATE INDEX IX_Absences_Etudiant_Module_Date
+        ON Absences(EtudiantId, ModuleId, DateAbsence);
+GO
+
+-- Speeds up LatestPredictions CTE (partition + order) in FaitNotes ETL
+IF NOT EXISTS (SELECT 1 FROM sys.indexes
+               WHERE name = 'IX_Predictions_Etudiant_Annee_Type'
+                 AND object_id = OBJECT_ID('dbo.Predictions'))
+    CREATE INDEX IX_Predictions_Etudiant_Annee_Type
+        ON Predictions(EtudiantId, Annee, TypeModele);
+GO
+
+-- Speeds up token lookup by user during auth / logout / revocation
+IF NOT EXISTS (SELECT 1 FROM sys.indexes
+               WHERE name = 'IX_RefreshTokens_UtilisateurId'
+                 AND object_id = OBJECT_ID('dbo.RefreshTokens'))
+    CREATE INDEX IX_RefreshTokens_UtilisateurId
+        ON RefreshTokens(UtilisateurId);
 GO
 
 -- ─── Least-privilege application login ───────────────────────
