@@ -1,5 +1,6 @@
 # ─── Build stage ──────────────────────────────────────────────
-FROM node:18-alpine AS build
+# Node 20 LTS — Node 18 went into maintenance-only in 2025.
+FROM node:20-alpine AS build
 WORKDIR /app
 
 # Install deps from lockfile for reproducible builds.

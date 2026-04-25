@@ -1,5 +1,7 @@
 # ─── Build stage ──────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# Pinned SDK + runtime tags for reproducible builds (the floating "8.0" tag
+# would silently re-resolve to a newer patch on every CI rebuild).
+FROM mcr.microsoft.com/dotnet/sdk:8.0.404-bookworm-slim AS build
 WORKDIR /src
 
 COPY ["PlateformePFA.API/PlateformePFA.API.csproj", "PlateformePFA.API/"]
@@ -10,7 +12,7 @@ WORKDIR "/src/PlateformePFA.API"
 RUN dotnet publish "PlateformePFA.API.csproj" -c Release --no-restore -o /app/publish
 
 # ─── Runtime stage ────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.11-bookworm-slim AS final
 WORKDIR /app
 
 # Install curl for the Docker healthcheck (aspnet:8.0 ships without it).
