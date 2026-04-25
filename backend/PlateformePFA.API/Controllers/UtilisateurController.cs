@@ -20,11 +20,17 @@ namespace PlateformePFA.API.Controllers
             _logger = logger;
         }
 
-        // GET: api/Utilisateurs
+        // GET: api/Utilisateurs?page=1&pageSize=20
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Utilisateur>>> GetUtilisateurs()
+        public async Task<ActionResult<IEnumerable<Utilisateur>>> GetUtilisateurs(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
-            return await _context.Utilisateurs.ToListAsync();
+            pageSize = Math.Min(pageSize, 100);
+            return await _context.Utilisateurs
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
         }
 
         // POST: api/Utilisateurs

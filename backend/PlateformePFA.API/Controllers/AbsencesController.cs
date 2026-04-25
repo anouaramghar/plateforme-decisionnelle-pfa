@@ -60,6 +60,8 @@ namespace PlateformePFA.API.Controllers
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
                 .Where(a => a.EtudiantId == etudiantId)
+                .OrderByDescending(a => a.DateAbsence)
+                .Take(500)           // safety cap — no student should ever exceed this
                 .ToListAsync();
         }
 
@@ -71,6 +73,8 @@ namespace PlateformePFA.API.Controllers
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
                 .Where(a => a.ModuleId == moduleId)
+                .OrderByDescending(a => a.DateAbsence)
+                .Take(500)           // safety cap — one module's absence rows
                 .ToListAsync();
         }
 
