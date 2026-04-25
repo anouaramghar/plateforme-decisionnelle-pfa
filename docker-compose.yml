@@ -55,7 +55,7 @@ services:
         condition: service_healthy
     healthcheck:
       # aspnet:8.0 has no curl — use the built-in dotnet diagnostics.
-      test: ["CMD-SHELL", "wget -qO- --timeout=3 http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- --timeout=3 http://127.0.0.1:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -82,7 +82,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -97,7 +97,7 @@ services:
     build:
       context: ./frontend
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--timeout=3", "http://localhost:8080/"]
+      test: ["CMD", "wget", "-qO-", "--timeout=3", "http://127.0.0.1:8080/"]
       interval: 15s
       timeout: 5s
       retries: 5
