@@ -24,7 +24,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create a non-root user and hand over /app.
+# saved_models/ is excluded from the build context (.dockerignore) so we must
+# mkdir it here — otherwise the Docker named-volume mounts root-owned and
+# appuser gets PermissionError when saving .joblib files after training.
 RUN adduser --system --no-create-home --group appuser \
+ && mkdir -p /app/saved_models \
  && chown -R appuser:appuser /app
 USER appuser
 
