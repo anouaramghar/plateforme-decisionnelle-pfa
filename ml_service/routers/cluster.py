@@ -1,18 +1,11 @@
-import os
-
-from fastapi import APIRouter, Depends, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
+from dependencies import verify_internal_token
 from schemas.prediction_schema import ClusterRequest, ClusterResponse
 
 router = APIRouter(prefix="/cluster", tags=["Clustering"])
-
-
-def verify_token(x_internal_token: str = Header(default="")) -> None:
-    token = os.getenv("ML_INTERNAL_TOKEN")
-    if token and x_internal_token != token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _get_cluster_model(request: Request) -> Pipeline:
@@ -30,7 +23,7 @@ def _get_cluster_model(request: Request) -> Pipeline:
 def assign_cluster(
     payload: ClusterRequest,
     request: Request,
-    _: None = Depends(verify_token),
+    _: None = Depends(verify_internal_token),
 ) -> ClusterResponse:
     """
     Assigns a student to one of K pre-trained segments.

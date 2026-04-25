@@ -97,21 +97,30 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// CORS — only matters when the frontend talks to the backend directly (Vite dev
+// server). In Docker the browser hits nginx which proxies /api server-side, so
+// no preflight is involved.
+// Configurable via CORS_ALLOWED_ORIGINS (comma-separated) for production overrides.
+var corsOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"]
+        ?? "http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowReactApp",
+    options.AddPolicy("FrontendPolicy",
         policy =>
         {
-            policy.WithOrigins("http://localhost:3000", "http://localhost:5135", "https://localhost:7255")
+            policy.WithOrigins(corsOrigins)
                   .AllowAnyHeader()
-                  .AllowAnyMethod();
+                  .AllowAnyMethod()
+                  .AllowCredentials();
         });
 });
 
 var app = builder.Build();
 
 app.UseForwardedHeaders();
-app.UseCors("AllowReactApp");
+app.UseCors("FrontendPolicy");
 
 if (app.Environment.IsDevelopment())
 {
@@ -132,8 +141,9 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
     try
     {
-        var context = services.GetRequiredService<AppDbContext>();
-        PlateformePFA.API.Data.DataSeeder.Initialize(context);
+        var context       = services.GetRequiredService<AppDbContext>();
+        var configuration = services.GetRequiredService<IConfiguration>();
+        PlateformePFA.API.Data.DataSeeder.Initialize(context, configuration);
     }
     catch (Exception ex)
     {

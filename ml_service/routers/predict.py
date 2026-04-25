@@ -1,21 +1,15 @@
-import os
 import logging
 
-from fastapi import APIRouter, Depends, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
+from dependencies import verify_internal_token
 from schemas.prediction_schema import PredictionRequest, PredictionResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
-
-
-def verify_token(x_internal_token: str = Header(default="")) -> None:
-    token = os.getenv("ML_INTERNAL_TOKEN")
-    if token and x_internal_token != token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _get_risk_model(request: Request) -> Pipeline:
@@ -57,7 +51,7 @@ def _score_to_label(probability: float) -> str:
 def predict_risk(
     payload: PredictionRequest,
     request: Request,
-    _: None = Depends(verify_token),
+    _: None = Depends(verify_internal_token),
 ) -> PredictionResponse:
     """
     Predicts the failure-risk probability for a single student.
@@ -91,7 +85,7 @@ def predict_risk(
 def predict_batch(
     payloads: list[PredictionRequest],
     request: Request,
-    _: None = Depends(verify_token),
+    _: None = Depends(verify_internal_token),
 ) -> list[PredictionResponse]:
     """
     Predicts failure-risk for multiple students in a single call.
@@ -135,7 +129,7 @@ def predict_batch(
 @router.post("/retrain")
 def retrain_models(
     request: Request,
-    _: None = Depends(verify_token),
+    _: None = Depends(verify_internal_token),
 ) -> dict:
     """
     Forces retraining of all models from DW data (or synthetic fallback).

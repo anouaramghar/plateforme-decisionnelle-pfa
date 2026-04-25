@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
@@ -9,6 +10,12 @@ namespace PlateformePFA.API.Controllers;
 [Authorize(Roles = "Admin")]
 public class AdminController : ControllerBase
 {
+    // Splits a T-SQL script on a `GO` batch separator that sits on its own line,
+    // tolerating both LF (\n) and CRLF (\r\n) endings and any trailing whitespace.
+    // Avoids the `\nGO` literal split, which silently no-ops on Windows checkouts.
+    private static readonly Regex GoBatchSeparator =
+        new(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IConfiguration _config;
     private readonly ILogger<AdminController> _logger;
 
@@ -40,7 +47,7 @@ public class AdminController : ControllerBase
             var etlSql = await System.IO.File.ReadAllTextAsync(
                 Path.Combine(AppContext.BaseDirectory, "Scripts", "etl.sql"), ct);
 
-            foreach (var batch in etlSql.Split("\nGO", StringSplitOptions.RemoveEmptyEntries))
+            foreach (var batch in GoBatchSeparator.Split(etlSql))
             {
                 var trimmed = batch.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed)) continue;

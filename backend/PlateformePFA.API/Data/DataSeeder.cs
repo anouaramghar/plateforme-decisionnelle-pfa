@@ -5,17 +5,35 @@ namespace PlateformePFA.API.Data
 {
     public static class DataSeeder
     {
-        public static void Initialize(AppDbContext context)
+        public static void Initialize(AppDbContext context, IConfiguration configuration)
         {
             // Separate block, NOT inside the Filieres block
             if (!context.Utilisateurs.Any(u => u.Role == "Admin"))
             {
+                // Read admin seed credentials from configuration (env vars in Docker).
+                // Fail fast rather than silently baking a known password into the binary.
+                var adminEmail    = configuration["ADMIN_SEED_EMAIL"];
+                var adminPassword = configuration["ADMIN_SEED_PASSWORD"];
+                var adminNom      = configuration["ADMIN_SEED_NOM"]    ?? "Admin";
+                var adminPrenom   = configuration["ADMIN_SEED_PRENOM"] ?? "ENIAD";
+
+                if (string.IsNullOrWhiteSpace(adminEmail) ||
+                    string.IsNullOrWhiteSpace(adminPassword) ||
+                    adminPassword.Length < 12 ||
+                    adminPassword.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "ADMIN_SEED_EMAIL and ADMIN_SEED_PASSWORD must be set before first start. " +
+                        "Password must be at least 12 characters and not a placeholder. " +
+                        "See .env.example for details.");
+                }
+
                 context.Utilisateurs.Add(new Utilisateur
                 {
-                    Nom = "Admin",
-                    Prenom = "ENIAD",
-                    Email = "admin@eniad.ma",
-                    MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("Admin@2026!"),
+                    Nom = adminNom,
+                    Prenom = adminPrenom,
+                    Email = adminEmail,
+                    MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
                     Role = "Admin",
                     EstActif = true,
                     CreeLe = DateTime.UtcNow
