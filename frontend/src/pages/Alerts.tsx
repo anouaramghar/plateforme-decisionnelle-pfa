@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 
 interface Alerte {
   id: number
@@ -12,16 +13,24 @@ interface Alerte {
 }
 
 export default function Alerts() {
-  const { data: alertes = [], isLoading } = useQuery<Alerte[]>({
+  const { token } = useAuth()
+  const { data: alertes = [], isLoading, isError } = useQuery<Alerte[]>({
     queryKey: ['alertes'],
     queryFn: () => api.get('/alertes').then(r => r.data),
     refetchInterval: 30_000,
+    // Don't fire until the JWT is available — avoids a guaranteed 401 on first render.
+    enabled: !!token,
   })
 
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-4">Alertes</h1>
       {isLoading && <p className="text-gray-400">Chargement…</p>}
+      {isError && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
+          Impossible de charger les alertes. Veuillez réessayer.
+        </p>
+      )}
       <ul className="space-y-2">
         {alertes.map(a => (
           <li key={a.id} className="bg-white border rounded-lg px-4 py-3 flex items-center justify-between shadow-sm">
