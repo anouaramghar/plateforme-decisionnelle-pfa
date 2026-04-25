@@ -13,8 +13,10 @@ README.md
 .env
 .env.*
 !.env.example
-# Keep training artifacts and raw data out of the runtime image.
-data/
+# saved_models/ and pre-trained artifacts are excluded — they are stored in a
+# Docker named volume (ml_models_data) and rebuilt via /predict/retrain.
+# NOTE: do NOT exclude data/ — it is a Python package (data/db_loader.py)
+#       required at runtime, not a raw-data directory.
 saved_models/
 *.pkl
 *.joblib
