@@ -112,11 +112,15 @@ namespace PlateformePFA.API.Data
             // ==========================================
             var niveauxCP = new[] { "CP1", "CP2" };
             var niveauxCI = new[] { "CI1", "CI2", "CI3" };
-            
+
+            // Counter-based matricule guarantees UNIQUE(Matricule) — random numbers
+            // have a ~39% collision rate at 300 students in a 90 000-value space.
+            int matriculeCounter = 10001;
+
             var etudiantFaker = new Faker<Etudiant>()
                 .RuleFor(e => e.Nom, f => f.PickRandom(nomsMarocains))
                 .RuleFor(e => e.Prenom, f => f.PickRandom(prenomsMarocains))
-                .RuleFor(e => e.Matricule, f => "E" + f.Random.Number(10000, 99999).ToString())
+                .RuleFor(e => e.Matricule, _ => $"E{matriculeCounter++:D5}") // guaranteed unique
                 .RuleFor(e => e.Email, (f, e) => f.Internet.Email(e.Prenom, e.Nom, "eniad.ma").ToLower())
                 // Tirage aléatoire du niveau (CP ou CI)
                 .RuleFor(e => e.Niveau, f => f.PickRandom(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }))
@@ -141,27 +145,39 @@ namespace PlateformePFA.API.Data
             var filiereModulesMap = modules.GroupBy(m => m.FiliereId).ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
 
             // ==========================================
-            // 6. GÉNÉRATION DES NOTES
+            // 6. GÉNÉRATION DES NOTES (par étudiant × module × semestre)
             // ==========================================
-            var noteFaker = new Faker<Note>()
-                .RuleFor(n => n.EtudiantId, f => f.PickRandom(etudiants).Id)
-                // Attribution du module correspondant à la filière de l'étudiant
-                .RuleFor(n => n.ModuleId, (f, n) => {
-                    var filiereId = etudiantFiliereMap[n.EtudiantId];
-                    var modulesDeCetteFiliere = filiereModulesMap[filiereId];
-                    return f.PickRandom(modulesDeCetteFiliere);
-                })
-                .RuleFor(n => n.Annee, "2025/2026")
-                .RuleFor(n => n.Semestre, f => f.PickRandom(new[] { "S1", "S2" }))
-                .RuleFor(n => n.NoteExamen, f => Math.Round(f.Random.Decimal(4m, 19m), 2))
-                .RuleFor(n => n.NoteTD, f => Math.Round(f.Random.Decimal(10m, 20m), 2))
-                .RuleFor(n => n.NoteTP, f => Math.Round(f.Random.Decimal(12m, 20m), 2))
-                .RuleFor(n => n.NoteFinal, (f, n) => 
-                    Math.Round(((n.NoteExamen ?? 0m) * 0.6m) + ((n.NoteTD ?? 0m) * 0.2m) + ((n.NoteTP ?? 0m) * 0.2m), 2)
-                )
-                .RuleFor(n => n.CreeLe, f => f.Date.Past(1));
+            // Random mass-generation caused UNIQUE(EtudiantId, ModuleId, Annee, Semestre)
+            // violations. We now iterate the full cartesian product to guarantee uniqueness.
+            var noteRng = new Random(42); // seeded — reproducible data across restarts
+            var notes   = new List<Note>();
 
-            var notes = noteFaker.Generate(1200); 
+            foreach (var etudiant in etudiants)
+            {
+                var moduleIds = filiereModulesMap[etudiant.FiliereId];
+                foreach (var moduleId in moduleIds)
+                {
+                    foreach (var semestre in new[] { "S1", "S2" })
+                    {
+                        var noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 15 + 4), 2);
+                        var noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2);
+                        var noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2);
+                        notes.Add(new Note
+                        {
+                            EtudiantId = etudiant.Id,
+                            ModuleId   = moduleId,
+                            Annee      = "2025/2026",
+                            Semestre   = semestre,
+                            NoteExamen = noteExamen,
+                            NoteTD     = noteTD,
+                            NoteTP     = noteTP,
+                            NoteFinal  = Math.Round(noteExamen * 0.6m + noteTD * 0.2m + noteTP * 0.2m, 2),
+                            CreeLe     = DateTime.UtcNow.AddDays(-noteRng.Next(1, 365))
+                        });
+                    }
+                }
+            }
+
             context.Notes.AddRange(notes);
             context.SaveChanges();
 

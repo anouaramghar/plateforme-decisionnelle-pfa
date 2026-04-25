@@ -13,6 +13,12 @@ RUN dotnet publish "PlateformePFA.API.csproj" -c Release --no-restore -o /app/pu
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
+# Install curl for the Docker healthcheck (aspnet:8.0 ships without it).
+# Must run as root before dropping to 'app'.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 # The aspnet:8.0 image ships with a non-root 'app' user (UID 1654).
