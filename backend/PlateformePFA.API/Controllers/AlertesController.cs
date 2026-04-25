@@ -62,6 +62,7 @@ namespace PlateformePFA.API.Controllers
                 .Include(a => a.Etudiant)
                 .Where(a => a.EtudiantId == etudiantId)
                 .OrderByDescending(a => a.CreeLe)
+                .Take(500)           // safety cap — one student's full alert history
                 .ToListAsync();
         }
 

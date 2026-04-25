@@ -147,14 +147,14 @@ namespace PlateformePFA.API.Controllers
             _context.PredictionsML.Add(prediction);
             await _context.SaveChangesAsync();
 
-            // Fix 3: auto-insert an Alerte when risk probability exceeds 0.7 or niveau is Eleve/Critique
-            bool isHighRisk = scoreRisque > 0.7m
-                || niveauRisque == "Eleve"
-                || niveauRisque == "Critique";
+            // Auto-insert an Alerte when the ML service classifies the student as
+            // Eleve (≥0.50) or Critique (≥0.75).  We trust the ML label as the
+            // single source of truth for thresholds — no duplicate magic numbers here.
+            bool isHighRisk = niveauRisque is "Eleve" or "Critique";
 
             if (isHighRisk)
             {
-                var niveauAlerte = scoreRisque >= 0.9m ? "Critique" : (niveauRisque ?? "Eleve");
+                var niveauAlerte = niveauRisque!;   // already "Eleve" or "Critique"
                 var alerte = new Alerte
                 {
                     EtudiantId  = etudiantId,

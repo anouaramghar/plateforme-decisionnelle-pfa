@@ -59,6 +59,8 @@ namespace PlateformePFA.API.Controllers
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
                 .Where(n => n.EtudiantId == etudiantId)
+                .OrderByDescending(n => n.Annee).ThenBy(n => n.Semestre)
+                .Take(500)           // safety cap — one student's full note history
                 .ToListAsync();
         }
 
@@ -69,6 +71,8 @@ namespace PlateformePFA.API.Controllers
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
                 .Where(n => n.ModuleId == moduleId)
+                .OrderByDescending(n => n.Annee).ThenBy(n => n.Semestre)
+                .Take(500)           // safety cap — one module's cohort notes
                 .ToListAsync();
         }
 
