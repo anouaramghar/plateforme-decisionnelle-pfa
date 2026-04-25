@@ -15,13 +15,35 @@ var jwtSecret   = builder.Configuration["JWT_SECRET"] ?? builder.Configuration["
 var jwtIssuer   = builder.Configuration["JWT_ISSUER"] ?? builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["JWT_AUDIENCE"] ?? builder.Configuration["Jwt:Audience"];
 
+// Known-leaked or placeholder secrets that must never be accepted, even if they
+// happen to satisfy the length check. Match case-insensitively and ignore
+// whitespace so trivial obfuscation doesn't slip past.
+var knownBadJwtSecrets = new[]
+{
+    "CHANGE_ME",
+    "pfa-eniad-2026-secret-key-super-secure-lhiadi", // historic leaked value
+    "secret", "changeme", "placeholder",
+};
+
+static bool ContainsAny(string value, IEnumerable<string> needles) =>
+    needles.Any(n => value.Contains(n, StringComparison.OrdinalIgnoreCase));
+
+// Reject low-entropy secrets: at least 3 of {lower, upper, digit, symbol} required.
+static int CharClassCount(string s) =>
+    (s.Any(char.IsLower)                 ? 1 : 0) +
+    (s.Any(char.IsUpper)                 ? 1 : 0) +
+    (s.Any(char.IsDigit)                 ? 1 : 0) +
+    (s.Any(c => !char.IsLetterOrDigit(c)) ? 1 : 0);
+
 if (string.IsNullOrWhiteSpace(jwtSecret) ||
     jwtSecret.Length < 32 ||
-    jwtSecret.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+    ContainsAny(jwtSecret, knownBadJwtSecrets) ||
+    CharClassCount(jwtSecret) < 3)
 {
     throw new InvalidOperationException(
-        "JWT secret is missing, shorter than 32 characters, or still set to a placeholder. " +
-        "Set JWT_SECRET (env var) or Jwt:Key (appsettings) to a strong value before starting.");
+        "JWT secret is missing, shorter than 32 characters, matches a known-leaked / placeholder value, " +
+        "or lacks character-class diversity (need ≥3 of: lower, upper, digit, symbol). " +
+        "Generate a fresh value with: openssl rand -base64 48");
 }
 
 if (string.IsNullOrWhiteSpace(jwtIssuer) || string.IsNullOrWhiteSpace(jwtAudience))
