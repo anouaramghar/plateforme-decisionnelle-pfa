@@ -27,7 +27,7 @@ namespace PlateformePFA.API.Services
         public async Task<AuthResponseDto?> LoginAsync(LoginRequestDto request)
         {
             var utilisateur = await _context.Utilisateurs
-                .FirstOrDefaultAsync(u => u.Email == request.Email);
+                .FirstOrDefaultAsync(u => u.Email == request.Email && u.EstActif);
 
             if (utilisateur == null || !BCrypt.Net.BCrypt.Verify(request.MotDePasse, utilisateur.MotDePasseHash))
             {
@@ -70,10 +70,18 @@ namespace PlateformePFA.API.Services
                 return null;
             }
 
-            // Revoke the old token (single-use rotation)
-            storedToken.RevokedAt = DateTime.UtcNow;
-
             var utilisateur = storedToken.Utilisateur;
+            if (utilisateur == null || !utilisateur.EstActif)
+            {
+                _logger.LogWarning("[AuthService] Refresh refusé — compte désactivé userId={UserId}", storedToken.UtilisateurId);
+                return null;
+            }
+
+            // Revoke the old token (single-use rotation) and persist immediately so
+            // a failure during new-token creation cannot leave the old token usable.
+            storedToken.RevokedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
             var newJwt          = BuildJwtToken(utilisateur);
             var newRefreshToken = await CreateRefreshTokenAsync(utilisateur.Id);
 

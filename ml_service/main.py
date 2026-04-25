@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import asyncio
 import logging
+import os
 
 from fastapi import FastAPI
 import joblib
@@ -23,9 +25,17 @@ async def lifespan(app: FastAPI):
     We load every trained model here and store them in app.state so any
     router can access them via request.app.state without reloading from disk.
     """
+    # Fail-fast on missing shared secret — never boot in an unauthenticated state.
+    if not os.getenv("ML_INTERNAL_TOKEN"):
+        raise RuntimeError(
+            "ML_INTERNAL_TOKEN environment variable is required. "
+            "Set it to the same value as the backend's ML_INTERNAL_TOKEN."
+        )
+
     # Train any missing models before we try to load them.
     # On a warm container with saved_models/ already present this is instant.
-    ensure_all_models()
+    # Run training off the event loop to keep liveness probes responsive.
+    await asyncio.to_thread(ensure_all_models)
 
     logger.info("Loading ML models...")
 

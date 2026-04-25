@@ -1,19 +1,12 @@
-import os
-
-from fastapi import APIRouter, Depends, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import numpy as np
 import pandas as pd
 
+from dependencies import verify_internal_token
 from schemas.prediction_schema import ForecastRequest, ForecastResponse
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
-
-
-def verify_token(x_internal_token: str = Header(default="")) -> None:
-    token = os.getenv("ML_INTERNAL_TOKEN")
-    if token and x_internal_token != token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _get_forecast_model(request: Request) -> Pipeline:
@@ -31,7 +24,7 @@ def _get_forecast_model(request: Request) -> Pipeline:
 def forecast_grade(
     payload: ForecastRequest,
     request: Request,
-    _: None = Depends(verify_token),
+    _: None = Depends(verify_internal_token),
 ) -> ForecastResponse:
     """
     Predicts a student's final average grade given mid-semester data.

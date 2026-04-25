@@ -1,24 +1,35 @@
 import axios from 'axios'
 
+// In-memory token store — never persisted to localStorage / sessionStorage
+// (XSS hardening per CLAUDE.md). The trade-off is a page refresh logs the
+// user out; acceptable for a PFA demo. Switch to httpOnly cookie if/when the
+// backend sets one.
+let authToken: string | null = null
+let onUnauthorized: (() => void) | null = null
+
+export function setAuthToken(token: string | null): void {
+  authToken = token
+}
+
+export function setOnUnauthorized(handler: (() => void) | null): void {
+  onUnauthorized = handler
+}
+
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api',
 })
 
-// Attach JWT from sessionStorage on every request.
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (authToken) config.headers.Authorization = `Bearer ${authToken}`
   return config
 })
 
-// Redirect to /login on 401 (expired or invalid token).
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      sessionStorage.removeItem('token')
-      sessionStorage.removeItem('user')
-      window.location.href = '/login'
+      authToken = null
+      onUnauthorized?.()
     }
     return Promise.reject(err)
   }
