@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Modules;
 using PlateformePFA.API.Models;
 
@@ -21,16 +22,26 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/Modules (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Module>>> GetModules(
+        public async Task<ActionResult<PaginatedResult<Module>>> GetModules(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 20,
+            [FromQuery] int? filiereId = null)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Modules
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Modules.AsNoTracking().AsQueryable();
+            if (filiereId.HasValue) query = query.Where(m => m.FiliereId == filiereId.Value);
+
+            var ordered = query.OrderBy(m => m.Id);
+            var total   = await ordered.CountAsync();
+            var items   = await ordered
                 .Include(m => m.Filiere)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Module>(items, total, page, pageSize);
         }
 
         // GET: api/Modules/5
@@ -105,6 +116,18 @@ namespace PlateformePFA.API.Controllers
         {
             var module = await _context.Modules.FindAsync(id);
             if (module == null) return NotFound();
+
+            var nbNotes    = await _context.Notes.CountAsync(n => n.ModuleId == id);
+            var nbAbsences = await _context.Absences.CountAsync(a => a.ModuleId == id);
+            if (nbNotes > 0 || nbAbsences > 0)
+            {
+                return Conflict(new
+                {
+                    message = "Module référencé par des notes ou absences existantes.",
+                    notes    = nbNotes,
+                    absences = nbAbsences,
+                });
+            }
 
             _context.Modules.Remove(module);
             await _context.SaveChangesAsync();

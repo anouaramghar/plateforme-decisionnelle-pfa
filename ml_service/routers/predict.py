@@ -134,29 +134,65 @@ def retrain_models(
     """
     Forces retraining of all models from DW data (or synthetic fallback).
 
-    Deletes existing .joblib files so auto_train rebuilds them from scratch,
-    then reloads the new models into app.state.
+    Trains into a sibling staging directory, then atomically swaps each new
+    file over the old one (`os.replace`). If training crashes mid-way, the
+    previous models stay live and `/predict` keeps serving — instead of being
+    bricked with deleted files and no replacements (the old behavior).
 
     Called by the admin after running ETL sync:
         POST /predict/retrain
         Header: X-Internal-Token: <secret>
     """
+    import os
+    import shutil
     import joblib
-    from pathlib import Path
-    from models.auto_train import ensure_all_models, SAVED_MODELS_DIR
+    from models import auto_train, train_risk, train_clustering, train_regression
 
-    # Delete existing models to force retraining
-    for model_file in SAVED_MODELS_DIR.glob("*.joblib"):
-        model_file.unlink()
-        logger.info("Deleted %s for retraining.", model_file.name)
+    saved_dir   = auto_train.SAVED_MODELS_DIR
+    staging_dir = saved_dir.parent / "saved_models_staging"
 
-    # Retrain all models
-    ensure_all_models()
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-    # Reload into app.state
-    risk_path    = SAVED_MODELS_DIR / "risk_model.joblib"
-    cluster_path = SAVED_MODELS_DIR / "cluster_model.joblib"
-    forecast_path = SAVED_MODELS_DIR / "forecast_model.joblib"
+    # Each train_*.py script writes through its own module-level MODEL_PATH.
+    # Redirect all four module-level paths at the staging dir for the duration
+    # of this call; restore them afterwards in a finally so a partial run can't
+    # leave the modules pointing at staging.
+    originals = {
+        "auto_train":      auto_train.SAVED_MODELS_DIR,
+        "train_risk":      train_risk.MODEL_PATH,
+        "train_clustering": train_clustering.MODEL_PATH,
+        "train_regression": train_regression.MODEL_PATH,
+    }
+    try:
+        auto_train.SAVED_MODELS_DIR     = staging_dir
+        train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
+        train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
+        train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
+        auto_train.ensure_all_models()
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        logger.exception("Retraining failed; previous models left in place.")
+        raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
+    finally:
+        auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
+        train_risk.MODEL_PATH           = originals["train_risk"]
+        train_clustering.MODEL_PATH     = originals["train_clustering"]
+        train_regression.MODEL_PATH     = originals["train_regression"]
+
+    # Atomically swap each freshly-trained file over the live one.
+    saved_dir.mkdir(parents=True, exist_ok=True)
+    for new_file in staging_dir.glob("*.joblib"):
+        target = saved_dir / new_file.name
+        os.replace(new_file, target)        # atomic on same filesystem
+        logger.info("Promoted %s into saved_models/.", new_file.name)
+    shutil.rmtree(staging_dir, ignore_errors=True)
+
+    # Reload into app.state.
+    risk_path     = saved_dir / "risk_model.joblib"
+    cluster_path  = saved_dir / "cluster_model.joblib"
+    forecast_path = saved_dir / "forecast_model.joblib"
 
     request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
     request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
@@ -171,5 +207,5 @@ def retrain_models(
             "risk_model":     request.app.state.risk_model     is not None,
             "cluster_model":  request.app.state.cluster_model  is not None,
             "forecast_model": request.app.state.forecast_model is not None,
-        }
+        },
     }

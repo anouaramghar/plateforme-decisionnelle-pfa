@@ -43,6 +43,13 @@ namespace PlateformePFA.API.Data
 
             if (context.Filieres.Any()) return;
 
+            // Use the configured academic year if set; otherwise compute it from
+            // UTC clock (school year flips on 1 September). This avoids the
+            // historic drift where seeded data was hardcoded to 2025/2026 even
+            // though predictions stamped a different year, leaving zero overlap.
+            var anneeCourante = configuration["CurrentAcademicYear"]
+                                ?? CurrentAcademicYear();
+
             var responsableId = context.Utilisateurs
                 .Where(u => u.Role == "Responsable" || u.Role == "Enseignant" || u.Role == "Admin")
                 .Select(u => u.Id)
@@ -129,7 +136,7 @@ namespace PlateformePFA.API.Data
                     if (niveauxCP.Contains(e.Niveau)) return filieres[0].Id; // Tronc Commun pour CP
                     return f.PickRandom(filieres.Skip(1)).Id; // L'une des 4 autres filières pour CI
                 })
-                .RuleFor(e => e.Annee, "2025/2026")
+                .RuleFor(e => e.Annee, anneeCourante)
                 .RuleFor(e => e.CreeLe, f => f.Date.Past(1));
 
             var etudiants = etudiantFaker.Generate(300); // 300 étudiants répartis sur les 5 niveaux
@@ -166,7 +173,7 @@ namespace PlateformePFA.API.Data
                         {
                             EtudiantId = etudiant.Id,
                             ModuleId   = moduleId,
-                            Annee      = "2025/2026",
+                            Annee      = anneeCourante,
                             Semestre   = semestre,
                             NoteExamen = noteExamen,
                             NoteTD     = noteTD,
@@ -200,6 +207,18 @@ namespace PlateformePFA.API.Data
             var absences = absenceFaker.Generate(400);
             context.Absences.AddRange(absences);
             context.SaveChanges();
+        }
+
+        /// <summary>
+        /// Academic year in "YYYY/YYYY" form. The school year flips on 1 September.
+        /// Mirrors PredictionsController.CurrentAcademicYear so seeded years and
+        /// freshly-stamped predictions land in the same dimension row.
+        /// </summary>
+        private static string CurrentAcademicYear()
+        {
+            var now   = DateTime.UtcNow;
+            var start = now.Month >= 9 ? now.Year : now.Year - 1;
+            return $"{start}/{start + 1}";
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using PlateformePFA.API.DTOs.Common;
 
 namespace PlateformePFA.API.DTOs.Notes
 {
@@ -41,12 +42,14 @@ namespace PlateformePFA.API.DTOs.Notes
         public decimal? NoteFinal { get; set; }
 
         [Required]
-        [MaxLength(20)]
+        [MaxLength(9)]
+        [RegularExpression(Validation.AnneePattern, ErrorMessage = Validation.AnneeError)]
         public string Annee { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(5)]
-        public string Semestre { get; set; } = string.Empty; // S1 | S2
+        [RegularExpression(Validation.SemestrePattern, ErrorMessage = Validation.SemestreError)]
+        public string Semestre { get; set; } = string.Empty;
     }
 
     public class UpdateNoteDto
@@ -64,11 +67,13 @@ namespace PlateformePFA.API.DTOs.Notes
         public decimal? NoteFinal { get; set; }
 
         [Required]
-        [MaxLength(20)]
+        [MaxLength(9)]
+        [RegularExpression(Validation.AnneePattern, ErrorMessage = Validation.AnneeError)]
         public string Annee { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(5)]
-        public string Semestre { get; set; } = string.Empty; // S1 | S2
+        [RegularExpression(Validation.SemestrePattern, ErrorMessage = Validation.SemestreError)]
+        public string Semestre { get; set; } = string.Empty;
     }
 }

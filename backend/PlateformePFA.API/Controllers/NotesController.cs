@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Notes;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
@@ -26,17 +27,23 @@ namespace PlateformePFA.API.Controllers
 
         // GET all (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Note>>> GetNotes(
+        public async Task<ActionResult<PaginatedResult<Note>>> GetNotes(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Notes
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Notes.AsNoTracking().OrderByDescending(n => n.CreeLe);
+            var total = await query.CountAsync();
+            var items = await query
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Note>(items, total, page, pageSize);
         }
 
         [HttpGet("{id}")]

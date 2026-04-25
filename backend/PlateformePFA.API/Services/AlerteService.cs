@@ -18,90 +18,124 @@ namespace PlateformePFA.API.Services
             _logger  = logger;
         }
 
+        // Levels are ordered Faible < Moyen < Eleve < Critique. Escalations move
+        // up; a "lower" niveau on a re-check never downgrades an existing alert.
+        private static readonly Dictionary<string, int> NiveauRank = new()
+        {
+            ["Faible"]   = 0,
+            ["Moyen"]    = 1,
+            ["Eleve"]    = 2,
+            ["Critique"] = 3,
+        };
+
         // ── Note-based alert ──────────────────────────────────────
         public async Task CheckNoteAlertAsync(int etudiantId, int moduleId)
         {
-            // Get the latest note for this student × module
             var note = await _context.Notes
                 .Where(n => n.EtudiantId == etudiantId && n.ModuleId == moduleId)
                 .OrderByDescending(n => n.CreeLe)
                 .FirstOrDefaultAsync();
 
             if (note?.NoteFinal == null || note.NoteFinal >= SeuilNoteFaible)
-                return; // No alert needed
-
-            // Avoid duplicate: check if an unresolved "NoteFaible" alert already exists
-            // for the same student + module combination.
-            bool alreadyExists = await _context.Alertes.AnyAsync(a =>
-                a.EtudiantId == etudiantId
-                && a.Type == "NoteFaible"
-                && !a.Resolue
-                && a.Message != null && a.Message.Contains($"ModuleId={moduleId}"));
-
-            if (alreadyExists)
                 return;
 
             var niveau = note.NoteFinal < 5m ? "Critique"
                        : note.NoteFinal < 8m ? "Eleve"
                        : "Moyen";
 
-            var alerte = new Alerte
+            // Structured dedupe on (EtudiantId, ModuleId, Type) — replaces the
+            // previous fragile Message.Contains("ModuleId=N") match.
+            var existing = await _context.Alertes
+                .FirstOrDefaultAsync(a =>
+                    a.EtudiantId == etudiantId
+                    && a.ModuleId   == moduleId
+                    && a.Type       == "NoteFaible"
+                    && !a.Resolue);
+
+            var message = $"Note finale {note.NoteFinal:F2}/20 (seuil : {SeuilNoteFaible})";
+
+            if (existing != null)
+            {
+                // Escalate if the new niveau is higher than the existing one.
+                if (NiveauRank[niveau] > NiveauRank[existing.Niveau])
+                {
+                    existing.Niveau  = niveau;
+                    existing.Message = message;
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Alerte NoteFaible escaladée : EtudiantId={E}, ModuleId={M}, {Old}→{New}",
+                        etudiantId, moduleId, existing.Niveau, niveau);
+                }
+                return;
+            }
+
+            _context.Alertes.Add(new Alerte
             {
                 EtudiantId = etudiantId,
+                ModuleId   = moduleId,
                 Type       = "NoteFaible",
                 Niveau     = niveau,
-                Message    = $"Note finale {note.NoteFinal:F2}/20 sur ModuleId={moduleId} (seuil : {SeuilNoteFaible})",
+                Message    = message,
                 Resolue    = false,
-                CreeLe     = DateTime.UtcNow
-            };
-
-            _context.Alertes.Add(alerte);
+                CreeLe     = DateTime.UtcNow,
+            });
             await _context.SaveChangesAsync();
 
             _logger.LogInformation(
-                "Alerte auto-générée : NoteFaible — EtudiantId={EtudiantId}, ModuleId={ModuleId}, Note={Note}",
+                "Alerte créée : NoteFaible — EtudiantId={E}, ModuleId={M}, Note={N}",
                 etudiantId, moduleId, note.NoteFinal);
         }
 
         // ── Absence-based alert ───────────────────────────────────
         public async Task CheckAbsenceAlertAsync(int etudiantId)
         {
-            // Sum only unjustified hours
             int totalHeures = await _context.Absences
                 .Where(a => a.EtudiantId == etudiantId && !a.Justifiee)
                 .SumAsync(a => a.NombreHeures);
 
-            if (totalHeures <= SeuilAbsenceH)
-                return; // Below threshold
-
-            // Avoid duplicate: check if an unresolved "AbsenceExcessive" alert already exists
-            bool alreadyExists = await _context.Alertes.AnyAsync(a =>
-                a.EtudiantId == etudiantId
-                && a.Type == "AbsenceExcessive"
-                && !a.Resolue);
-
-            if (alreadyExists)
-                return;
+            if (totalHeures <= SeuilAbsenceH) return;
 
             var niveau = totalHeures > 40 ? "Critique"
                        : totalHeures > 30 ? "Eleve"
                        : "Moyen";
 
-            var alerte = new Alerte
+            var existing = await _context.Alertes
+                .FirstOrDefaultAsync(a =>
+                    a.EtudiantId == etudiantId
+                    && a.Type    == "AbsenceExcessive"
+                    && !a.Resolue);
+
+            var message = $"Total absences non justifiées : {totalHeures}h (seuil : {SeuilAbsenceH}h)";
+
+            if (existing != null)
+            {
+                if (NiveauRank[niveau] > NiveauRank[existing.Niveau])
+                {
+                    var old = existing.Niveau;
+                    existing.Niveau  = niveau;
+                    existing.Message = message;
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Alerte AbsenceExcessive escaladée : EtudiantId={E}, {Old}→{New}",
+                        etudiantId, old, niveau);
+                }
+                return;
+            }
+
+            _context.Alertes.Add(new Alerte
             {
                 EtudiantId = etudiantId,
+                ModuleId   = null,
                 Type       = "AbsenceExcessive",
                 Niveau     = niveau,
-                Message    = $"Total absences non justifiées : {totalHeures}h (seuil : {SeuilAbsenceH}h)",
+                Message    = message,
                 Resolue    = false,
-                CreeLe     = DateTime.UtcNow
-            };
-
-            _context.Alertes.Add(alerte);
+                CreeLe     = DateTime.UtcNow,
+            });
             await _context.SaveChangesAsync();
 
             _logger.LogInformation(
-                "Alerte auto-générée : AbsenceExcessive — EtudiantId={EtudiantId}, Heures={Heures}",
+                "Alerte créée : AbsenceExcessive — EtudiantId={E}, Heures={H}",
                 etudiantId, totalHeures);
         }
     }

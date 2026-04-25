@@ -123,21 +123,15 @@ def load_forecast_data() -> pd.DataFrame | None:
         import pyodbc
         conn = pyodbc.connect(conn_str)
 
+        # Window functions instead of two correlated subqueries per row.
+        # Old plan was O(N²) — for ~7 800 rows that meant ~15 600 inner scans of
+        # FaitNotes. Window AVG/COUNT runs once per partition.
         query = """
             SELECT
-                fn.NoteFinale                         AS note_finale,
-                fn.NbAbsences * 1.0 / 32.0            AS taux_absence,
-                (
-                    SELECT AVG(fn2.NoteFinale)
-                    FROM   FaitNotes fn2
-                    WHERE  fn2.EtudiantKey = fn.EtudiantKey
-                      AND  fn2.NoteFinale IS NOT NULL
-                )                                      AS moyenne_actuelle,
-                (
-                    SELECT COUNT(DISTINCT fn3.ModuleKey)
-                    FROM   FaitNotes fn3
-                    WHERE  fn3.EtudiantKey = fn.EtudiantKey
-                )                                      AS nb_modules
+                fn.NoteFinale                                                 AS note_finale,
+                fn.NbAbsences * 1.0 / 32.0                                    AS taux_absence,
+                AVG(CAST(fn.NoteFinale AS FLOAT))     OVER (PARTITION BY fn.EtudiantKey) AS moyenne_actuelle,
+                COUNT(DISTINCT fn.ModuleKey)          OVER (PARTITION BY fn.EtudiantKey) AS nb_modules
             FROM FaitNotes fn
             WHERE fn.NoteFinale IS NOT NULL
         """

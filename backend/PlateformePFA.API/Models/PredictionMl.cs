@@ -17,6 +17,9 @@ namespace PlateformePFA.API.Models
         [Column(TypeName = "decimal(5,4)")]
         public decimal? ScoreRisque { get; set; }  // probabilité 0.0–1.0
 
+        [MaxLength(20)]
+        public string? Niveau { get; set; } // Faible | Moyen | Eleve | Critique
+
         public int? Cluster { get; set; }
 
         [Column(TypeName = "decimal(5,2)")]
@@ -28,6 +31,12 @@ namespace PlateformePFA.API.Models
         [Required]
         [MaxLength(9)]
         public string Annee { get; set; } = string.Empty;
+
+        // Provenance: distinguishes a real "low score" prediction from a stub
+        // written when the ML service was unreachable or input was insufficient.
+        [Required]
+        [MaxLength(30)]
+        public string Status { get; set; } = "Ok"; // Ok | MlUnavailable | InsufficientData
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 

@@ -97,19 +97,37 @@ CREATE TABLE Absences (
 GO
 
 -- ─── Alertes ─────────────────────────────────────────────────
+-- ModuleId is nullable: AbsenceExcessive aggregates all modules, while
+-- NoteFaible is per-module. Storing it structured (instead of stuffing
+-- "ModuleId=N" into Message) lets AlerteService dedupe reliably.
 IF OBJECT_ID('dbo.Alertes', 'U') IS NULL
 CREATE TABLE Alertes (
-    Id         INT IDENTITY(1,1) PRIMARY KEY,
-    EtudiantId INT          NOT NULL REFERENCES Etudiants(Id),
-    Type       NVARCHAR(50) NOT NULL
-               CHECK (Type IN ('RisqueEchec', 'AbsenceExcessive', 'NoteFaible', 'Abandon')),
-    Niveau     NVARCHAR(20) NOT NULL
-               CHECK (Niveau IN ('Faible', 'Moyen', 'Eleve', 'Critique')),
-    Message    NVARCHAR(500),
-    Resolue    BIT          NOT NULL DEFAULT 0,
-    CreeLe     DATETIME2    NOT NULL DEFAULT GETUTCDATE(),
-    ResolueeLe DATETIME2
+    Id            INT IDENTITY(1,1) PRIMARY KEY,
+    EtudiantId    INT          NOT NULL REFERENCES Etudiants(Id),
+    ModuleId      INT          NULL     REFERENCES Modules(Id),
+    Type          NVARCHAR(50) NOT NULL
+                  CHECK (Type IN ('RisqueEchec', 'AbsenceExcessive', 'NoteFaible', 'Abandon')),
+    Niveau        NVARCHAR(20) NOT NULL
+                  CHECK (Niveau IN ('Faible', 'Moyen', 'Eleve', 'Critique')),
+    Message       NVARCHAR(500),
+    Resolue       BIT          NOT NULL DEFAULT 0,
+    CreeLe        DATETIME2    NOT NULL DEFAULT GETUTCDATE(),
+    ResolueeLe    DATETIME2,
+    ResolueeParId INT          NULL     REFERENCES Utilisateurs(Id)
 );
+GO
+
+-- Idempotent migration for existing databases (adds new columns if missing).
+IF OBJECT_ID('dbo.Alertes', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'ModuleId')
+    ALTER TABLE Alertes ADD ModuleId INT NULL REFERENCES Modules(Id);
+GO
+
+IF OBJECT_ID('dbo.Alertes', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'ResolueeParId')
+    ALTER TABLE Alertes ADD ResolueeParId INT NULL REFERENCES Utilisateurs(Id);
 GO
 
 -- ─── Refresh Tokens ──────────────────────────────────────────
@@ -132,12 +150,27 @@ CREATE TABLE Predictions (
     TypeModele  NVARCHAR(50) NOT NULL
                 CHECK (TypeModele IN ('RisqueEchec', 'Regression', 'Clustering')),
     ScoreRisque DECIMAL(5,4),
+    Niveau      NVARCHAR(20) NULL,    -- mirrors Alertes.Niveau labels
     Cluster     INT,
     NotePredite DECIMAL(5,2),
     Confiance   DECIMAL(5,4),
     Annee       NVARCHAR(9)  NOT NULL,
+    Status      NVARCHAR(30) NOT NULL DEFAULT 'Ok',  -- Ok | MlUnavailable | InsufficientData
     CreeLe      DATETIME2    NOT NULL DEFAULT GETUTCDATE()
 );
+GO
+
+-- Idempotent migration for existing DBs
+IF OBJECT_ID('dbo.Predictions', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID('dbo.Predictions') AND name = 'Niveau')
+    ALTER TABLE Predictions ADD Niveau NVARCHAR(20) NULL;
+GO
+
+IF OBJECT_ID('dbo.Predictions', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID('dbo.Predictions') AND name = 'Status')
+    ALTER TABLE Predictions ADD Status NVARCHAR(30) NOT NULL DEFAULT 'Ok';
 GO
 
 -- ─── Performance indexes ─────────────────────────────────────

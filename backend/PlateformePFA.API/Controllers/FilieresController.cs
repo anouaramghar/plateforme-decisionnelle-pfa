@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Filieres;
 using PlateformePFA.API.Models;
 
@@ -21,16 +22,22 @@ namespace PlateformePFA.API.Controllers
 
         // 1. READ ALL (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Filiere>>> GetFilieres(
+        public async Task<ActionResult<PaginatedResult<Filiere>>> GetFilieres(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Filieres
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Filieres.AsNoTracking().OrderBy(f => f.Id);
+            var total = await query.CountAsync();
+            var items = await query
                 .Include(f => f.Responsable)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Filiere>(items, total, page, pageSize);
         }
 
         // 2. READ ONE
@@ -106,6 +113,20 @@ namespace PlateformePFA.API.Controllers
             if (filiere == null)
             {
                 return NotFound(new { message = "Filière introuvable." });
+            }
+
+            // FK guard: deletes are Restrict at the EF model level. Surface a useful
+            // 409 instead of letting the SQL FK violation bubble up as a 500.
+            var nbEtudiants = await _context.Etudiants.CountAsync(e => e.FiliereId == id);
+            var nbModules   = await _context.Modules.CountAsync(m => m.FiliereId == id);
+            if (nbEtudiants > 0 || nbModules > 0)
+            {
+                return Conflict(new
+                {
+                    message = "Filière référencée — déplacez d'abord les étudiants/modules.",
+                    etudiants = nbEtudiants,
+                    modules   = nbModules,
+                });
             }
 
             _context.Filieres.Remove(filiere);

@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Alertes;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -23,23 +25,26 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/alertes?resolue=false&page=1&pageSize=20
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertes(
+        public async Task<ActionResult<PaginatedResult<Alerte>>> GetAlertes(
             [FromQuery] bool? resolue = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var query = _context.Alertes.Include(a => a.Etudiant).AsQueryable();
+            var query = _context.Alertes.AsNoTracking().AsQueryable();
+            if (resolue.HasValue) query = query.Where(a => a.Resolue == resolue.Value);
 
-            if (resolue.HasValue)
-                query = query.Where(a => a.Resolue == resolue.Value);
-
-            return await query
-                .OrderByDescending(a => a.CreeLe)
+            var ordered = query.OrderByDescending(a => a.CreeLe);
+            var total   = await ordered.CountAsync();
+            var items   = await ordered
+                .Include(a => a.Etudiant)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Alerte>(items, total, page, pageSize);
         }
 
         // GET: api/alertes/5
@@ -97,12 +102,19 @@ namespace PlateformePFA.API.Controllers
             var alerte = await _context.Alertes.FindAsync(id);
             if (alerte == null) return NotFound(new { message = "Alerte introuvable." });
 
-            alerte.Resolue    = true;
-            alerte.ResolueeLe = DateTime.UtcNow;
+            // Audit: capture which Utilisateur clicked the button.
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            int? resolueeParId = int.TryParse(userIdClaim, out var uid) ? uid : null;
+
+            alerte.Resolue       = true;
+            alerte.ResolueeLe    = DateTime.UtcNow;
+            alerte.ResolueeParId = resolueeParId;
 
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Alerte résolue : Id={Id}, EtudiantId={EtudiantId}", alerte.Id, alerte.EtudiantId);
+            _logger.LogInformation(
+                "Alerte résolue : Id={Id}, EtudiantId={EtudiantId}, ResolueeParId={UserId}",
+                alerte.Id, alerte.EtudiantId, resolueeParId);
             return NoContent();
         }
 

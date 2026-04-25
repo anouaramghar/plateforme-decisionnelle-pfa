@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
@@ -22,21 +23,31 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/Utilisateurs?page=1&pageSize=20
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Utilisateur>>> GetUtilisateurs(
+        public async Task<ActionResult<PaginatedResult<Utilisateur>>> GetUtilisateurs(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Utilisateurs
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Utilisateurs.AsNoTracking().OrderBy(u => u.Id);
+            var total = await query.CountAsync();
+            var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Utilisateur>(items, total, page, pageSize);
         }
 
         // POST: api/Utilisateurs
         [HttpPost]
         public async Task<ActionResult<Utilisateur>> PostUtilisateur(PlateformePFA.API.DTOs.Auth.RegisterRequestDto dto)
         {
+            // Surface a 409 instead of letting SQL UNIQUE violation bubble up as a 500.
+            if (await _context.Utilisateurs.AnyAsync(u => u.Email == dto.Email))
+                return Conflict(new { message = $"Email '{dto.Email}' déjà utilisé." });
+
             var utilisateur = new Utilisateur
             {
                 Nom = dto.Nom,
@@ -45,7 +56,7 @@ namespace PlateformePFA.API.Controllers
                 Role = dto.Role,
                 MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(dto.MotDePasse)
             };
-            
+
             _context.Utilisateurs.Add(utilisateur);
             await _context.SaveChangesAsync();
 

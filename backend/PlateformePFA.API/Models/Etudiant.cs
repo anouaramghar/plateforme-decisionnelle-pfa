@@ -26,11 +26,11 @@ namespace PlateformePFA.API.Models
 
         [Required]
         [MaxLength(10)]
-        public string Niveau { get; set; } = string.Empty; // L1 L2 L3 M1 M2
+        public string Niveau { get; set; } = string.Empty; // CP1, CP2, CI1, CI2, CI3
 
         [Required]
         [MaxLength(9)]
-        public string Annee { get; set; } = string.Empty; // ex: 2025/2026
+        public string Annee { get; set; } = string.Empty; // ex: 2025/2026 — see Validation.AnneePattern
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 

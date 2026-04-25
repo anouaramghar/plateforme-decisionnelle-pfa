@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Absences;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
 
@@ -26,17 +27,23 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/absences (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Absence>>> GetAbsences(
+        public async Task<ActionResult<PaginatedResult<Absence>>> GetAbsences(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Absences
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Absences.AsNoTracking().OrderByDescending(a => a.DateAbsence);
+            var total = await query.CountAsync();
+            var items = await query
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            return new PaginatedResult<Absence>(items, total, page, pageSize);
         }
 
         // GET: api/absences/5

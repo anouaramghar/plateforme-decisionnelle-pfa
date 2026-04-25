@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Etudiants;
 using PlateformePFA.API.Models;
 
@@ -19,38 +20,68 @@ namespace PlateformePFA.API.Controllers
             _context = context;
         }
 
+        // Project Etudiant + Filiere into a flat DTO once. Used by both list and detail.
+        private static readonly System.Linq.Expressions.Expression<Func<Etudiant, EtudiantDto>>
+            ToDto = e => new EtudiantDto
+            {
+                Id              = e.Id,
+                Matricule       = e.Matricule,
+                Nom             = e.Nom,
+                Prenom          = e.Prenom,
+                Email           = e.Email,
+                FiliereId       = e.FiliereId,
+                FiliereCode     = e.Filiere != null ? e.Filiere.Code     : string.Empty,
+                FiliereIntitule = e.Filiere != null ? e.Filiere.Intitule : string.Empty,
+                Niveau          = e.Niveau,
+                Annee           = e.Annee,
+            };
+
         // 1. GET ALL (paginated)
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Etudiant>>> GetEtudiants(
+        public async Task<ActionResult<PaginatedResult<EtudiantDto>>> GetEtudiants(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            pageSize = Math.Min(pageSize, 100);
-            return await _context.Etudiants
-                .Include(e => e.Filiere)
+            page     = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var query = _context.Etudiants.AsNoTracking().OrderBy(e => e.Id);
+            var total = await query.CountAsync();
+            var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(ToDto)
                 .ToListAsync();
+
+            return new PaginatedResult<EtudiantDto>(items, total, page, pageSize);
         }
 
         // 2. GET ONE
         [HttpGet("{id}")]
-        public async Task<ActionResult<Etudiant>> GetEtudiant(int id)
+        public async Task<ActionResult<EtudiantDto>> GetEtudiant(int id)
         {
-            var etudiant = await _context.Etudiants
-                .Include(e => e.Filiere)
-                .FirstOrDefaultAsync(e => e.Id == id);
+            var dto = await _context.Etudiants
+                .AsNoTracking()
+                .Where(e => e.Id == id)
+                .Select(ToDto)
+                .FirstOrDefaultAsync();
 
-            if (etudiant == null) return NotFound();
-
-            return etudiant;
+            if (dto == null) return NotFound();
+            return dto;
         }
 
         // 3. CREATE (POST)
         [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
-        public async Task<ActionResult<Etudiant>> PostEtudiant(CreateEtudiantDto dto)
+        public async Task<ActionResult<EtudiantDto>> PostEtudiant(CreateEtudiantDto dto)
         {
+            // Reject up front rather than waiting for SQL to throw a UNIQUE violation.
+            if (await _context.Etudiants.AnyAsync(e => e.Matricule == dto.Matricule))
+                return Conflict(new { message = $"Matricule '{dto.Matricule}' déjà utilisé." });
+
+            if (!await _context.Filieres.AnyAsync(f => f.Id == dto.FiliereId))
+                return BadRequest(new { message = $"FiliereId {dto.FiliereId} introuvable." });
+
             var etudiant = new Etudiant
             {
                 Matricule = dto.Matricule,
@@ -66,7 +97,14 @@ namespace PlateformePFA.API.Controllers
             _context.Etudiants.Add(etudiant);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetEtudiant), new { id = etudiant.Id }, etudiant);
+            // Reload with the joined Filiere so the response is shape-consistent with GET.
+            var created = await _context.Etudiants
+                .AsNoTracking()
+                .Where(e => e.Id == etudiant.Id)
+                .Select(ToDto)
+                .FirstAsync();
+
+            return CreatedAtAction(nameof(GetEtudiant), new { id = etudiant.Id }, created);
         }
 
         // 4. UPDATE (PUT)
