@@ -21,7 +21,9 @@ services:
     restart: unless-stopped
     networks:
       - pfa_internal_db
-      - pfa_public          # required for host port binding (127.0.0.1:1433)
+      # pfa_public intentionally omitted: Docker host-port binding (127.0.0.1:1433)
+      # works at the host level and does NOT require a shared Docker network.
+      # Keeping db off pfa_public means nginx and frontend cannot reach SQL Server.
 
   # 2. Backend ASP.NET Core 8
   backend:
@@ -68,6 +70,11 @@ services:
       - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
       - MODEL_DIR=/app/saved_models
       - DW_CONNECTION_STRING=DRIVER={ODBC Driver 18 for SQL Server};SERVER=db;DATABASE=PFA_DW;UID=pfa_app;PWD=${APP_DB_PASSWORD};TrustServerCertificate=yes;
+    volumes:
+      # Persist trained .joblib models across container restarts and re-deploys.
+      # Without this, every restart forces a full retrain from DW data (or falls
+      # back to synthetic data if DW is empty).
+      - ml_models_data:/app/saved_models
     expose:
       - "8000"
     healthcheck:
@@ -126,3 +133,4 @@ networks:
 
 volumes:
   sqlserver_data:
+  ml_models_data:   # persists ML .joblib files across ml-service restarts
