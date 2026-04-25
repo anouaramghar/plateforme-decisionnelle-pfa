@@ -29,6 +29,10 @@ services:
   backend:
     build:
       context: ./backend
+    # Expose backend directly so Swagger UI is reachable at http://localhost:5135/swagger
+    # during development. Remove this ports block before production deployment.
+    ports:
+      - "127.0.0.1:5135:8080"
     environment:
       # Backend connects as least-privilege pfa_app — NOT as sa.
       - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=pfa_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True;
