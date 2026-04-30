@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { AppShell } from './layout/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Students from './pages/Students'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
+import Predictions from './pages/Predictions'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
@@ -16,11 +18,22 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
-        <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <AppShell />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="students" element={<Students />} />
+          <Route path="alerts" element={<Alerts />} />
+          <Route path="predictions" element={<Predictions />} />
+          <Route path="reports" element={<Reports />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )
