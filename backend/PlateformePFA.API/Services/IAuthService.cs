@@ -6,5 +6,6 @@ namespace PlateformePFA.API.Services
     {
         Task<AuthResponseDto?> LoginAsync(LoginRequestDto request);
         Task<AuthResponseDto?> RefreshAsync(string refreshToken);
+        Task<bool> RevokeAsync(string refreshToken);
     }
 }

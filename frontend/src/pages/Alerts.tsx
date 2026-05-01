@@ -1,34 +1,79 @@
 import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
 import { FilterChip } from '../components/ui/FilterChip'
-import { ALERTES, ALERT_TYPES, type Alerte } from '../data/mock'
+import { api } from '../services/api'
+import { ALERT_TYPES } from '../data/mock'
+
+// ── Backend types ────────────────────────────────────────────
+interface BackendEtudiant {
+  id: number
+  nom: string
+  prenom: string
+  filiere: string
+  niveau: string
+}
+
+interface BackendAlerte {
+  id: number
+  etudiantId: number
+  moduleId: number | null
+  type: string
+  niveau: string
+  message: string
+  resolue: boolean
+  creeLe: string
+  etudiant: BackendEtudiant | null
+}
+
+interface PaginatedResult<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
 
 type Tab = 'active' | 'resolu' | 'all'
-type AlertType = Alerte['type']
+type AlertType = 'NoteFaible' | 'AbsenceExcessive' | 'RisqueEleve'
 type TypeFilter = AlertType | 'Tous'
 
 const FILTERABLE_TYPES: AlertType[] = ['NoteFaible', 'AbsenceExcessive', 'RisqueEleve']
 
+async function fetchAlertes(): Promise<BackendAlerte[]> {
+  // Fetch up to 200 most recent alerts in a single request — enough for the UI.
+  const res = await api.get<PaginatedResult<BackendAlerte>>('/alertes?pageSize=200')
+  return res.data.items
+}
+
 export default function Alerts() {
   const [tab, setTab] = useState<Tab>('active')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('Tous')
-  const all = ALERTES
+  const queryClient = useQueryClient()
+
+  const { data: all = [], isLoading, isError } = useQuery({
+    queryKey: ['alertes'],
+    queryFn: fetchAlertes,
+    refetchInterval: 30_000,
+  })
+
+  const resolveMutation = useMutation({
+    mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+  })
 
   const filtered = all.filter(a => {
-    if (tab === 'active' && a.statut !== 'active') return false
-    if (tab === 'resolu' && a.statut !== 'resolue') return false
+    if (tab === 'active' && a.resolue) return false
+    if (tab === 'resolu' && !a.resolue) return false
     if (typeFilter !== 'Tous' && a.type !== typeFilter) return false
     return true
   })
 
   const counts: Record<AlertType, number> = {
-    NoteFaible:        all.filter(a => a.type === 'NoteFaible' && a.statut === 'active').length,
-    AbsenceExcessive:  all.filter(a => a.type === 'AbsenceExcessive' && a.statut === 'active').length,
-    RisqueEleve:       all.filter(a => a.type === 'RisqueEleve' && a.statut === 'active').length,
-    ModuleNonValide:   0,
-    RetardRecurrent:   0,
+    NoteFaible:       all.filter(a => a.type === 'NoteFaible'       && !a.resolue).length,
+    AbsenceExcessive: all.filter(a => a.type === 'AbsenceExcessive' && !a.resolue).length,
+    RisqueEleve:      all.filter(a => a.type === 'RisqueEleve'      && !a.resolue).length,
   }
 
   const summary: { k: AlertType; label: string; n: number; tone: PillTone; desc: string }[] = [
@@ -94,9 +139,9 @@ export default function Alerts() {
         <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
           {(
             [
-              { id: 'active', label: 'Actives', n: all.filter(a => a.statut === 'active').length },
-              { id: 'resolu', label: 'Résolues', n: all.filter(a => a.statut === 'resolue').length },
-              { id: 'all',    label: 'Toutes',  n: all.length },
+              { id: 'active', label: 'Actives',  n: all.filter(a => !a.resolue).length },
+              { id: 'resolu', label: 'Résolues', n: all.filter(a => a.resolue).length },
+              { id: 'all',    label: 'Toutes',   n: all.length },
             ] as { id: Tab; label: string; n: number }[]
           ).map(t => (
             <button
@@ -118,7 +163,7 @@ export default function Alerts() {
           {typeFilter !== 'Tous' && FILTERABLE_TYPES.includes(typeFilter as AlertType) && (
             <FilterChip
               label="Type"
-              value={ALERT_TYPES[typeFilter as AlertType].label}
+              value={ALERT_TYPES[typeFilter as AlertType]?.label ?? typeFilter}
               onRemove={() => setTypeFilter('Tous')}
             />
           )}
@@ -130,28 +175,59 @@ export default function Alerts() {
       </div>
 
       <div className="card overflow-hidden">
-        {filtered.length === 0 && (
+        {isLoading && (
+          <div className="px-4 py-8 text-center cap" style={{ color: 'var(--text-3)' }}>
+            Chargement des alertes…
+          </div>
+        )}
+        {isError && (
+          <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>
+            Impossible de charger les alertes. Vérifiez la connexion au serveur.
+          </div>
+        )}
+        {!isLoading && !isError && filtered.length === 0 && (
           <Empty
             title="Aucune alerte"
             hint="Les alertes générées par le système apparaîtront ici."
           />
         )}
-        {filtered.slice(0, 30).map((a, i) => (
-          <AlertRow key={a.id} alert={a} divider={i < filtered.length - 1} />
+        {!isLoading && !isError && filtered.slice(0, 30).map((a, i) => (
+          <AlertRow
+            key={a.id}
+            alert={a}
+            divider={i < Math.min(filtered.length, 30) - 1}
+            onResolve={() => resolveMutation.mutate(a.id)}
+            resolving={resolveMutation.isPending && resolveMutation.variables === a.id}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function AlertRow({ alert, divider }: { alert: Alerte; divider: boolean }) {
-  const meta = ALERT_TYPES[alert.type]
+function AlertRow({
+  alert,
+  divider,
+  onResolve,
+  resolving,
+}: {
+  alert: BackendAlerte
+  divider: boolean
+  onResolve: () => void
+  resolving: boolean
+}) {
+  const meta = ALERT_TYPES[alert.type as AlertType] ?? { label: alert.type, severity: '', pill: 'neutral' as PillTone }
   const iconName: 'brain' | 'clock' | 'alert' =
     alert.type === 'RisqueEleve'
       ? 'brain'
       : alert.type === 'AbsenceExcessive'
       ? 'clock'
       : 'alert'
+
+  const etudiantName = alert.etudiant
+    ? `${alert.etudiant.prenom} ${alert.etudiant.nom}`
+    : `Étudiant #${alert.etudiantId}`
+  const filiere = alert.etudiant?.filiere ?? '—'
 
   return (
     <div
@@ -179,10 +255,10 @@ function AlertRow({ alert, divider }: { alert: Alerte; divider: boolean }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <Pill tone={meta.pill}>{meta.label}</Pill>
-          <span className="text-[12.5px] font-medium">{alert.etudiant}</span>
-          <span className="cap font-mono">· {alert.filiere}</span>
-          {alert.statut === 'active' && (
+          <Pill tone={meta.pill as PillTone}>{meta.label}</Pill>
+          <span className="text-[12.5px] font-medium">{etudiantName}</span>
+          <span className="cap font-mono">· {filiere}</span>
+          {!alert.resolue && (
             <span className="pill-dot live-dot ml-1" style={{ background: 'var(--bad)' }} />
           )}
         </div>
@@ -195,18 +271,22 @@ function AlertRow({ alert, divider }: { alert: Alerte; divider: boolean }) {
         style={{ color: 'var(--text-3)', minWidth: 110 }}
       >
         <div>
-          {new Date(alert.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+          {new Date(alert.creeLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
         </div>
         <div className="cap">
-          {new Date(alert.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          {new Date(alert.creeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
-      {alert.statut === 'active' ? (
+      {!alert.resolue ? (
         <div className="flex items-center gap-1.5">
           <button className="btn btn-sm">Voir</button>
-          <button className="btn btn-sm btn-primary">
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={onResolve}
+            disabled={resolving}
+          >
             <Icon name="check" size={12} strokeWidth={2.4} />
-            Résoudre
+            {resolving ? '…' : 'Résoudre'}
           </button>
         </div>
       ) : (

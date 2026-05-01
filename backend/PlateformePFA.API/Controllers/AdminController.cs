@@ -40,8 +40,10 @@ public class AdminController : ControllerBase
             await using var conn = new SqlConnection(connStr);
             await conn.OpenAsync(ct);
 
-            // Change to master so cross-database references (PFA_DB.dbo.* and PFA_DW.dbo.*) resolve.
-            await using var cmd = new SqlCommand("USE master", conn);
+            // The ETL script uses cross-database references (PFA_DB.dbo.* → PFA_DW.dbo.*).
+            // pfa_app has read/write access on both databases so no USE master is needed —
+            // USE master would fail because pfa_app has no user in master.
+            await using var cmd = new SqlCommand("USE PFA_DW", conn);
             await cmd.ExecuteNonQueryAsync(ct);
 
             var etlSql = await System.IO.File.ReadAllTextAsync(

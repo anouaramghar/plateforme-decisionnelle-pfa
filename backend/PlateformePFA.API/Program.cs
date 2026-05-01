@@ -51,6 +51,16 @@ if (string.IsNullOrWhiteSpace(jwtIssuer) || string.IsNullOrWhiteSpace(jwtAudienc
     throw new InvalidOperationException("JWT issuer and audience must be set.");
 }
 
+// Fail-fast: ML_INTERNAL_TOKEN must be set and not a placeholder.
+// Without this, every prediction call silently returns a 401 from the ML service.
+var mlToken = builder.Configuration["ML_INTERNAL_TOKEN"];
+if (string.IsNullOrWhiteSpace(mlToken) || mlToken.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "ML_INTERNAL_TOKEN is missing or still set to the placeholder value. " +
+        "Generate a fresh value with: openssl rand -hex 32");
+}
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;

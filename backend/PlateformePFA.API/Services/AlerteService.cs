@@ -36,8 +36,27 @@ namespace PlateformePFA.API.Services
                 .OrderByDescending(n => n.CreeLe)
                 .FirstOrDefaultAsync();
 
-            if (note?.NoteFinal == null || note.NoteFinal >= SeuilNoteFaible)
+            if (note?.NoteFinal == null) return;
+
+            // If grade is now above threshold, auto-resolve any open NoteFaible alert.
+            if (note.NoteFinal >= SeuilNoteFaible)
+            {
+                var toResolve = await _context.Alertes
+                    .FirstOrDefaultAsync(a =>
+                        a.EtudiantId == etudiantId
+                        && a.ModuleId == moduleId
+                        && a.Type    == "NoteFaible"
+                        && !a.Resolue);
+                if (toResolve != null)
+                {
+                    toResolve.Resolue = true;
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Alerte NoteFaible résolue automatiquement : EtudiantId={E}, ModuleId={M}",
+                        etudiantId, moduleId);
+                }
                 return;
+            }
 
             var niveau = note.NoteFinal < 5m ? "Critique"
                        : note.NoteFinal < 8m ? "Eleve"

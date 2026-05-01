@@ -165,8 +165,9 @@ export default function Students() {
           style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}
         >
           <div className="cap">
-            Affichage {(page - 1) * PAGE + 1}–{Math.min(page * PAGE, filtered.length)} sur{' '}
-            {filtered.length}
+            {filtered.length === 0
+              ? 'Aucun résultat'
+              : `Affichage ${(page - 1) * PAGE + 1}–${Math.min(page * PAGE, filtered.length)} sur ${filtered.length}`}
           </div>
           <div className="flex items-center gap-1">
             <button

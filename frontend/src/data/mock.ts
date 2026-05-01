@@ -157,11 +157,16 @@ function generateEtudiants(): Etudiant[] {
 export const ETUDIANTS = generateEtudiants()
 
 export function genNotesFor(etu: Etudiant): NoteRow[] {
+  // Per-student seeded RNG so notes are deterministic regardless of which
+  // drawers were opened before this one (avoids shared-state order dependency).
+  const localRnd = mulberry32((parseInt(etu.id, 10) || 1) * 0x9e3779)
+  const localRandFloat = (a: number, b: number) => parseFloat((a + localRnd() * (b - a)).toFixed(2))
+
   const mods = MODULES_BY_FIL[etu.filiere] ?? MODULES_BY_FIL.GI
   return mods.map(m => {
-    const cc = parseFloat((etu.moyenne + randFloat(-3, 3)).toFixed(2))
-    const tp = parseFloat((etu.moyenne + randFloat(-2, 3)).toFixed(2))
-    const exam = parseFloat((etu.moyenne + randFloat(-3.5, 2.5)).toFixed(2))
+    const cc = parseFloat((etu.moyenne + localRandFloat(-3, 3)).toFixed(2))
+    const tp = parseFloat((etu.moyenne + localRandFloat(-2, 3)).toFixed(2))
+    const exam = parseFloat((etu.moyenne + localRandFloat(-3.5, 2.5)).toFixed(2))
     const finale = parseFloat((cc * 0.3 + tp * 0.2 + exam * 0.5).toFixed(2))
     return {
       ...m,

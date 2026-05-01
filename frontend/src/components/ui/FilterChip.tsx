@@ -13,7 +13,7 @@ export function FilterChip({ label, value, onRemove }: FilterChipProps) {
       <span style={{ fontWeight: 500 }}>{value}</span>
       <button
         onClick={onRemove}
-        className="ml-1 -mr-0.5 w-4 h-4 rounded flex items-center justify-center hover:bg-stone-200"
+        className="ml-1 -mr-0.5 w-4 h-4 rounded flex items-center justify-center hover:bg-[var(--surface-3)]"
         style={{ color: 'var(--text-3)' }}
         aria-label={`Remove ${label}`}
       >

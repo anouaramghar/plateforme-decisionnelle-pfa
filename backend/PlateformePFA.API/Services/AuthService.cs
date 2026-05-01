@@ -120,6 +120,21 @@ namespace PlateformePFA.API.Services
             );
         }
 
+        // ── Revoke (logout) ───────────────────────────────────────
+        public async Task<bool> RevokeAsync(string refreshToken)
+        {
+            var stored = await _context.RefreshTokens
+                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+
+            if (stored == null || stored.RevokedAt != null) return false;
+
+            stored.RevokedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("[AuthService] Refresh token révoqué — userId={UserId}", stored.UtilisateurId);
+            return true;
+        }
+
         private async Task<RefreshToken> CreateRefreshTokenAsync(int utilisateurId)
         {
             // Generate a cryptographically secure random token

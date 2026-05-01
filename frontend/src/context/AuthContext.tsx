@@ -4,6 +4,7 @@ import {
   api,
   setAuthToken,
   setRefreshToken,
+  getRefreshToken,
   setOnUnauthorized,
   setOnTokenRefreshed,
 } from '../services/api'
@@ -39,6 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token])
 
   const logout = useCallback(() => {
+    const rt = getRefreshToken()
+    if (rt) {
+      // Best-effort server-side revocation — don't block the UI on its result.
+      api.post('/auth/logout', { refreshToken: rt }).catch(() => {})
+    }
     setToken(null)
     setRefresh(null)
     setUser(null)

@@ -36,7 +36,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
       <div className="flex items-center gap-3 min-w-0">
         <div className="flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-3)' }}>
           {breadcrumb.map((c, i) => (
-            <span key={i} className="flex items-center gap-2">
+            <span key={c} className="flex items-center gap-2">
               <span
                 className={i === breadcrumb.length - 1 ? 'font-medium' : ''}
                 style={{ color: i === breadcrumb.length - 1 ? 'var(--text)' : 'var(--text-3)' }}

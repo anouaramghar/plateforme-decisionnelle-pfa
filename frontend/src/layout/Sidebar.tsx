@@ -151,7 +151,13 @@ export function Sidebar() {
 
         {!sidebarCollapsed && <div className="nav-section-title">Système</div>}
         {SECONDARY.map(it => (
-          <div key={it.to} className="nav-item" title={sidebarCollapsed ? it.label : undefined}>
+          <div
+            key={it.to}
+            className="nav-item"
+            title={sidebarCollapsed ? it.label : 'Bientôt disponible'}
+            aria-disabled="true"
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          >
             <Icon name={it.icon} size={15} />
             {!sidebarCollapsed && <span className="flex-1 truncate">{it.label}</span>}
           </div>

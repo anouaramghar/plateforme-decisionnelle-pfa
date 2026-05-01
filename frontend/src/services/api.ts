@@ -17,6 +17,10 @@ export function setRefreshToken(token: string | null): void {
   refreshToken = token
 }
 
+export function getRefreshToken(): string | null {
+  return refreshToken
+}
+
 export function setOnUnauthorized(handler: (() => void) | null): void {
   onUnauthorized = handler
 }

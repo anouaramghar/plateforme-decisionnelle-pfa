@@ -40,6 +40,14 @@ namespace PlateformePFA.API.Controllers
             return new PaginatedResult<Utilisateur>(items, total, page, pageSize);
         }
 
+        // GET: api/Utilisateurs/5
+        [HttpGet("{id:int}")]
+        public async Task<ActionResult<Utilisateur>> GetUtilisateur(int id)
+        {
+            var u = await _context.Utilisateurs.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+            return u is null ? NotFound() : Ok(u);
+        }
+
         // POST: api/Utilisateurs
         [HttpPost]
         public async Task<ActionResult<Utilisateur>> PostUtilisateur(PlateformePFA.API.DTOs.Auth.RegisterRequestDto dto)
@@ -62,7 +70,7 @@ namespace PlateformePFA.API.Controllers
 
             _logger.LogInformation("New user created — Email: {Email}, Role: {Role}", utilisateur.Email, utilisateur.Role);
 
-            return CreatedAtAction(nameof(GetUtilisateurs), new { id = utilisateur.Id }, utilisateur);
+            return CreatedAtAction(nameof(GetUtilisateur), new { id = utilisateur.Id }, utilisateur);
         }
     }
 }

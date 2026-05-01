@@ -90,7 +90,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       onClose()
                     }
                   }}
-                  className="flex items-center gap-2.5 px-4 py-2 mx-1.5 rounded-md cursor-pointer hover:bg-stone-100"
+                  className="flex items-center gap-2.5 px-4 py-2 mx-1.5 rounded-md cursor-pointer hover:bg-[var(--surface-2)]"
                   style={{ transition: 'background .1s' }}
                 >
                   <Icon name={it.icon} size={14} style={{ color: 'var(--text-3)' }} />

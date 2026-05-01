@@ -45,6 +45,17 @@ namespace PlateformePFA.API.Controllers
 
             return Ok(result);
         }
+
+        [AllowAnonymous]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                return BadRequest(new { message = "Refresh token requis." });
+
+            await _authService.RevokeAsync(request.RefreshToken);
+            return NoContent();
+        }
     }
 
     public class RefreshRequest

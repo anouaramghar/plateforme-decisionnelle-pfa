@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
 import { Field } from '../components/ui/Field'
@@ -25,6 +25,7 @@ const TEMPLATES: Template[] = [
 
 export default function Reports() {
   const [picked, setPicked] = useState('perf-globale')
+  const previewChartData = useMemo(() => notesByFiliere(), [])
 
   return (
     <div className="space-y-4">
@@ -234,7 +235,7 @@ export default function Reports() {
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >
                 <div className="text-[11px] font-semibold mb-2">Moyennes par filière</div>
-                <ChartBars data={notesByFiliere()} height={160} />
+                <ChartBars data={previewChartData} height={160} />
               </div>
 
               <div
