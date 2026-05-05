@@ -8,11 +8,20 @@ Usage:
     python models/train_risk.py
 """
 
+import json
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.metrics import (
+    classification_report,
+    roc_auc_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
@@ -20,7 +29,10 @@ import joblib
 
 RANDOM_SEED = 42
 N_SAMPLES = 1000
-MODEL_PATH = Path(__file__).parent.parent / "saved_models" / "risk_model.joblib"
+MODEL_VERSION = "1.4.0"
+
+ML_MODELS_DIR = Path(__file__).parent.parent / "saved_models"
+MODEL_PATH = ML_MODELS_DIR / "risk_model.joblib"
 
 
 # ─── 1. Generate synthetic student data ───────────────────────────────────────
@@ -62,9 +74,13 @@ def generate_data(n: int, seed: int) -> pd.DataFrame:
 
 # ─── 2. Build and train the model ─────────────────────────────────────────────
 
-def train(df: pd.DataFrame) -> Pipeline:
+def train(df: pd.DataFrame) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
     """
     Wraps a StandardScaler + XGBoostClassifier in a sklearn Pipeline.
+
+    Returns:
+        (pipeline, X_test, y_test) — the held-out evaluation set is returned
+        so callers can persist it for on-the-fly metric recomputation.
 
     Why a Pipeline?
       A Pipeline chains preprocessing + model into one object.
@@ -105,15 +121,74 @@ def train(df: pd.DataFrame) -> Pipeline:
     print(f"ROC-AUC: {roc_auc_score(y_test, y_proba):.3f}")
     print("  (ROC-AUC of 1.0 = perfect, 0.5 = random -- aim for > 0.80)")
 
-    return pipeline
+    return pipeline, X_test, y_test
 
 
-# ─── 3. Save the trained pipeline to disk ─────────────────────────────────────
+# ─── 3. Save the trained pipeline + eval artefacts to disk ────────────────────
 
 def save(pipeline: Pipeline) -> None:
+    """Legacy single-arg save — keeps backward compatibility with auto_train."""
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, MODEL_PATH)
     print(f"\nModel saved -> {MODEL_PATH}")
+
+
+def save_with_metadata(
+    pipeline: Pipeline,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    models_dir: Path | None = None,
+) -> None:
+    """
+    Persists:
+      - risk_model.joblib  — the trained pipeline
+      - eval_set.parquet   — X_test with y_true column (for /metrics recompute)
+      - metadata.json      — snapshot of AUC/F1/precision/recall/n_samples
+
+    Args:
+        pipeline:   Trained sklearn Pipeline.
+        X_test:     Held-out feature DataFrame.
+        y_test:     Held-out labels Series.
+        models_dir: Override the output directory (used by staging retrain).
+                    Defaults to ML_MODELS_DIR (saved_models/ next to models/).
+    """
+    out_dir = models_dir or MODEL_PATH.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 3a. Joblib model
+    model_file = out_dir / "risk_model.joblib"
+    joblib.dump(pipeline, model_file)
+    print(f"\nModel saved -> {model_file}")
+
+    # 3b. Eval set parquet  (X features + y_true column)
+    eval_df = X_test.copy()
+    eval_df["y_true"] = y_test.values
+    eval_path = out_dir / "eval_set.parquet"
+    eval_df.to_parquet(eval_path, index=False)
+    print(f"Eval set saved -> {eval_path}  ({len(eval_df)} rows)")
+
+    # 3c. Compute metrics and write metadata.json
+    y_pred = pipeline.predict(X_test)
+    y_proba = pipeline.predict_proba(X_test)[:, 1]
+
+    auc = float(roc_auc_score(y_test, y_proba))
+    f1 = float(f1_score(y_test, y_pred, zero_division=0))
+    precision = float(precision_score(y_test, y_pred, zero_division=0))
+    recall = float(recall_score(y_test, y_pred, zero_division=0))
+
+    metadata = {
+        "model_version": MODEL_VERSION,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "auc": round(auc, 4),
+        "f1": round(f1, 4),
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "n_samples": len(eval_df),
+    }
+
+    meta_path = out_dir / "metadata.json"
+    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(f"Metadata saved -> {meta_path}")
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
@@ -124,6 +199,6 @@ if __name__ == "__main__":
     print(f"  {len(df)} students | {df['at_risk'].mean():.1%} at risk\n")
 
     print("Training XGBoost classifier...")
-    pipeline = train(df)
+    pipeline, X_test, y_test = train(df)
 
-    save(pipeline)
+    save_with_metadata(pipeline, X_test, y_test)
