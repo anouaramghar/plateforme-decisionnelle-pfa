@@ -24,9 +24,11 @@ venv/
 .pytest_cache/
 .mypy_cache/
 
-# ML Models (trop lourds pour Git)
+# ML Models (trop lourds pour Git) + eval artefacts
 ml_service/saved_models/*.pkl
 ml_service/saved_models/*.joblib
+ml_service/saved_models/*.parquet
+ml_service/saved_models/metadata.json
 
 # OS
 .DS_Store

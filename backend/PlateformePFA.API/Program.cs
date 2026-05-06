@@ -107,6 +107,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAlerteService, AlerteService>();
+builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 
 builder.Services.AddHttpClient("MLService");
 
@@ -175,6 +176,12 @@ using (var scope = app.Services.CreateScope())
     {
         var context       = services.GetRequiredService<AppDbContext>();
         var configuration = services.GetRequiredService<IConfiguration>();
+
+        // Idempotent runtime migrations — entrypoint.sh only runs init.sql
+        // on first boot, so additive schema changes go here. Each block is
+        // safe to run on every startup.
+        PlateformePFA.API.Data.RuntimeMigrations.Apply(context);
+
         PlateformePFA.API.Data.DataSeeder.Initialize(context, configuration);
     }
     catch (Exception ex)

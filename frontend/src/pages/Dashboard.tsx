@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
@@ -5,32 +6,143 @@ import { RiskBar } from '../components/ui/RiskBar'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { MiniKpi } from '../components/ui/KpiCard'
 import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
-import { ACTIVITY, absenceTrend, kpis, moyenneDistribution, notesByFiliere, riskBreakdown, topARisque } from '../data/mock'
+import { api } from '../services/api'
 
 const SPARK = [22, 28, 30, 26, 32, 38, 42, 40, 46, 52, 48, 55, 62, 58]
 
-const ML_METRICS: { l: string; v: string; t: 'ok' | 'warn'; bar: number }[] = [
-  { l: 'AUC',       v: '0.87', t: 'ok',   bar: 87 },
-  { l: 'F1-score',  v: '0.81', t: 'ok',   bar: 81 },
-  { l: 'Précision', v: '0.83', t: 'ok',   bar: 83 },
-  { l: 'Rappel',    v: '0.79', t: 'warn', bar: 79 },
+interface MlMetrics {
+  auc: number
+  f1: number
+  precision: number
+  recall: number
+  nSamples: number
+  modelVersion: string
+  trainedAt: string | null
+  source: 'computed' | 'metadata'
+}
+
+async function fetchMlMetrics(): Promise<MlMetrics> {
+  const res = await api.get<MlMetrics>('/predictions/metrics')
+  return res.data
+}
+
+// Threshold tier per metric: above the threshold → green, below → orange.
+// Picked so a freshly-trained model doesn't paint everything red.
+const ML_THRESHOLDS: Record<string, number> = {
+  AUC:       0.80,
+  'F1-score': 0.75,
+  Précision: 0.80,
+  Rappel:    0.75,
+}
+
+// Activity feed has no audit-log table backing it yet — kept as a placeholder
+// until the backend exposes one.
+const ACTIVITY = [
+  { who: 'Système ML',       text: 'Prédiction batch lancée — 142 étudiants GI', when: 'il y a 12 min', icon: '⚡' },
+  { who: 'Prof. LHIADI',     text: 'Notes du contrôle INF301 publiées',          when: 'il y a 1 h',    icon: '📝' },
+  { who: 'Système',          text: '3 nouvelles alertes de risque élevé',        when: 'il y a 2 h',    icon: '🔔' },
+  { who: 'AIT ALI Marouane', text: 'Synchronisation DW exécutée (243 lignes)',   when: 'il y a 4 h',    icon: '🔄' },
+  { who: 'AMGHAR Anouar',    text: 'Export PDF — Rapport S5 / GI',                when: 'il y a 6 h',    icon: '📄' },
+  { who: 'Prof. CHERKAOUI',  text: 'Absences mises à jour pour la semaine 14',   when: 'hier',          icon: '📊' },
 ]
 
-export default function Dashboard() {
-  const k = kpis()
-  const notesByFil = notesByFiliere()
-  const moyDist = moyenneDistribution()
-  const risk = riskBreakdown()
-  const absTrend = absenceTrend()
-  const top = topARisque(6)
-  const filiereCtx = 'GI'
+interface DashboardSummary {
+  kpis: {
+    nbEtudiants: number
+    moyGlobale: number
+    tauxReussite: number
+    alertesActives: number
+    nbEtudiantsDelta: number
+    moyGlobaleDelta: number
+    tauxReussiteDelta: number
+    alertesActivesDelta: number
+    compareLabel: string
+  }
+  notesByFiliere: { filiere: string; moyenne: number; color: string }[]
+  moyenneDistribution: { label: string; n: number }[]
+  riskBreakdown: { label: string; n: number; color: string }[]
+  absenceTrend: { semaine: string; heures: number }[]
+  topARisque: {
+    id: number
+    nomComplet: string
+    matricule: string
+    filiere: string
+    niveau: string
+    moyenne: number
+    absences: number
+    scoreRisque: number
+  }[]
+  etudiantsParSemaine: number[]
+  nouveauxCetteSemaine: number
+  retraitsCetteSemaine: number
+}
 
+async function fetchSummary(): Promise<DashboardSummary> {
+  const res = await api.get<DashboardSummary>('/dashboard/summary')
+  return res.data
+}
+
+export default function Dashboard() {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['dashboard-summary'],
+    queryFn: fetchSummary,
+    refetchInterval: 60_000,
+  })
+
+  // Refetch ML metrics less aggressively — they only change on retrain.
+  const { data: ml } = useQuery({
+    queryKey: ['ml-metrics'],
+    queryFn: fetchMlMetrics,
+    refetchInterval: 5 * 60_000,
+  })
+
+  const mlMetrics = ml
+    ? [
+        { l: 'AUC',       v: ml.auc.toFixed(2),       raw: ml.auc },
+        { l: 'F1-score',  v: ml.f1.toFixed(2),        raw: ml.f1 },
+        { l: 'Précision', v: ml.precision.toFixed(2), raw: ml.precision },
+        { l: 'Rappel',    v: ml.recall.toFixed(2),    raw: ml.recall },
+      ].map(m => ({
+        ...m,
+        t: (m.raw >= ML_THRESHOLDS[m.l] ? 'ok' : 'warn') as 'ok' | 'warn',
+        bar: Math.round(m.raw * 100),
+      }))
+    : []
+
+  const filiereCtx = 'GI'
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   })
 
+  if (isLoading) {
+    return (
+      <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
+        Chargement du tableau de bord…
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="card p-8 text-center" style={{ color: 'var(--bad)' }}>
+        Impossible de charger les données du tableau de bord.
+        <div className="mt-3">
+          <button className="btn btn-sm" onClick={() => refetch()}>
+            Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const k = data.kpis
+  const notesByFil = data.notesByFiliere
+  const moyDist = data.moyenneDistribution
+  const risk = data.riskBreakdown
+  const absTrend = data.absenceTrend
+  const top = data.topARisque
   const totalRisk = risk.reduce((a, b) => a + b.n, 0)
 
   return (
@@ -84,7 +196,12 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-          <button className="btn btn-sm btn-ghost" title="Actualiser">
+          <button
+            className="btn btn-sm btn-ghost"
+            title="Actualiser"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
             <Icon name="refresh" size={13} />
           </button>
           <button className="btn btn-sm">
@@ -112,9 +229,10 @@ export default function Dashboard() {
               >
                 Étudiants suivis
               </div>
-              <Pill tone="ok">
+              <Pill tone={k.nbEtudiantsDelta >= 0 ? 'ok' : 'warn'}>
                 <Icon name="trend" size={11} strokeWidth={2.2} />
-                +3.2%
+                {k.nbEtudiantsDelta >= 0 ? '+' : ''}
+                {k.nbEtudiantsDelta.toFixed(1)}%
               </Pill>
             </div>
             <div className="flex items-baseline gap-3">
@@ -126,17 +244,26 @@ export default function Dashboard() {
             <div className="mt-5 flex items-end gap-6">
               <div className="flex-1">
                 <div className="sparkbar" style={{ height: 38 }}>
-                  {SPARK.map((v, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        height: `${Math.max(15, v)}%`,
-                        background: 'var(--accent-500)',
-                        opacity: 0.45 + (i / SPARK.length) * 0.55,
-                        borderRadius: 1.5,
-                      }}
-                    />
-                  ))}
+                  {(() => {
+                    const series = data.etudiantsParSemaine.length > 0
+                      ? data.etudiantsParSemaine
+                      : SPARK
+                    const lo = Math.min(...series)
+                    const hi = Math.max(...series)
+                    const range = Math.max(1, hi - lo)
+                    return series.map((v, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          // Normalize to 15–100% so even tiny variations stay visible.
+                          height: `${15 + ((v - lo) / range) * 85}%`,
+                          background: 'var(--accent-500)',
+                          opacity: 0.45 + (i / series.length) * 0.55,
+                          borderRadius: 1.5,
+                        }}
+                      />
+                    ))
+                  })()}
                 </div>
                 <div className="mt-2 flex items-center justify-between cap">
                   <span>il y a 14 sem.</span>
@@ -146,11 +273,11 @@ export default function Dashboard() {
               <div className="text-right">
                 <div className="cap">cette semaine</div>
                 <div className="num text-[15px] font-medium" style={{ color: 'var(--ok)' }}>
-                  +14
+                  +{data.nouveauxCetteSemaine}
                 </div>
                 <div className="cap mt-2">retraits</div>
                 <div className="num text-[15px] font-medium" style={{ color: 'var(--text-3)' }}>
-                  −2
+                  −{data.retraitsCetteSemaine}
                 </div>
               </div>
             </div>
@@ -158,9 +285,30 @@ export default function Dashboard() {
         </div>
 
         <div className="col-span-7 grid grid-cols-3 gap-4">
-          <MiniKpi label="Moyenne globale" value={k.moyGlobale} suffix="/20" delta={-0.4} deltaTone="warn" hint="vs S1 — 11.6" />
-          <MiniKpi label="Taux de réussite" value={k.tauxReussite} suffix="%" delta={1.8} deltaTone="ok" hint="modules ≥ 10/20" />
-          <MiniKpi label="Alertes actives" value={k.alertesActives} delta={12} deltaTone="bad" hint="dont 8 risque ML élevé" emphasized />
+          <MiniKpi
+            label="Moyenne globale"
+            value={k.moyGlobale}
+            suffix="/20"
+            delta={k.moyGlobaleDelta}
+            deltaTone={k.moyGlobaleDelta >= 0 ? 'ok' : 'warn'}
+            hint={k.compareLabel}
+          />
+          <MiniKpi
+            label="Taux de réussite"
+            value={k.tauxReussite}
+            suffix="%"
+            delta={k.tauxReussiteDelta}
+            deltaTone={k.tauxReussiteDelta >= 0 ? 'ok' : 'warn'}
+            hint="modules ≥ 10/20"
+          />
+          <MiniKpi
+            label="Alertes actives"
+            value={k.alertesActives}
+            delta={k.alertesActivesDelta}
+            deltaTone={k.alertesActivesDelta > 0 ? 'bad' : 'ok'}
+            hint="vs il y a 7 jours"
+            emphasized
+          />
 
           <div className="card p-4 col-span-3">
             <div className="flex items-center justify-between mb-3">
@@ -355,15 +503,28 @@ export default function Dashboard() {
           </div>
           <div className="min-w-0">
             <div className="text-[13px] font-medium flex items-center gap-2">
-              XGBoost <span className="font-mono cap">v1.4</span>
+              XGBoost <span className="font-mono cap">{ml?.modelVersion ?? '…'}</span>
               <Pill tone="ok" dot>En production</Pill>
             </div>
-            <div className="cap mt-0.5">Ré-entraîné le 24 avr. 2026 · 6 482 lignes du DW</div>
+            <div className="cap mt-0.5">
+              {ml?.trainedAt
+                ? `Ré-entraîné le ${new Date(ml.trainedAt).toLocaleDateString('fr-FR')} · ${
+                    ml.source === 'computed'
+                      ? 'métriques calculées en direct'
+                      : 'métriques stockées'
+                  }${ml.nSamples > 0 ? ` · ${ml.nSamples} échantillons` : ''}`
+                : 'Modèle non encore entraîné'}
+            </div>
           </div>
         </div>
         <div style={{ width: 1, height: 36, background: 'var(--border)' }} />
         <div className="flex-1 grid grid-cols-4 gap-6">
-          {ML_METRICS.map(m => (
+          {(mlMetrics.length > 0 ? mlMetrics : [
+            { l: 'AUC',       v: '—', t: 'warn' as const, bar: 0 },
+            { l: 'F1-score',  v: '—', t: 'warn' as const, bar: 0 },
+            { l: 'Précision', v: '—', t: 'warn' as const, bar: 0 },
+            { l: 'Rappel',    v: '—', t: 'warn' as const, bar: 0 },
+          ]).map(m => (
             <div key={m.l}>
               <div className="cap mb-1">{m.l}</div>
               <div

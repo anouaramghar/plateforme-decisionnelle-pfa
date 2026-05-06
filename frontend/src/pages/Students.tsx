@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -6,22 +7,76 @@ import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { ChartRadial } from '../components/charts'
-import { ETUDIANTS, genNotesFor, type Etudiant } from '../data/mock'
+import { api } from '../services/api'
+
+// Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
+const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
+const NIVEAUX  = ['Tous', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
+const RISQUES  = ['Tous', 'faible', 'modere', 'eleve']
+
+type Risque = 'faible' | 'modere' | 'eleve'
+type Statut = 'Régulier' | 'Suivi' | 'En difficulté'
+
+interface EtudiantRow {
+  id: number
+  matricule: string
+  nom: string
+  prenom: string
+  nomComplet: string
+  filiereCode: string
+  filiereIntitule: string
+  niveau: string
+  moyenne: number
+  absences: number
+  modulesValides: number
+  modulesTotal: number
+  scoreRisque: number
+  risque: Risque
+  statut: Statut
+}
+
+interface NoteRow {
+  moduleId: number
+  code: string
+  nom: string
+  semestre: string
+  coef: number
+  cc: number | null
+  tp: number | null
+  exam: number | null
+  finale: number | null
+  valide: boolean
+}
+
+async function fetchStudents(): Promise<EtudiantRow[]> {
+  const res = await api.get<EtudiantRow[]>('/etudiants/with-stats')
+  return res.data
+}
+
+async function fetchStudentNotes(id: number): Promise<NoteRow[]> {
+  const res = await api.get<NoteRow[]>(`/etudiants/${id}/notes`)
+  return res.data
+}
 
 export default function Students() {
-  const all = ETUDIANTS
+  const { data: all = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['etudiants-with-stats'],
+    queryFn: fetchStudents,
+    refetchInterval: 60_000,
+  })
+
   const [q, setQ] = useState('')
   const [niveau, setNiveau] = useState('Tous')
   const [risque, setRisque] = useState('Tous')
   const [filiere, setFiliere] = useState('Tous')
-  const [selected, setSelected] = useState<Etudiant | null>(null)
+  const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
   const PAGE = 14
 
   const filtered = useMemo(
     () =>
       all.filter(e => {
-        if (filiere !== 'Tous' && e.filiere !== filiere) return false
+        if (filiere !== 'Tous' && e.filiereCode !== filiere) return false
         if (niveau !== 'Tous' && e.niveau !== niveau) return false
         if (risque !== 'Tous' && e.risque !== risque) return false
         if (q && !(e.nomComplet.toLowerCase().includes(q.toLowerCase()) || e.matricule.toLowerCase().includes(q.toLowerCase())))
@@ -73,9 +128,9 @@ export default function Students() {
             className="input pl-9"
           />
         </div>
-        <Select value={filiere} onChange={setFiliere} options={['Tous', 'GI', 'GE', 'GC', 'GIND', 'DATA']} label="Filière" />
-        <Select value={niveau} onChange={setNiveau} options={['Tous', '1A', '2A', '3A']} label="Niveau" />
-        <Select value={risque} onChange={setRisque} options={['Tous', 'faible', 'modere', 'eleve']} label="Risque" />
+        <Select value={filiere} onChange={setFiliere} options={FILIERES} label="Filière" />
+        <Select value={niveau} onChange={setNiveau} options={NIVEAUX} label="Niveau" />
+        <Select value={risque} onChange={setRisque} options={RISQUES} label="Risque" />
         <button className="btn btn-sm btn-ghost">
           <Icon name="filter" size={13} />
           Plus de filtres
@@ -96,6 +151,18 @@ export default function Students() {
         )}
       </div>
 
+      {isLoading ? (
+        <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
+          Chargement des étudiants…
+        </div>
+      ) : isError ? (
+        <div className="card p-8 text-center" style={{ color: 'var(--bad)' }}>
+          Impossible de charger la liste.
+          <div className="mt-3">
+            <button className="btn btn-sm" onClick={() => refetch()}>Réessayer</button>
+          </div>
+        </div>
+      ) : (
       <div className="card overflow-hidden">
         <table className="tbl">
           <thead>
@@ -129,12 +196,12 @@ export default function Students() {
                 </td>
                 <td className="font-mono cap">{e.matricule}</td>
                 <td>
-                  <Pill tone="neutral">{e.filiere}</Pill>
+                  <Pill tone="neutral">{e.filiereCode}</Pill>
                 </td>
                 <td className="font-mono">{e.niveau}</td>
                 <td className="num font-medium">{e.moyenne.toFixed(2)}</td>
                 <td className="num">
-                  <span style={{ color: e.modulesValides >= 4 ? 'var(--ok)' : 'var(--warn)' }}>
+                  <span style={{ color: e.modulesValides >= Math.max(1, Math.ceil(e.modulesTotal / 2)) ? 'var(--ok)' : 'var(--warn)' }}>
                     {e.modulesValides}
                   </span>
                   <span style={{ color: 'var(--text-4)' }}>/{e.modulesTotal}</span>
@@ -188,14 +255,19 @@ export default function Students() {
           </div>
         </div>
       </div>
+      )}
 
       {selected && <StudentDrawer student={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }
 
-function StudentDrawer({ student, onClose }: { student: Etudiant; onClose: () => void }) {
-  const notes = genNotesFor(student)
+function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: () => void }) {
+  const { data: notes = [], isLoading } = useQuery({
+    queryKey: ['etudiant-notes', student.id],
+    queryFn: () => fetchStudentNotes(student.id),
+  })
+
   const moyenne = student.moyenne
   const riskColor =
     student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
@@ -222,7 +294,7 @@ function StudentDrawer({ student, onClose }: { student: Etudiant; onClose: () =>
               <span className="cap font-mono">{student.matricule}</span>
               <span style={{ color: 'var(--text-4)' }}>•</span>
               <Pill tone="neutral">
-                {student.filiere} · {student.niveau}
+                {student.filiereCode} · {student.niveau}
               </Pill>
               <RiskPill risque={student.risque} />
             </div>
@@ -283,7 +355,7 @@ function StudentDrawer({ student, onClose }: { student: Etudiant; onClose: () =>
           <div>
             <SectionHeader
               title="Notes par module"
-              subtitle="Semestre 5 — 2025/2026"
+              subtitle={`${student.niveau} — ${student.filiereIntitule}`}
               right={
                 <button className="btn btn-sm">
                   <Icon name="plus" size={12} />
@@ -305,28 +377,38 @@ function StudentDrawer({ student, onClose }: { student: Etudiant; onClose: () =>
                   </tr>
                 </thead>
                 <tbody>
-                  {notes.map(n => (
-                    <tr key={n.code}>
-                      <td className="font-mono cap">{n.code}</td>
-                      <td className="font-medium">{n.nom}</td>
-                      <td className="num">{n.cc.toFixed(1)}</td>
-                      <td className="num">{n.tp.toFixed(1)}</td>
-                      <td className="num">{n.exam.toFixed(1)}</td>
-                      <td
-                        className="num font-medium"
-                        style={{ color: n.finale >= 10 ? 'var(--ok)' : 'var(--bad)' }}
-                      >
-                        {n.finale.toFixed(2)}
-                      </td>
-                      <td>
-                        {n.valide ? (
-                          <Pill tone="ok" dot>Validé</Pill>
-                        ) : (
-                          <Pill tone="bad" dot>Non validé</Pill>
-                        )}
-                      </td>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={7} className="cap text-center py-4">Chargement…</td>
                     </tr>
-                  ))}
+                  ) : notes.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="cap text-center py-4">Aucune note enregistrée</td>
+                    </tr>
+                  ) : (
+                    notes.map(n => (
+                      <tr key={n.moduleId}>
+                        <td className="font-mono cap">{n.code}</td>
+                        <td className="font-medium">{n.nom}</td>
+                        <td className="num">{n.cc != null ? n.cc.toFixed(1) : '—'}</td>
+                        <td className="num">{n.tp != null ? n.tp.toFixed(1) : '—'}</td>
+                        <td className="num">{n.exam != null ? n.exam.toFixed(1) : '—'}</td>
+                        <td
+                          className="num font-medium"
+                          style={{ color: n.finale != null && n.finale >= 10 ? 'var(--ok)' : 'var(--bad)' }}
+                        >
+                          {n.finale != null ? n.finale.toFixed(2) : '—'}
+                        </td>
+                        <td>
+                          {n.valide ? (
+                            <Pill tone="ok" dot>Validé</Pill>
+                          ) : (
+                            <Pill tone="bad" dot>Non validé</Pill>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -360,8 +442,11 @@ function StudentDrawer({ student, onClose }: { student: Etudiant; onClose: () =>
                   },
                   {
                     f: 'Modules non validés',
-                    w: 1 - student.modulesValides / student.modulesTotal,
-                    neg: student.modulesValides < 4,
+                    w: student.modulesTotal > 0
+                      ? 1 - student.modulesValides / student.modulesTotal
+                      : 0,
+                    neg: student.modulesTotal > 0
+                      && student.modulesValides < Math.ceil(student.modulesTotal / 2),
                   },
                   { f: 'Tendance trimestrielle', w: 0.34, neg: false },
                 ].map(row => (
