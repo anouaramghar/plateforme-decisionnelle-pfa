@@ -55,6 +55,29 @@ namespace PlateformePFA.API.Data
                                      AND object_id = OBJECT_ID('dbo.Rapports'))
                     CREATE INDEX IX_Rapports_CreeLe ON Rapports(CreeLe DESC);
             ");
+
+            // 3. AuditEntries — append-only event log feeding the dashboard
+            //    activity feed and the platform's audit trail.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AuditEntries', 'U') IS NULL
+                CREATE TABLE AuditEntries (
+                    Id              INT IDENTITY(1,1) PRIMARY KEY,
+                    UtilisateurId   INT NULL REFERENCES Utilisateurs(Id),
+                    UtilisateurNom  NVARCHAR(200) NOT NULL,
+                    Action          NVARCHAR(40)  NOT NULL,
+                    EntityType      NVARCHAR(40)  NOT NULL DEFAULT '',
+                    EntityId        INT NULL,
+                    Message         NVARCHAR(500) NULL,
+                    CreeLe          DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AuditEntries', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AuditEntries_CreeLe'
+                                     AND object_id = OBJECT_ID('dbo.AuditEntries'))
+                    CREATE INDEX IX_AuditEntries_CreeLe ON AuditEntries(CreeLe DESC);
+            ");
         }
     }
 }

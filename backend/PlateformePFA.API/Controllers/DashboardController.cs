@@ -28,6 +28,29 @@ namespace PlateformePFA.API.Controllers
             _context = context;
         }
 
+        // GET: api/dashboard/activity?limit=8
+        // Returns recent rows from AuditEntries (capped at 100). Powers the
+        // dashboard's right-rail "Activité récente" feed.
+        [HttpGet("activity")]
+        public async Task<ActionResult<List<ActivityDto>>> GetActivity([FromQuery] int limit = 12)
+        {
+            limit = Math.Clamp(limit, 1, 100);
+            var rows = await _context.AuditEntries
+                .AsNoTracking()
+                .OrderByDescending(a => a.CreeLe)
+                .Take(limit)
+                .Select(a => new ActivityDto
+                {
+                    Id             = a.Id,
+                    Action         = a.Action,
+                    UtilisateurNom = a.UtilisateurNom,
+                    Message        = a.Message ?? string.Empty,
+                    CreeLe         = a.CreeLe,
+                })
+                .ToListAsync();
+            return rows;
+        }
+
         [HttpGet("summary")]
         public async Task<ActionResult<DashboardSummaryDto>> GetSummary()
         {

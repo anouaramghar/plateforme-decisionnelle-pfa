@@ -102,6 +102,18 @@ export default function Predictions() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['alertes'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
+    },
+  })
+
+  // Retrain triggers a fresh training run on the ML service. May take a while
+  // — TanStack Query keeps the spinner up until the proxy returns.
+  const retrainMutation = useMutation({
+    mutationFn: async () => (await api.post('/predictions/retrain')).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ml-metrics'] })
+      queryClient.invalidateQueries({ queryKey: ['predictions-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
     },
   })
 
@@ -140,9 +152,14 @@ export default function Predictions() {
           <h1 className="text-[22px] font-semibold tracking-tight">Prédictions ML</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm" disabled>
+          <button
+            className="btn btn-sm"
+            onClick={() => retrainMutation.mutate()}
+            disabled={retrainMutation.isPending}
+            title="Relance l'entraînement et atomically swap les artefacts"
+          >
             <Icon name="refresh" size={13} />
-            Ré-entraîner
+            {retrainMutation.isPending ? 'Ré-entraînement…' : 'Ré-entraîner'}
           </button>
           <button
             className="btn btn-sm btn-accent"

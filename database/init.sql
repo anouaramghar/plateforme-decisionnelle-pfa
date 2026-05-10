@@ -230,6 +230,11 @@ GO
 
 ALTER ROLE db_datareader ADD MEMBER pfa_app;
 ALTER ROLE db_datawriter ADD MEMBER pfa_app;
+-- ddladmin lets RuntimeMigrations.cs run idempotent CREATE TABLE / ALTER
+-- TABLE blocks on every backend startup without needing a separate sa
+-- connection. Required for additive schema changes (Rapports, AuditEntries,
+-- Predictions.Niveau backfill) to land cleanly on existing volumes.
+ALTER ROLE db_ddladmin ADD MEMBER pfa_app;
 GO
 
 -- NOTE: No admin user seeded here. Create the first admin account via

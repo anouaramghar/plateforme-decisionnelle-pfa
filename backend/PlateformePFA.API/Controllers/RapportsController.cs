@@ -17,6 +17,7 @@ namespace PlateformePFA.API.Controllers
         private readonly AppDbContext     _context;
         private readonly ReportGenerator  _generator;
         private readonly ILogger<RapportsController> _logger;
+        private readonly IAuditService    _audit;
 
         // Static catalog — kept here so the frontend just sends a templateId.
         private static readonly Dictionary<string, string> Templates = new()
@@ -32,11 +33,13 @@ namespace PlateformePFA.API.Controllers
         public RapportsController(
             AppDbContext context,
             ReportGenerator generator,
-            ILogger<RapportsController> logger)
+            ILogger<RapportsController> logger,
+            IAuditService audit)
         {
             _context   = context;
             _generator = generator;
             _logger    = logger;
+            _audit     = audit;
         }
 
         // GET /api/rapports — recent reports (metadata only).
@@ -104,6 +107,14 @@ namespace PlateformePFA.API.Controllers
                 _logger.LogInformation(
                     "Rapport généré : id={Id}, template={Tpl}, format={Fmt}, taille={Size}o",
                     rapport.Id, dto.TemplateId, dto.Format, rapport.Taille);
+
+                await _audit.LogAsync(
+                    action: "RapportGenere",
+                    entityType: "Rapport",
+                    entityId: rapport.Id,
+                    message: $"{rapport.Titre} ({rapport.Format})",
+                    userId: auteurId,
+                    userName: auteurNom);
 
                 return new RapportDto
                 {

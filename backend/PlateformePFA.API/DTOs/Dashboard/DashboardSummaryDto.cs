@@ -58,6 +58,17 @@ namespace PlateformePFA.API.DTOs.Dashboard
         public decimal Heures { get; set; }
     }
 
+    /// <summary>One row of the dashboard's "Activité récente" feed,
+    /// sourced from AuditEntries.</summary>
+    public class ActivityDto
+    {
+        public int    Id             { get; set; }
+        public string Action         { get; set; } = string.Empty;
+        public string UtilisateurNom { get; set; } = "Système";
+        public string Message        { get; set; } = string.Empty;
+        public DateTime CreeLe       { get; set; }
+    }
+
     public class TopRisqueDto
     {
         public int Id { get; set; }

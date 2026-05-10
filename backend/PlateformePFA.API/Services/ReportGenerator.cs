@@ -32,7 +32,7 @@ namespace PlateformePFA.API.Services
         public async Task<Result> GenerateAsync(string templateId, string format, string filiereCode, string periode)
         {
             // Each template owns its own builder; format selects the encoder.
-            var data = await GatherDataAsync(filiereCode);
+            var data = await GatherDataAsync(filiereCode, periode);
 
             var (defaultTitle, sections) = templateId switch
             {
@@ -83,8 +83,12 @@ namespace PlateformePFA.API.Services
         private record AbsenceRow(string Etudiant, string Module, int Heures, bool Justifiee, DateTime Date);
         private record AlerteRow(string Etudiant, string Type, string Niveau, string? Message, bool Resolue, DateTime CreeLe);
 
-        private async Task<Snapshot> GatherDataAsync(string filiereCode)
+        private async Task<Snapshot> GatherDataAsync(string filiereCode, string periode)
         {
+            // Parse the period selector ("Semestre 2 · 2025/2026" → annee=2025/2026, sem=S2).
+            var (annee, semestre) = ParsePeriode(periode);
+            var (windowStart, windowEnd) = SemesterDateRange(annee, semestre);
+
             // Apply filière filter at the SQL level so the report is fast even
             // on a real cohort.
             var etudiantQuery = _context.Etudiants.AsNoTracking().AsQueryable();
@@ -102,16 +106,22 @@ namespace PlateformePFA.API.Services
                     e.Prenom,
                     Filiere = e.Filiere != null ? e.Filiere.Code : string.Empty,
                     e.Niveau,
-                    Notes = e.Notes!.Select(n => new
-                    {
-                        n.NoteFinal, n.NoteTD, n.NoteTP, n.NoteExamen,
-                        ModuleNom = n.Module.Nom, ModuleCode = n.Module.Code,
-                    }).ToList(),
-                    Absences = e.Absences!.Select(a => new
-                    {
-                        a.NombreHeures, a.Justifiee, a.DateAbsence,
-                        ModuleNom = a.Module.Nom,
-                    }).ToList(),
+                    Notes = e.Notes!
+                        .Where(n => n.Annee == annee && (semestre == null || n.Semestre == semestre))
+                        .Select(n => new
+                        {
+                            n.NoteFinal, n.NoteTD, n.NoteTP, n.NoteExamen,
+                            ModuleNom = n.Module.Nom, ModuleCode = n.Module.Code,
+                        }).ToList(),
+                    // Absences have no semester column — bracket by the
+                    // semester's calendar-date range instead.
+                    Absences = e.Absences!
+                        .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                        .Select(a => new
+                        {
+                            a.NombreHeures, a.Justifiee, a.DateAbsence,
+                            ModuleNom = a.Module.Nom,
+                        }).ToList(),
                 })
                 .ToListAsync();
 
@@ -520,5 +530,40 @@ namespace PlateformePFA.API.Services
                 ? "0 %"
                 : (Math.Round((decimal)n / total * 100m, 1)
                        .ToString("0.0", CultureInfo.InvariantCulture) + " %");
+
+        /// <summary>
+        /// Parses period strings like "Semestre 2 · 2025/2026" or "Année 2024/2025"
+        /// into (annee, semestre) pairs. Defaults to the current academic year
+        /// and no semester filter when the string is unrecognised.
+        /// </summary>
+        private static (string Annee, string? Semestre) ParsePeriode(string periode)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                periode ?? string.Empty, @"\d{4}/\d{4}");
+            var annee = match.Success ? match.Value : CurrentAcademicYear();
+            string? sem = null;
+            if (!string.IsNullOrEmpty(periode))
+            {
+                if      (periode.Contains("Semestre 1") || periode.Contains("S1")) sem = "S1";
+                else if (periode.Contains("Semestre 2") || periode.Contains("S2")) sem = "S2";
+            }
+            return (annee, sem);
+        }
+
+        private static (DateTime Start, DateTime End) SemesterDateRange(string annee, string? semestre)
+        {
+            var parts = annee.Split('/');
+            if (!int.TryParse(parts[0], out var startYear)) startYear = DateTime.UtcNow.Year;
+            if (semestre == "S1") return (new DateTime(startYear, 9, 1), new DateTime(startYear + 1, 2, 1));
+            if (semestre == "S2") return (new DateTime(startYear + 1, 2, 1), new DateTime(startYear + 1, 8, 1));
+            return (new DateTime(startYear, 9, 1), new DateTime(startYear + 1, 8, 1));
+        }
+
+        private static string CurrentAcademicYear()
+        {
+            var now = DateTime.UtcNow;
+            var start = now.Month >= 9 ? now.Year : now.Year - 1;
+            return $"{start}/{start + 1}";
+        }
     }
 }

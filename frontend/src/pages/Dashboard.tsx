@@ -35,16 +35,57 @@ const ML_THRESHOLDS: Record<string, number> = {
   Rappel:    0.75,
 }
 
-// Activity feed has no audit-log table backing it yet — kept as a placeholder
-// until the backend exposes one.
-const ACTIVITY = [
-  { who: 'Système ML',       text: 'Prédiction batch lancée — 142 étudiants GI', when: 'il y a 12 min', icon: '⚡' },
-  { who: 'Prof. LHIADI',     text: 'Notes du contrôle INF301 publiées',          when: 'il y a 1 h',    icon: '📝' },
-  { who: 'Système',          text: '3 nouvelles alertes de risque élevé',        when: 'il y a 2 h',    icon: '🔔' },
-  { who: 'AIT ALI Marouane', text: 'Synchronisation DW exécutée (243 lignes)',   when: 'il y a 4 h',    icon: '🔄' },
-  { who: 'AMGHAR Anouar',    text: 'Export PDF — Rapport S5 / GI',                when: 'il y a 6 h',    icon: '📄' },
-  { who: 'Prof. CHERKAOUI',  text: 'Absences mises à jour pour la semaine 14',   when: 'hier',          icon: '📊' },
-]
+// Real activity feed: backed by AuditEntries via /api/dashboard/activity.
+interface ActivityRow {
+  id: number
+  action: string
+  utilisateurNom: string
+  message: string
+  creeLe: string
+}
+
+async function fetchActivity(): Promise<ActivityRow[]> {
+  const res = await api.get<ActivityRow[]>('/dashboard/activity?limit=8')
+  return res.data
+}
+
+const ACTION_ICONS: Record<string, string> = {
+  PredictionBatch: '⚡',
+  PredictionRun:   '⚡',
+  NotePubliee:     '📝',
+  DwSync:          '🔄',
+  RapportGenere:   '📄',
+  AlerteResolue:   '🔔',
+  AlerteCreated:   '🔔',
+  LoginOk:         '🔑',
+  MlRetrain:       '🧠',
+}
+
+function formatAction(a: ActivityRow): string {
+  switch (a.action) {
+    case 'PredictionBatch': return 'Prédiction batch lancée'
+    case 'PredictionRun':   return 'Prédiction exécutée'
+    case 'NotePubliee':     return 'Note publiée'
+    case 'DwSync':          return 'Synchronisation DW exécutée'
+    case 'RapportGenere':   return 'Rapport généré'
+    case 'AlerteResolue':   return 'Alerte résolue'
+    case 'AlerteCreated':   return 'Nouvelle alerte'
+    case 'LoginOk':         return 'Connexion réussie'
+    case 'MlRetrain':       return 'Modèle ML ré-entraîné'
+    default:                return a.action
+  }
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diff / 60_000)
+  if (min < 1)  return "à l'instant"
+  if (min < 60) return `il y a ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24)   return `il y a ${h} h`
+  const d = Math.floor(h / 24)
+  return d === 1 ? 'hier' : `il y a ${d} j`
+}
 
 interface DashboardSummary {
   kpis: {
@@ -94,6 +135,12 @@ export default function Dashboard() {
     queryKey: ['ml-metrics'],
     queryFn: fetchMlMetrics,
     refetchInterval: 5 * 60_000,
+  })
+
+  const { data: activity = [] } = useQuery({
+    queryKey: ['dashboard-activity'],
+    queryFn: fetchActivity,
+    refetchInterval: 30_000,
   })
 
   const mlMetrics = ml
@@ -461,23 +508,32 @@ export default function Dashboard() {
               className="absolute left-[13px] top-3 bottom-3 w-px"
               style={{ background: 'var(--border)' }}
             />
-            {ACTIVITY.map((a, i) => (
-              <div key={i} className="flex items-start gap-3 relative">
-                <div
-                  className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 relative z-10"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                >
-                  {a.icon}
-                </div>
-                <div className="flex-1 min-w-0 pt-0.5">
-                  <div className="text-[12.5px] leading-snug">
-                    <span className="font-medium">{a.who}</span>{' '}
-                    <span style={{ color: 'var(--text-2)' }}>{a.text}</span>
-                  </div>
-                  <div className="cap mt-1">{a.when}</div>
-                </div>
+            {activity.length === 0 ? (
+              <div className="cap text-center py-4" style={{ color: 'var(--text-3)' }}>
+                Aucune activité récente
               </div>
-            ))}
+            ) : (
+              activity.map(a => (
+                <div key={a.id} className="flex items-start gap-3 relative">
+                  <div
+                    className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 relative z-10"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                  >
+                    {ACTION_ICONS[a.action] ?? '•'}
+                  </div>
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <div className="text-[12.5px] leading-snug">
+                      <span className="font-medium">{a.utilisateurNom}</span>{' '}
+                      <span style={{ color: 'var(--text-2)' }}>
+                        {formatAction(a)}
+                        {a.message ? ` — ${a.message}` : ''}
+                      </span>
+                    </div>
+                    <div className="cap mt-1">{relativeTime(a.creeLe)}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <button
             className="btn btn-sm w-full mt-4"

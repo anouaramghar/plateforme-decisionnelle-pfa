@@ -6,6 +6,7 @@ using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.ML;
 using PlateformePFA.API.DTOs.Predictions;
 using PlateformePFA.API.Models;
+using PlateformePFA.API.Services;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -21,17 +22,20 @@ namespace PlateformePFA.API.Controllers
         private readonly IHttpClientFactory  _httpClientFactory;
         private readonly IConfiguration      _configuration;
         private readonly ILogger<PredictionsController> _logger;
+        private readonly IAuditService _audit;
 
         public PredictionsController(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
-            ILogger<PredictionsController> logger)
+            ILogger<PredictionsController> logger,
+            IAuditService audit)
         {
             _context           = context;
             _httpClientFactory = httpClientFactory;
             _configuration     = configuration;
             _logger            = logger;
+            _audit             = audit;
         }
 
         // GET: api/predictions/metrics — proxies the ML service's /metrics so
@@ -71,6 +75,49 @@ namespace PlateformePFA.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "ML metrics fetch failed");
+                return StatusCode(StatusCodes.Status502BadGateway,
+                    new { message = "ML service unreachable" });
+            }
+        }
+
+        // POST: api/predictions/retrain — admin-only proxy to /predict/retrain.
+        // The ML service kicks off a fresh training run, atomically swaps the
+        // new artefacts over the live ones, and returns a summary blob.
+        [HttpPost("retrain")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult> Retrain()
+        {
+            try
+            {
+                var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+                var client   = _httpClientFactory.CreateClient("MLService");
+                var req = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/retrain");
+                req.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+
+                // Retraining can take a while — bump the per-call timeout above
+                // the default 100s so we don't 502 the user mid-run.
+                client.Timeout = TimeSpan.FromMinutes(10);
+
+                using var resp = await client.SendAsync(req);
+                var body = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("ML retrain returned {Code}: {Body}", resp.StatusCode, body);
+                    return StatusCode((int)resp.StatusCode, body);
+                }
+
+                await _audit.LogAsync(
+                    action: "MlRetrain",
+                    entityType: "ML",
+                    message: "Modèles réentraînés",
+                    userId: GetUserId(),
+                    userName: GetUserName());
+
+                return Content(body, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Retrain proxy failed");
                 return StatusCode(StatusCodes.Status502BadGateway,
                     new { message = "ML service unreachable" });
             }
@@ -262,7 +309,29 @@ namespace PlateformePFA.API.Controllers
                 }
             }
 
+            await _audit.LogAsync(
+                action: "PredictionBatch",
+                entityType: "PredictionML",
+                message: $"Batch {request.FiliereCode ?? "TOUS"}/{request.Niveau ?? "—"} : "
+                       + $"{result.Predicted}/{result.Total} prédits, {result.RisqueEleve} risque élevé",
+                userId: GetUserId(),
+                userName: GetUserName());
+
             return result;
+        }
+
+        private int? GetUserId()
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var id) ? id : null;
+        }
+
+        private string GetUserName()
+        {
+            return User.FindFirst("NomComplet")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                ?? "Système";
         }
 
         // GET: api/predictions?page=1&pageSize=20&etudiantId=5&status=Ok
