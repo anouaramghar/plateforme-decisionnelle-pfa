@@ -8,7 +8,7 @@ from fastapi import FastAPI
 import joblib
 
 from models.auto_train import ensure_all_models
-from routers import predict, cluster, forecast
+from routers import predict, cluster, forecast, metrics
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,7 @@ app = FastAPI(
 app.include_router(predict.router)
 app.include_router(cluster.router)
 app.include_router(forecast.router)
+app.include_router(metrics.router)
 
 
 # ─── Health probe ─────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ def _ensure_risk_model() -> None:
         return
 
     from data.db_loader import load_risk_data
-    from models.train_risk import generate_data, train, save
+    from models.train_risk import generate_data, train, save_with_metadata
 
     df = load_risk_data()
     if df is not None:
@@ -39,8 +39,8 @@ def _ensure_risk_model() -> None:
         logger.info("Training risk model on SYNTHETIC data (%d samples)...", _N_SAMPLES)
         df = generate_data(_N_SAMPLES, _RANDOM_SEED)
 
-    pipeline = train(df)
-    save(pipeline)
+    pipeline, X_test, y_test = train(df)
+    save_with_metadata(pipeline, X_test, y_test)
     logger.info("risk_model trained and saved.")
 
 

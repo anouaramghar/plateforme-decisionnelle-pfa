@@ -1,17 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
 import { Field } from '../components/ui/Field'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { ChartBars } from '../components/charts'
-import { notesByFiliere, RAPPORTS } from '../data/mock'
+import { api } from '../services/api'
+
+type Format = 'PDF' | 'XLSX' | 'CSV'
 
 interface Template {
   id: string
   title: string
   desc: string
   icon: IconName
-  format: 'PDF' | 'XLSX' | 'CSV'
+  format: Format
 }
 
 const TEMPLATES: Template[] = [
@@ -23,9 +26,106 @@ const TEMPLATES: Template[] = [
   { id: 'bilan-ml',     title: 'Bilan modèle ML',      desc: 'Métriques + drift + features',     icon: 'spark', format: 'PDF' },
 ]
 
+interface RapportRow {
+  id: number
+  templateId: string
+  titre: string
+  format: Format
+  filiereCode: string
+  periode: string
+  auteurNom: string
+  taille: number
+  creeLe: string
+}
+
+const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
+const PERIODES = ['Semestre 2 · 2025/2026', 'Semestre 1 · 2025/2026', 'Année 2024/2025']
+const FORMATS: Format[] = ['PDF', 'XLSX', 'CSV']
+
+async function fetchRapports(): Promise<RapportRow[]> {
+  const res = await api.get<RapportRow[]>('/rapports')
+  return res.data
+}
+
+async function generateRapport(input: {
+  templateId: string
+  format: Format
+  filiereCode: string
+  periode: string
+}): Promise<RapportRow> {
+  const res = await api.post<RapportRow>('/rapports', input)
+  return res.data
+}
+
+async function downloadRapport(row: RapportRow): Promise<void> {
+  // Auth-aware download: pull the bytes through axios so the JWT is attached,
+  // then save via a synthetic <a> click. Plain href= would 401.
+  const res = await api.get<Blob>(`/rapports/${row.id}/download`, { responseType: 'blob' })
+  const ext = row.format.toLowerCase()
+  const cleanTitle = row.titre.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-')
+  const filename = `${cleanTitle || 'rapport'}-${row.id}.${ext}`
+  const url = URL.createObjectURL(res.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function formatTaille(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
 export default function Reports() {
   const [picked, setPicked] = useState('perf-globale')
-  const previewChartData = useMemo(() => notesByFiliere(), [])
+  const [periode, setPeriode] = useState(PERIODES[0])
+  const [filiere, setFiliere] = useState('TOUS')
+  const [format, setFormat] = useState<Format>('PDF')
+  const queryClient = useQueryClient()
+
+  const { data: rapports = [], isLoading: listLoading } = useQuery({
+    queryKey: ['rapports'],
+    queryFn: fetchRapports,
+    refetchInterval: 60_000,
+  })
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      generateRapport({ templateId: picked, format, filiereCode: filiere, periode }),
+    onSuccess: row => {
+      queryClient.invalidateQueries({ queryKey: ['rapports'] })
+      // Auto-download immediately so the user gets feedback the report ran.
+      downloadRapport(row).catch(() => {/* user can retry from the table */})
+    },
+  })
+
+  const downloadMutation = useMutation({
+    mutationFn: downloadRapport,
+  })
+
+  // Static preview chart — keeps the cover artwork without round-tripping for
+  // numbers the cover doesn't really need.
+  const previewChartData = [
+    { filiere: 'GI',   moyenne: 13.06, color: '#f97316' },
+    { filiere: 'IA',   moyenne: 13.29, color: '#ec4899' },
+    { filiere: 'IRSI', moyenne: 12.83, color: '#0ea5e9' },
+    { filiere: 'ROC',  moyenne: 13.15, color: '#a855f7' },
+    { filiere: 'TCP',  moyenne: 12.95, color: '#94a3b8' },
+  ]
+
+  const pickedTemplate = TEMPLATES.find(t => t.id === picked) ?? TEMPLATES[0]
 
   return (
     <div className="space-y-4">
@@ -34,17 +134,30 @@ export default function Reports() {
           <div className="cap mb-1">Rapports automatiques · Conseil pédagogique</div>
           <h1 className="text-[22px] font-semibold tracking-tight">Rapports</h1>
         </div>
-        <button className="btn btn-sm btn-accent">
+        <button
+          className="btn btn-sm btn-accent"
+          onClick={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending}
+        >
           <Icon name="plus" size={13} strokeWidth={2.2} />
-          Nouveau rapport
+          {generateMutation.isPending ? 'Génération…' : 'Nouveau rapport'}
         </button>
       </div>
+
+      {generateMutation.isError && (
+        <div className="card p-3 text-[12.5px]" style={{ color: 'var(--bad)' }}>
+          Échec de la génération — réessayez ou changez de format.
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         {TEMPLATES.map(t => (
           <button
             key={t.id}
-            onClick={() => setPicked(t.id)}
+            onClick={() => {
+              setPicked(t.id)
+              setFormat(t.format)
+            }}
             className="card p-4 text-left transition"
             style={{
               borderColor: picked === t.id ? 'var(--accent-500)' : 'var(--border)',
@@ -79,65 +192,28 @@ export default function Reports() {
           <SectionHeader title="Paramètres" subtitle="Configurez le rapport avant export" />
           <div className="space-y-3">
             <Field label="Période">
-              <select className="input">
-                <option>Semestre 2 · 2025/2026</option>
-                <option>Semestre 1 · 2025/2026</option>
-                <option>Année 2024/2025</option>
+              <select className="input" value={periode} onChange={e => setPeriode(e.target.value)}>
+                {PERIODES.map(p => <option key={p}>{p}</option>)}
               </select>
             </Field>
-            <Field label="Filière(s)">
-              <select className="input">
-                <option>Toutes</option>
-                <option>Génie Informatique</option>
-                <option>Génie Électrique</option>
+            <Field label="Filière">
+              <select className="input" value={filiere} onChange={e => setFiliere(e.target.value)}>
+                {FILIERES.map(f => <option key={f} value={f}>{f === 'TOUS' ? 'Toutes' : f}</option>)}
               </select>
-            </Field>
-            <Field label="Niveaux">
-              <div className="flex gap-1.5">
-                {['1A', '2A', '3A'].map((n, i) => (
-                  <label
-                    key={n}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-[12px]"
-                    style={{
-                      border: `1px solid ${i < 2 ? 'var(--accent-500)' : 'var(--border-2)'}`,
-                      background: i < 2 ? 'var(--accent-50)' : 'var(--surface)',
-                      color: i < 2 ? 'var(--accent-700)' : 'var(--text-2)',
-                      fontWeight: i < 2 ? 500 : 400,
-                    }}
-                  >
-                    <input type="checkbox" defaultChecked={i < 2} className="rounded" />
-                    {n}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="Inclure">
-              <div className="space-y-1.5">
-                {[
-                  'KPIs principaux',
-                  'Graphiques (notes, absences, risque)',
-                  'Liste des étudiants',
-                  'Recommandations ML',
-                  'Annexes méthodologiques',
-                ].map((opt, i) => (
-                  <label key={opt} className="flex items-center gap-2 text-[12.5px]">
-                    <input type="checkbox" defaultChecked={i < 4} className="rounded" />
-                    {opt}
-                  </label>
-                ))}
-              </div>
             </Field>
             <Field label="Format de sortie">
               <div className="flex gap-1.5">
-                {['PDF', 'XLSX', 'CSV'].map((f, i) => (
+                {FORMATS.map(f => (
                   <button
                     key={f}
-                    className="flex-1 px-3 py-1.5 rounded-md text-[12px]"
+                    type="button"
+                    onClick={() => setFormat(f)}
+                    className="flex-1 px-3 py-1.5 rounded-md text-[12px] transition"
                     style={{
-                      border: `1px solid ${i === 0 ? 'var(--accent-500)' : 'var(--border-2)'}`,
-                      background: i === 0 ? 'var(--accent-50)' : 'var(--surface)',
-                      color: i === 0 ? 'var(--accent-700)' : 'var(--text-2)',
-                      fontWeight: i === 0 ? 500 : 400,
+                      border: `1px solid ${format === f ? 'var(--accent-500)' : 'var(--border-2)'}`,
+                      background: format === f ? 'var(--accent-50)' : 'var(--surface)',
+                      color: format === f ? 'var(--accent-700)' : 'var(--text-2)',
+                      fontWeight: format === f ? 500 : 400,
                     }}
                   >
                     {f}
@@ -145,16 +221,20 @@ export default function Reports() {
                 ))}
               </div>
             </Field>
-            <button className="btn btn-accent btn-lg w-full mt-2">
+            <button
+              className="btn btn-accent btn-lg w-full mt-2"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+            >
               <Icon name="download" size={14} />
-              Générer le rapport
+              {generateMutation.isPending ? 'Génération en cours…' : 'Générer le rapport'}
             </button>
           </div>
         </div>
 
         {/* preview */}
         <div className="col-span-2">
-          <SectionHeader title="Aperçu" subtitle="Couverture du document — page 1 / 18" />
+          <SectionHeader title="Aperçu" subtitle="Couverture du document — généré à la demande" />
           <div
             className="card p-0 overflow-hidden"
             style={{ aspectRatio: '1/1.414', background: 'var(--surface)' }}
@@ -188,53 +268,33 @@ export default function Reports() {
                     ENIAD · BERKANE
                   </span>
                 </div>
-                <span className="cap font-mono">RP-105 · 25 avr. 2026</span>
+                <span className="cap font-mono">
+                  {format} · {filiere}
+                </span>
               </div>
               <div
                 className="text-[10px] uppercase tracking-[0.18em] mb-3"
                 style={{ color: 'var(--accent-700)', fontWeight: 500 }}
               >
-                Rapport semestriel
+                Rapport
               </div>
               <h2
                 className="font-serif text-[36px] leading-[1.05]"
                 style={{ letterSpacing: '-0.015em' }}
               >
-                Performance globale
+                {pickedTemplate.title}
                 <br />
-                Semestre 2 · 2025/2026
+                {periode}
               </h2>
-              <p
-                className="mt-3 text-[12px] max-w-[420px]"
-                style={{ color: 'var(--text-2)' }}
-              >
-                Synthèse pour le conseil pédagogique du 5 mai 2026 — pilotée par la plateforme
-                décisionnelle ENIAD.
+              <p className="mt-3 text-[12px] max-w-[420px]" style={{ color: 'var(--text-2)' }}>
+                {pickedTemplate.desc}
               </p>
-
-              <div className="mt-6 grid grid-cols-4 gap-3">
-                {[
-                  { l: 'Étudiants', v: '452' },
-                  { l: 'Moyenne',   v: '12.4' },
-                  { l: 'Réussite',  v: '74%' },
-                  { l: 'À risque',  v: '51' },
-                ].map(s => (
-                  <div
-                    key={s.l}
-                    className="p-3 rounded-md"
-                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                  >
-                    <div className="cap">{s.l}</div>
-                    <div className="num text-[20px] font-medium mt-0.5">{s.v}</div>
-                  </div>
-                ))}
-              </div>
 
               <div
                 className="flex-1 mt-5 rounded-md p-4"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >
-                <div className="text-[11px] font-semibold mb-2">Moyennes par filière</div>
+                <div className="text-[11px] font-semibold mb-2">Moyennes par filière (illustration)</div>
                 <ChartBars data={previewChartData} height={160} />
               </div>
 
@@ -242,8 +302,8 @@ export default function Reports() {
                 className="mt-auto flex items-center justify-between pt-3"
                 style={{ borderTop: '1px solid var(--border)', color: 'var(--text-3)', fontSize: 10 }}
               >
-                <span>Préparé par AMGHAR Anouar · Encadré par Prof. LHIADI</span>
-                <span className="font-mono">Page 1 / 18</span>
+                <span>Plateforme décisionnelle ENIAD · données en direct</span>
+                <span className="font-mono">aperçu</span>
               </div>
             </div>
           </div>
@@ -257,7 +317,7 @@ export default function Reports() {
         >
           <div>
             <div className="text-[13px] font-semibold">Rapports récents</div>
-            <div className="cap mt-0.5">Générés au cours des 7 derniers jours</div>
+            <div className="cap mt-0.5">{rapports.length} document{rapports.length > 1 ? 's' : ''} généré{rapports.length > 1 ? 's' : ''}</div>
           </div>
         </div>
         <table className="tbl">
@@ -274,33 +334,45 @@ export default function Reports() {
             </tr>
           </thead>
           <tbody>
-            {RAPPORTS.map(r => (
-              <tr key={r.id}>
-                <td className="font-mono cap">{r.id}</td>
-                <td className="font-medium">{r.titre}</td>
-                <td>
-                  <Pill tone="neutral">{r.filiere}</Pill>
-                </td>
-                <td>
-                  <Pill tone={r.format === 'PDF' ? 'bad' : r.format === 'XLSX' ? 'ok' : 'info'}>
-                    {r.format}
-                  </Pill>
-                </td>
-                <td className="num cap">{r.taille}</td>
-                <td>{r.auteur}</td>
-                <td className="cap">{r.date}</td>
-                <td>
-                  <div className="flex items-center gap-1">
-                    <button className="btn btn-sm btn-ghost">
-                      <Icon name="eye" size={13} />
-                    </button>
-                    <button className="btn btn-sm btn-ghost">
-                      <Icon name="download" size={13} />
-                    </button>
-                  </div>
+            {listLoading ? (
+              <tr><td colSpan={8} className="cap text-center py-6">Chargement…</td></tr>
+            ) : rapports.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="cap text-center py-6">
+                  Aucun rapport encore — choisissez un modèle et cliquez sur « Générer ».
                 </td>
               </tr>
-            ))}
+            ) : (
+              rapports.map(r => (
+                <tr key={r.id}>
+                  <td className="font-mono cap">RP-{String(r.id).padStart(3, '0')}</td>
+                  <td className="font-medium">{r.titre}</td>
+                  <td>
+                    <Pill tone="neutral">{r.filiereCode}</Pill>
+                  </td>
+                  <td>
+                    <Pill tone={r.format === 'PDF' ? 'bad' : r.format === 'XLSX' ? 'ok' : 'info'}>
+                      {r.format}
+                    </Pill>
+                  </td>
+                  <td className="num cap">{formatTaille(r.taille)}</td>
+                  <td>{r.auteurNom}</td>
+                  <td className="cap">{formatDate(r.creeLe)}</td>
+                  <td>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        title="Télécharger"
+                        onClick={() => downloadMutation.mutate(r)}
+                        disabled={downloadMutation.isPending}
+                      >
+                        <Icon name="download" size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

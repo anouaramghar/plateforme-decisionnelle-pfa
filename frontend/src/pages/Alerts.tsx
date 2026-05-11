@@ -5,7 +5,16 @@ import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
 import { FilterChip } from '../components/ui/FilterChip'
 import { api } from '../services/api'
-import { ALERT_TYPES } from '../data/mock'
+
+// Localised labels + tone for the alert types the backend emits.
+// Inlined here (not in a "mock" module) because they're real UI strings.
+const ALERT_TYPES: Record<string, { label: string; severity: string; pill: 'bad' | 'warn' | 'info' }> = {
+  NoteFaible:       { label: 'Note faible',         severity: 'haute',   pill: 'bad'  },
+  AbsenceExcessive: { label: 'Absences excessives', severity: 'moyenne', pill: 'warn' },
+  RisqueEleve:      { label: 'Risque élevé (ML)',   severity: 'haute',   pill: 'bad'  },
+  ModuleNonValide:  { label: 'Module non validé',   severity: 'moyenne', pill: 'warn' },
+  RetardRecurrent:  { label: 'Retards récurrents',  severity: 'basse',   pill: 'info' },
+}
 
 // ── Backend types ────────────────────────────────────────────
 interface BackendEtudiant {

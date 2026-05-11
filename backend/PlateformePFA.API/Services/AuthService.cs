@@ -15,12 +15,18 @@ namespace PlateformePFA.API.Services
         private readonly AppDbContext    _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthService> _logger;
+        private readonly IAuditService _audit;
 
-        public AuthService(AppDbContext context, IConfiguration configuration, ILogger<AuthService> logger)
+        public AuthService(
+            AppDbContext context,
+            IConfiguration configuration,
+            ILogger<AuthService> logger,
+            IAuditService audit)
         {
             _context       = context;
             _configuration = configuration;
             _logger        = logger;
+            _audit         = audit;
         }
 
         // ── Login ─────────────────────────────────────────────────
@@ -39,6 +45,13 @@ namespace PlateformePFA.API.Services
             var refreshToken = await CreateRefreshTokenAsync(utilisateur.Id);
 
             _logger.LogInformation("[AuthService] Login OK — userId={UserId}", utilisateur.Id);
+
+            await _audit.LogAsync(
+                action: "LoginOk",
+                entityType: "Utilisateur",
+                entityId: utilisateur.Id,
+                userId: utilisateur.Id,
+                userName: $"{utilisateur.Prenom} {utilisateur.Nom}".Trim());
 
             return new AuthResponseDto
             {

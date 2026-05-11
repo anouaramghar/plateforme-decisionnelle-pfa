@@ -36,6 +36,145 @@ namespace PlateformePFA.API.Controllers
                 Annee           = e.Annee,
             };
 
+        // 0. GET WITH STATS — returns all students enriched with averages,
+        //    absences, validated module count, and ML risk score. Sized for
+        //    the Étudiants page which filters/sorts client-side over ~300 rows.
+        [HttpGet("with-stats")]
+        public async Task<ActionResult<List<EtudiantWithStatsDto>>> GetWithStats()
+        {
+            // Per-student aggregates in one DB round trip.
+            var rows = await _context.Etudiants
+                .AsNoTracking()
+                .Select(e => new
+                {
+                    e.Id,
+                    e.Matricule,
+                    e.Nom,
+                    e.Prenom,
+                    e.Email,
+                    e.FiliereId,
+                    FiliereCode     = e.Filiere != null ? e.Filiere.Code     : string.Empty,
+                    FiliereIntitule = e.Filiere != null ? e.Filiere.Intitule : string.Empty,
+                    e.Niveau,
+                    e.Annee,
+                    NotesFinales = e.Notes!
+                        .Where(n => n.NoteFinal.HasValue)
+                        .Select(n => n.NoteFinal!.Value)
+                        .ToList(),
+                    AbsencesH = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
+                })
+                .ToListAsync();
+
+            var latestPredictions = await _context.PredictionsML
+                .AsNoTracking()
+                .Where(p => p.ScoreRisque.HasValue)
+                .GroupBy(p => p.EtudiantId)
+                .Select(g => new
+                {
+                    EtudiantId = g.Key,
+                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
+                })
+                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
+
+            var result = rows.Select(r =>
+            {
+                var modulesTotal   = r.NotesFinales.Count;
+                var modulesValides = r.NotesFinales.Count(n => n >= 10m);
+                var moyenne = modulesTotal > 0
+                    ? Math.Round(r.NotesFinales.Average(), 2)
+                    : 0m;
+
+                decimal score;
+                if (latestPredictions.TryGetValue(r.Id, out var ml))
+                {
+                    score = ml;
+                }
+                else
+                {
+                    var fromMoy = moyenne == 0m ? 0.4m
+                        : moyenne < 10m ? 0.55m
+                        : moyenne < 12m ? 0.32m
+                        : 0.12m;
+                    var fromAbs = r.AbsencesH > 30 ? 0.22m
+                        : r.AbsencesH > 18 ? 0.12m
+                        : 0m;
+                    score = Math.Min(0.98m, fromMoy + fromAbs);
+                }
+
+                var risque = score >= 0.65m ? "eleve"
+                    : score >= 0.35m ? "modere"
+                    : "faible";
+                var statut = moyenne == 0m ? "Suivi"
+                    : moyenne < 10m ? "En difficulté"
+                    : moyenne < 12m ? "Suivi"
+                    : "Régulier";
+
+                return new EtudiantWithStatsDto
+                {
+                    Id              = r.Id,
+                    Matricule       = r.Matricule,
+                    Nom             = r.Nom,
+                    Prenom          = r.Prenom,
+                    NomComplet      = $"{r.Prenom} {r.Nom}".Trim(),
+                    Email           = r.Email,
+                    FiliereId       = r.FiliereId,
+                    FiliereCode     = r.FiliereCode,
+                    FiliereIntitule = r.FiliereIntitule,
+                    Niveau          = r.Niveau,
+                    Annee           = r.Annee,
+                    Moyenne         = moyenne,
+                    Absences        = r.AbsencesH,
+                    ModulesValides  = modulesValides,
+                    ModulesTotal    = modulesTotal,
+                    ScoreRisque     = Math.Round(score, 3),
+                    Risque          = risque,
+                    Statut          = statut,
+                };
+            }).ToList();
+
+            return result;
+        }
+
+        // 0b. GET PER-MODULE NOTES — used by the student detail drawer.
+        //     Latest semester per (module) is what surfaces; older entries are
+        //     kept in the DB for history but not shown here.
+        [HttpGet("{id}/notes")]
+        public async Task<ActionResult<List<EtudiantNoteDto>>> GetEtudiantNotes(int id)
+        {
+            var exists = await _context.Etudiants.AnyAsync(e => e.Id == id);
+            if (!exists) return NotFound();
+
+            var notes = await _context.Notes
+                .AsNoTracking()
+                .Where(n => n.EtudiantId == id)
+                .OrderByDescending(n => n.Annee)
+                .ThenByDescending(n => n.Semestre)
+                .ThenBy(n => n.ModuleId)
+                .Select(n => new EtudiantNoteDto
+                {
+                    ModuleId = n.ModuleId,
+                    Code     = n.Module.Code,
+                    Nom      = n.Module.Nom,
+                    Semestre = n.Semestre,
+                    Coef     = n.Module.Coefficient,
+                    Cc       = n.NoteTD,
+                    Tp       = n.NoteTP,
+                    Exam     = n.NoteExamen,
+                    Finale   = n.NoteFinal,
+                    Valide   = n.NoteFinal.HasValue && n.NoteFinal.Value >= 10m,
+                })
+                .ToListAsync();
+
+            // Keep most-recent occurrence per module to avoid duplicating the
+            // same module across S1 + S2.
+            var byModule = notes
+                .GroupBy(n => n.ModuleId)
+                .Select(g => g.First())
+                .ToList();
+
+            return byModule;
+        }
+
         // 1. GET ALL (paginated)
         [HttpGet]
         public async Task<ActionResult<PaginatedResult<EtudiantDto>>> GetEtudiants(

@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  backend:
+    name: Backend (.NET 8 build + xUnit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Restore
+        working-directory: backend
+        run: dotnet restore PlateformePFA.Tests/PlateformePFA.Tests.csproj
+      - name: Build
+        working-directory: backend
+        run: dotnet build PlateformePFA.Tests/PlateformePFA.Tests.csproj --no-restore --configuration Release
+      - name: Test
+        working-directory: backend
+        run: dotnet test PlateformePFA.Tests/PlateformePFA.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: backend/PlateformePFA.Tests/TestResults/test-results.trx
+
+  ml:
+    name: ML service (FastAPI pytest)
+    runs-on: ubuntu-latest
+    env:
+      ML_INTERNAL_TOKEN: ci-test-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install
+        working-directory: ml_service
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Test
+        working-directory: ml_service
+        run: pytest tests/ -v
+
+  frontend:
+    name: Frontend (TypeScript + Vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+      - name: Type-check + build
+        working-directory: frontend
+        run: npm run build

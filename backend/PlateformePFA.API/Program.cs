@@ -9,11 +9,25 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Test runs (xUnit + WebApplicationFactory<Program>) host the API in-process
+// and inject configuration AFTER the top-level statements run, so the strict
+// validation below would always trip. Detect the Testing environment and use
+// hardcoded test-only stand-ins instead. Production paths are unchanged.
+var isTestEnv = string.Equals(
+    builder.Environment.EnvironmentName, "Testing", StringComparison.OrdinalIgnoreCase);
+
 // Fail-fast: refuse to start if JWT secrets are missing, too weak, or placeholder.
 // Reads JWT_SECRET env var first (Docker), falls back to Jwt:Key (appsettings dev).
 var jwtSecret   = builder.Configuration["JWT_SECRET"] ?? builder.Configuration["Jwt:Key"];
 var jwtIssuer   = builder.Configuration["JWT_ISSUER"] ?? builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["JWT_AUDIENCE"] ?? builder.Configuration["Jwt:Audience"];
+
+if (isTestEnv)
+{
+    jwtSecret   ??= "Test-JWT-Secret-With-At-Least-32-Chars-And-Digits-1234567890!";
+    jwtIssuer   ??= "test";
+    jwtAudience ??= "test";
+}
 
 // Known-leaked or placeholder secrets that must never be accepted, even if they
 // happen to satisfy the length check. Match case-insensitively and ignore
@@ -35,10 +49,10 @@ static int CharClassCount(string s) =>
     (s.Any(char.IsDigit)                 ? 1 : 0) +
     (s.Any(c => !char.IsLetterOrDigit(c)) ? 1 : 0);
 
-if (string.IsNullOrWhiteSpace(jwtSecret) ||
+if (!isTestEnv && (string.IsNullOrWhiteSpace(jwtSecret) ||
     jwtSecret.Length < 32 ||
     ContainsAny(jwtSecret, knownBadJwtSecrets) ||
-    CharClassCount(jwtSecret) < 3)
+    CharClassCount(jwtSecret) < 3))
 {
     throw new InvalidOperationException(
         "JWT secret is missing, shorter than 32 characters, matches a known-leaked / placeholder value, " +
@@ -54,7 +68,8 @@ if (string.IsNullOrWhiteSpace(jwtIssuer) || string.IsNullOrWhiteSpace(jwtAudienc
 // Fail-fast: ML_INTERNAL_TOKEN must be set and not a placeholder.
 // Without this, every prediction call silently returns a 401 from the ML service.
 var mlToken = builder.Configuration["ML_INTERNAL_TOKEN"];
-if (string.IsNullOrWhiteSpace(mlToken) || mlToken.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+if (isTestEnv) mlToken ??= "test-token-not-placeholder";
+if (!isTestEnv && (string.IsNullOrWhiteSpace(mlToken) || mlToken.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase)))
 {
     throw new InvalidOperationException(
         "ML_INTERNAL_TOKEN is missing or still set to the placeholder value. " +
@@ -107,6 +122,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAlerteService, AlerteService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 
 builder.Services.AddHttpClient("MLService");
 
@@ -175,6 +192,12 @@ using (var scope = app.Services.CreateScope())
     {
         var context       = services.GetRequiredService<AppDbContext>();
         var configuration = services.GetRequiredService<IConfiguration>();
+
+        // Idempotent runtime migrations — entrypoint.sh only runs init.sql
+        // on first boot, so additive schema changes go here. Each block is
+        // safe to run on every startup.
+        PlateformePFA.API.Data.RuntimeMigrations.Apply(context);
+
         PlateformePFA.API.Data.DataSeeder.Initialize(context, configuration);
     }
     catch (Exception ex)
@@ -185,3 +208,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Expose the implicit Program class so WebApplicationFactory<Program> in
+// PlateformePFA.Tests can host the API in-process.
+public partial class Program { }

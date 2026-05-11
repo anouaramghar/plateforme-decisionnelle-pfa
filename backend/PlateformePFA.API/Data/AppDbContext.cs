@@ -16,6 +16,8 @@ namespace PlateformePFA.API.Data
         public DbSet<Alerte>       Alertes       { get; set; }
         public DbSet<PredictionML> PredictionsML { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<Rapport>      Rapports      { get; set; }
+        public DbSet<AuditEntry>   AuditEntries  { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -15,11 +15,18 @@ RUN dotnet publish "PlateformePFA.API.csproj" -c Release --no-restore -o /app/pu
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.11-bookworm-slim AS final
 WORKDIR /app
 
-# Install curl for the Docker healthcheck (aspnet:8.0 ships without it).
+# Install curl (Docker healthcheck), fontconfig + a Latin font (QuestPDF/Skia
+# need at least one font available to render PDFs with French accents), and
+# libicu for sort/format APIs the runtime expects on slim images.
 # Must run as root before dropping to 'app'.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends \
+        curl \
+        fontconfig \
+        fonts-dejavu-core \
+        libicu72 \
+ && rm -rf /var/lib/apt/lists/* \
+ && fc-cache -f
 
 COPY --from=build /app/publish .
 

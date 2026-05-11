@@ -182,11 +182,13 @@ def retrain_models(
         train_regression.MODEL_PATH     = originals["train_regression"]
 
     # Atomically swap each freshly-trained file over the live one.
+    # Includes .joblib models plus eval artefacts (.parquet, .json).
     saved_dir.mkdir(parents=True, exist_ok=True)
-    for new_file in staging_dir.glob("*.joblib"):
-        target = saved_dir / new_file.name
-        os.replace(new_file, target)        # atomic on same filesystem
-        logger.info("Promoted %s into saved_models/.", new_file.name)
+    for new_file in staging_dir.iterdir():
+        if new_file.suffix in (".joblib", ".parquet", ".json"):
+            target = saved_dir / new_file.name
+            os.replace(new_file, target)        # atomic on same filesystem
+            logger.info("Promoted %s into saved_models/.", new_file.name)
     shutil.rmtree(staging_dir, ignore_errors=True)
 
     # Reload into app.state.
