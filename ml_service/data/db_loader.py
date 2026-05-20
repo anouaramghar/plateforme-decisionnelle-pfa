@@ -12,11 +12,24 @@ passed via docker-compose.yml.
 """
 
 import os
+import re
 import logging
+from contextlib import closing
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Matches PWD=... / Password=... up to the next ; or end-of-string. Used to
+# scrub the DB password out of pyodbc exception messages — pyodbc tends to
+# echo the full connection string back in its error text, and we do not want
+# the SQL Server password ending up in container logs or shipped to Sentry.
+_PWD_RE = re.compile(r"(?i)(PWD|PASSWORD)\s*=\s*[^;]*")
+
+
+def _safe_error(exc: BaseException) -> str:
+    """Returns str(exc) with any embedded DB password redacted."""
+    return _PWD_RE.sub(r"\1=***", str(exc))
 
 
 def _get_connection_string() -> str | None:
@@ -46,7 +59,6 @@ def load_risk_data() -> pd.DataFrame | None:
 
     try:
         import pyodbc
-        conn = pyodbc.connect(conn_str)
 
         query = """
             SELECT
@@ -62,8 +74,10 @@ def load_risk_data() -> pd.DataFrame | None:
             HAVING    COUNT(DISTINCT fn.ModuleKey) >= 1
         """
 
-        df = pd.read_sql(query, conn)
-        conn.close()
+        # closing() guarantees conn.close() runs even if pd.read_sql raises —
+        # pyodbc's own __exit__ only commits/rolls back, it doesn't close.
+        with closing(pyodbc.connect(conn_str)) as conn:
+            df = pd.read_sql(query, conn)
 
         if len(df) < 30:
             logger.warning("DW has only %d students — too few for reliable training. "
@@ -84,7 +98,7 @@ def load_risk_data() -> pd.DataFrame | None:
         return df
 
     except Exception as e:
-        logger.warning("Could not load data from DW: %s — falling back to synthetic.", e)
+        logger.warning("Could not load data from DW: %s — falling back to synthetic.", _safe_error(e))
         return None
 
 
@@ -121,7 +135,6 @@ def load_forecast_data() -> pd.DataFrame | None:
 
     try:
         import pyodbc
-        conn = pyodbc.connect(conn_str)
 
         # Window functions instead of two correlated subqueries per row.
         # Old plan was O(N²) — for ~7 800 rows that meant ~15 600 inner scans of
@@ -136,8 +149,8 @@ def load_forecast_data() -> pd.DataFrame | None:
             WHERE fn.NoteFinale IS NOT NULL
         """
 
-        df = pd.read_sql(query, conn)
-        conn.close()
+        with closing(pyodbc.connect(conn_str)) as conn:
+            df = pd.read_sql(query, conn)
 
         if len(df) < 30:
             logger.warning("DW has only %d grade records — too few. "
@@ -151,5 +164,5 @@ def load_forecast_data() -> pd.DataFrame | None:
         return df
 
     except Exception as e:
-        logger.warning("Could not load forecast data from DW: %s — falling back to synthetic.", e)
+        logger.warning("Could not load forecast data from DW: %s — falling back to synthetic.", _safe_error(e))
         return None

@@ -16,8 +16,12 @@ services:
       test: ["CMD-SHELL", "SQLCMDPASSWORD=${SA_PASSWORD} /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -Q 'SELECT 1' -C"]
       interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      # Cold first boot of mssql/server:2022-latest sits in "script upgrade mode"
+      # for several minutes when the volume already has system DBs from a prior
+      # image. start_period must exceed that, otherwise Docker counts failed
+      # probes as real failures and backend/ml-service give up on the depends_on.
+      start_period: 300s
     restart: unless-stopped
     networks:
       - pfa_internal_db
@@ -79,6 +83,12 @@ services:
       # Without this, every restart forces a full retrain from DW data (or falls
       # back to synthetic data if DW is empty).
       - ml_models_data:/app/saved_models
+    # Gate startup on the DB being ready: without this, first boot races the DB
+    # healthcheck, load_risk_data() silently falls back to synthetic data, and
+    # the model is then frozen at synthetic until a manual retrain.
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "8000"
     healthcheck:

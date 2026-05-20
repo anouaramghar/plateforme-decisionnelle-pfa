@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sklearn.metrics import (
     f1_score,
@@ -107,27 +107,27 @@ def _from_metadata() -> MetricsResponse:
 
 @router.get("", response_model=MetricsResponse)
 def get_metrics(
+    request: Request,
     _: None = Depends(verify_internal_token),
 ) -> MetricsResponse:
     """
     Returns evaluation metrics for the risk classifier.
 
     - If eval_set.parquet is present, metrics are recomputed live on that
-      held-out set (source = "computed").
+      held-out set using the pipeline already in app.state (source = "computed").
     - Otherwise the last-persisted values from metadata.json are returned
       (source = "metadata").
     - If neither file exists, safe zeros are returned (source = "metadata").
       The endpoint never raises a 500.
+
+    The pipeline is read from app.state — the same in-memory object that
+    /predict uses — so dashboards don't pay an O(MB) joblib.load on every
+    poll and metrics can't disagree with /predict mid-retrain.
     """
     if _EVAL_PARQUET.exists():
-        # Try to load the model from app state via a Request dependency.
-        # We do a lazy import of joblib so this module stays importable without
-        # a running app (useful for pytest).
         try:
-            import joblib
-            risk_model_path = _SAVED_DIR / "risk_model.joblib"
-            if risk_model_path.exists():
-                pipeline = joblib.load(risk_model_path)
+            pipeline = getattr(request.app.state, "risk_model", None)
+            if pipeline is not None:
                 return _compute_from_eval_set(pipeline)
         except Exception as exc:
             logger.warning(

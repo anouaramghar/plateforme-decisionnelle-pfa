@@ -218,14 +218,9 @@ export default function Login() {
                 className="input"
               />
             </Field>
-            <label className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-2)' }}>
-              <input
-                type="checkbox"
-                defaultChecked
-                className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
-              />
-              Se souvenir de cet appareil
-            </label>
+            {/* No "Remember me" checkbox: tokens are intentionally kept in memory
+                only (XSS hardening, see AuthContext). A persistent checkbox here
+                would lie to the user — the session always ends on hard reload. */}
           </div>
 
           <button type="submit" disabled={isSubmitting} className="btn btn-accent btn-lg w-full mt-5">

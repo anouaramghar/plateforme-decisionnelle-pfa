@@ -138,19 +138,27 @@ def save_with_metadata(
     X_test: pd.DataFrame,
     y_test: pd.Series,
     models_dir: Path | None = None,
+    data_source: str = "unknown",
 ) -> None:
     """
     Persists:
       - risk_model.joblib  — the trained pipeline
       - eval_set.parquet   — X_test with y_true column (for /metrics recompute)
       - metadata.json      — snapshot of AUC/F1/precision/recall/n_samples
+                             plus data_source so the dashboard can warn when
+                             metrics were computed against synthetic data.
 
     Args:
-        pipeline:   Trained sklearn Pipeline.
-        X_test:     Held-out feature DataFrame.
-        y_test:     Held-out labels Series.
-        models_dir: Override the output directory (used by staging retrain).
-                    Defaults to ML_MODELS_DIR (saved_models/ next to models/).
+        pipeline:    Trained sklearn Pipeline.
+        X_test:      Held-out feature DataFrame.
+        y_test:      Held-out labels Series.
+        models_dir:  Override the output directory (used by staging retrain).
+                     Defaults to ML_MODELS_DIR (saved_models/ next to models/).
+        data_source: Provenance tag — one of "synthetic" | "dw" | "unknown".
+                     The held-out 200-row "test" set is still i.i.d. from the
+                     synthetic generator when data_source == "synthetic", so
+                     the reported AUC reflects fit-to-generator, not real
+                     generalisation. Surface this to consumers.
     """
     out_dir = models_dir or MODEL_PATH.parent
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -184,6 +192,7 @@ def save_with_metadata(
         "precision": round(precision, 4),
         "recall": round(recall, 4),
         "n_samples": len(eval_df),
+        "data_source": data_source,
     }
 
     meta_path = out_dir / "metadata.json"

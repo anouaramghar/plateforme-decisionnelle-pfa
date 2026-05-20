@@ -15,7 +15,7 @@ namespace PlateformePFA.API.DTOs.Auth
         public string Email { get; set; } = string.Empty;
 
         [Required]
-        [MinLength(6)]
+        [MinLength(12, ErrorMessage = "Le mot de passe doit contenir au moins 12 caractères.")]
         public string MotDePasse { get; set; } = string.Empty;
 
         [Required]

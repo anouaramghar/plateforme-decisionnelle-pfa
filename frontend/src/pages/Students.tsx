@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
@@ -85,6 +85,11 @@ export default function Students() {
       }),
     [all, filiere, niveau, risque, q],
   )
+  // Reset to page 1 whenever filters change, otherwise the user can land on
+  // an empty page (e.g. page 3 of a result set that now only has 1 page).
+  useEffect(() => {
+    setPage(1)
+  }, [filiere, niveau, risque, q])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
 
@@ -272,6 +277,45 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
   const riskColor =
     student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
 
+  // Accessibility for a modal drawer: ESC closes it, focus jumps inside on
+  // open (so a screen reader announces the dialog), focus returns to the
+  // trigger row on close, and Tab is trapped within the panel so users can't
+  // tab-out behind the backdrop.
+  const panelRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation()
+        onClose()
+        return
+      }
+      if (ev.key === 'Tab' && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )
+        if (focusables.length === 0) return
+        const first = focusables[0]
+        const last  = focusables[focusables.length - 1]
+        if (ev.shiftKey && document.activeElement === first) {
+          last.focus()
+          ev.preventDefault()
+        } else if (!ev.shiftKey && document.activeElement === last) {
+          first.focus()
+          ev.preventDefault()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      previouslyFocused?.focus?.()
+    }
+  }, [onClose])
+
   return (
     <div
       className="fixed inset-0 z-40"
@@ -279,6 +323,10 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
       style={{ background: 'rgba(12,10,9,0.32)' }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Fiche étudiant — ${student.nomComplet}`}
         onClick={e => e.stopPropagation()}
         className="drawer absolute right-0 top-0 bottom-0 w-[640px] flex flex-col"
         style={{ background: 'var(--surface)' }}
@@ -299,7 +347,12 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
               <RiskPill risque={student.risque} />
             </div>
           </div>
-          <button onClick={onClose} className="btn btn-sm btn-ghost">
+          <button
+            ref={closeRef}
+            onClick={onClose}
+            aria-label="Fermer la fiche étudiant"
+            className="btn btn-sm btn-ghost"
+          >
             <Icon name="x" size={14} />
           </button>
         </div>

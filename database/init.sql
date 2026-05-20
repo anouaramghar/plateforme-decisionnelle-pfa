@@ -215,8 +215,12 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app')
 BEGIN
+    -- CHECK_POLICY = ON enforces Windows complexity / lockout rules on the
+    -- app credential; CHECK_EXPIRATION = OFF prevents an automatic password
+    -- expiry from silently bricking the backend when the app account is
+    -- non-interactive (rotation must be done deliberately, via redeploy).
     DECLARE @sql NVARCHAR(MAX) =
-        N'CREATE LOGIN pfa_app WITH PASSWORD = ''' + REPLACE('$(APP_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = OFF;';
+        N'CREATE LOGIN pfa_app WITH PASSWORD = ''' + REPLACE('$(APP_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
     EXEC sp_executesql @sql;
 END
 GO

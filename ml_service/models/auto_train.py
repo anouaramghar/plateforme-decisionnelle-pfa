@@ -35,12 +35,14 @@ def _ensure_risk_model() -> None:
     df = load_risk_data()
     if df is not None:
         logger.info("Training risk model on REAL DW data (%d students)...", len(df))
+        data_source = "dw"
     else:
         logger.info("Training risk model on SYNTHETIC data (%d samples)...", _N_SAMPLES)
         df = generate_data(_N_SAMPLES, _RANDOM_SEED)
+        data_source = "synthetic"
 
     pipeline, X_test, y_test = train(df)
-    save_with_metadata(pipeline, X_test, y_test)
+    save_with_metadata(pipeline, X_test, y_test, data_source=data_source)
     logger.info("risk_model trained and saved.")
 
 

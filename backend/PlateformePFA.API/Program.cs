@@ -178,7 +178,10 @@ if (app.Environment.IsDevelopment())
 }
 
 // Liveness probe used by Docker healthchecks and the nginx depends_on gate.
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// AllowAnonymous is explicit so that any future global `RequireAuthorization()`
+// default policy (e.g. fallback policy on AddAuthorization) doesn't accidentally
+// 401 the healthcheck — that would brick the container under Docker's gate.
+app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
@@ -10,6 +11,12 @@ from schemas.prediction_schema import PredictionRequest, PredictionResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
+
+# Serializes /predict/retrain. The handler patches module-level MODEL_PATH
+# globals in train_risk / train_clustering / train_regression; two concurrent
+# retrains would interleave those patches and the finally-restore, writing
+# models to the wrong directory and silently destroying the originals.
+_retrain_lock = threading.Lock()
 
 
 def _get_risk_model(request: Request) -> Pipeline:
@@ -148,66 +155,78 @@ def retrain_models(
     import joblib
     from models import auto_train, train_risk, train_clustering, train_regression
 
-    saved_dir   = auto_train.SAVED_MODELS_DIR
-    staging_dir = saved_dir.parent / "saved_models_staging"
+    # Non-blocking acquire: if another retrain is already running, fail fast
+    # with 409 rather than queue up and risk interleaving global patches.
+    if not _retrain_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="A retrain is already in progress. Try again once it completes.",
+        )
 
-    if staging_dir.exists():
-        shutil.rmtree(staging_dir)
-    staging_dir.mkdir(parents=True, exist_ok=True)
-
-    # Each train_*.py script writes through its own module-level MODEL_PATH.
-    # Redirect all four module-level paths at the staging dir for the duration
-    # of this call; restore them afterwards in a finally so a partial run can't
-    # leave the modules pointing at staging.
-    originals = {
-        "auto_train":      auto_train.SAVED_MODELS_DIR,
-        "train_risk":      train_risk.MODEL_PATH,
-        "train_clustering": train_clustering.MODEL_PATH,
-        "train_regression": train_regression.MODEL_PATH,
-    }
     try:
-        auto_train.SAVED_MODELS_DIR     = staging_dir
-        train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
-        train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
-        train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
-        auto_train.ensure_all_models()
-    except Exception:
+        saved_dir   = auto_train.SAVED_MODELS_DIR
+        staging_dir = saved_dir.parent / "saved_models_staging"
+
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        # Each train_*.py script writes through its own module-level MODEL_PATH.
+        # Redirect all four module-level paths at the staging dir for the duration
+        # of this call; restore them afterwards in a finally so a partial run can't
+        # leave the modules pointing at staging. The surrounding _retrain_lock
+        # guarantees no other request can observe or overwrite these patches.
+        originals = {
+            "auto_train":      auto_train.SAVED_MODELS_DIR,
+            "train_risk":      train_risk.MODEL_PATH,
+            "train_clustering": train_clustering.MODEL_PATH,
+            "train_regression": train_regression.MODEL_PATH,
+        }
+        try:
+            auto_train.SAVED_MODELS_DIR     = staging_dir
+            train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
+            train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
+            train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
+            auto_train.ensure_all_models()
+        except Exception:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            logger.exception("Retraining failed; previous models left in place.")
+            raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
+        finally:
+            auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
+            train_risk.MODEL_PATH           = originals["train_risk"]
+            train_clustering.MODEL_PATH     = originals["train_clustering"]
+            train_regression.MODEL_PATH     = originals["train_regression"]
+
+        # Atomically swap each freshly-trained file over the live one.
+        # Includes .joblib models plus eval artefacts (.parquet, .json).
+        saved_dir.mkdir(parents=True, exist_ok=True)
+        for new_file in staging_dir.iterdir():
+            if new_file.suffix in (".joblib", ".parquet", ".json"):
+                target = saved_dir / new_file.name
+                os.replace(new_file, target)        # atomic on same filesystem
+                logger.info("Promoted %s into saved_models/.", new_file.name)
         shutil.rmtree(staging_dir, ignore_errors=True)
-        logger.exception("Retraining failed; previous models left in place.")
-        raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
+
+        # Reload into app.state.
+        risk_path     = saved_dir / "risk_model.joblib"
+        cluster_path  = saved_dir / "cluster_model.joblib"
+        forecast_path = saved_dir / "forecast_model.joblib"
+
+        request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
+        request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
+        request.app.state.forecast_model = joblib.load(forecast_path) if forecast_path.exists() else None
+
+        logger.info("All models retrained and reloaded.")
+
+        return {
+            "status": "ok",
+            "message": "All models retrained and reloaded.",
+            "models": {
+                "risk_model":     request.app.state.risk_model     is not None,
+                "cluster_model":  request.app.state.cluster_model  is not None,
+                "forecast_model": request.app.state.forecast_model is not None,
+            },
+        }
     finally:
-        auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
-        train_risk.MODEL_PATH           = originals["train_risk"]
-        train_clustering.MODEL_PATH     = originals["train_clustering"]
-        train_regression.MODEL_PATH     = originals["train_regression"]
-
-    # Atomically swap each freshly-trained file over the live one.
-    # Includes .joblib models plus eval artefacts (.parquet, .json).
-    saved_dir.mkdir(parents=True, exist_ok=True)
-    for new_file in staging_dir.iterdir():
-        if new_file.suffix in (".joblib", ".parquet", ".json"):
-            target = saved_dir / new_file.name
-            os.replace(new_file, target)        # atomic on same filesystem
-            logger.info("Promoted %s into saved_models/.", new_file.name)
-    shutil.rmtree(staging_dir, ignore_errors=True)
-
-    # Reload into app.state.
-    risk_path     = saved_dir / "risk_model.joblib"
-    cluster_path  = saved_dir / "cluster_model.joblib"
-    forecast_path = saved_dir / "forecast_model.joblib"
-
-    request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
-    request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
-    request.app.state.forecast_model = joblib.load(forecast_path) if forecast_path.exists() else None
-
-    logger.info("All models retrained and reloaded.")
-
-    return {
-        "status": "ok",
-        "message": "All models retrained and reloaded.",
-        "models": {
-            "risk_model":     request.app.state.risk_model     is not None,
-            "cluster_model":  request.app.state.cluster_model  is not None,
-            "forecast_model": request.app.state.forecast_model is not None,
-        },
-    }
+        _retrain_lock.release()

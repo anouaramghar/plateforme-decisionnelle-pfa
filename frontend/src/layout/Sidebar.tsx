@@ -1,8 +1,10 @@
 import { NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { api } from '../services/api'
 
 interface NavEntry {
   to: string
@@ -12,13 +14,9 @@ interface NavEntry {
   badgeTone?: 'bad' | 'warn' | 'neutral'
 }
 
-const PRIMARY: NavEntry[] = [
-  { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
-  { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: 452 },
-  { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: 23, badgeTone: 'bad' },
-  { to: '/predictions', label: 'Prédictions ML',  icon: 'brain' },
-  { to: '/reports',     label: 'Rapports',        icon: 'doc' },
-]
+interface PaginatedResult<T> { items: T[]; total: number }
+interface AlerteRow { resolue: boolean }
+interface EtudiantRow { id: number }
 
 const SECONDARY: NavEntry[] = [
   { to: '/admin',    label: 'Administration', icon: 'database' },
@@ -27,8 +25,39 @@ const SECONDARY: NavEntry[] = [
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useTheme()
-  const { user } = useAuth()
+  const { user, token } = useAuth()
   const W = sidebarCollapsed ? 64 : 232
+
+  // Live badge counts. Gated on `token` so we don't fire unauthenticated calls
+  // before login. Cheap polling — same cadence the Alerts page already uses.
+  const { data: alertesData } = useQuery({
+    queryKey: ['sidebar', 'alertes-unresolved'],
+    queryFn: async () => {
+      const res = await api.get<PaginatedResult<AlerteRow>>('/alertes?pageSize=200')
+      return res.data.items.filter(a => !a.resolue).length
+    },
+    enabled: !!token,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
+  })
+  const { data: etudiantsCount } = useQuery({
+    queryKey: ['sidebar', 'etudiants-count'],
+    queryFn: async () => {
+      const res = await api.get<EtudiantRow[]>('/etudiants/with-stats')
+      return res.data.length
+    },
+    enabled: !!token,
+    refetchInterval: 5 * 60_000,
+    staleTime: 4 * 60_000,
+  })
+
+  const PRIMARY: NavEntry[] = [
+    { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
+    { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: etudiantsCount },
+    { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
+    { to: '/predictions', label: 'Prédictions ML',  icon: 'brain' },
+    { to: '/reports',     label: 'Rapports',        icon: 'doc' },
+  ]
 
   // Best-effort display name; fall back to the email's local part if the
   // backend hasn't returned a NomComplet (e.g. legacy seed accounts).

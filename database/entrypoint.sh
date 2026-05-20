@@ -15,15 +15,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Cold first boot — and any boot where SQL Server applies internal script
+# upgrades to the existing volume after an image bump — keeps the server in
+# "script upgrade mode" and rejects logins for several minutes. 30×2s (60s)
+# isn't enough; bump to 150×2s (5min) so we ride out the worst case instead
+# of exiting and letting Docker restart-loop us forever.
 echo "Waiting for SQL Server to be ready..."
 READY=0
-for i in $(seq 1 30); do
+for i in $(seq 1 150); do
     if SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
         -S localhost -U sa -Q "SELECT 1" -C > /dev/null 2>&1; then
         READY=1
         break
     fi
-    echo "  attempt $i/30..."
+    echo "  attempt $i/150..."
     sleep 2
 done
 

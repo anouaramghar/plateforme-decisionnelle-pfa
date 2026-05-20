@@ -5,6 +5,7 @@ import logging
 import os
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 import joblib
 
 from models.auto_train import ensure_all_models
@@ -99,13 +100,20 @@ def health():
     """
     Used by Docker healthcheck and the backend's depends_on gate.
     Returns which models are loaded so you can diagnose startup issues.
+
+    Returns 503 when the risk_model (the primary classifier driving /predict)
+    failed to load — otherwise Docker would mark the container healthy and the
+    backend would start serving 503s on every prediction call. cluster_model
+    and forecast_model are optional and do not block readiness.
     """
-    return {
-        "status": "ok",
+    risk_loaded = getattr(app.state, "risk_model", None) is not None
+    body = {
+        "status": "ok" if risk_loaded else "degraded",
         "service": "ml-service",
         "models": {
-            "risk_model": app.state.risk_model is not None,
-            "cluster_model": app.state.cluster_model is not None,
-            "forecast_model": app.state.forecast_model is not None,
+            "risk_model": risk_loaded,
+            "cluster_model": getattr(app.state, "cluster_model", None) is not None,
+            "forecast_model": getattr(app.state, "forecast_model", None) is not None,
         },
     }
+    return JSONResponse(content=body, status_code=200 if risk_loaded else 503)

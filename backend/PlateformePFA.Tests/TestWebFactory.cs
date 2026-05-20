@@ -15,7 +15,12 @@ namespace PlateformePFA.Tests;
 /// </summary>
 public class TestWebFactory : WebApplicationFactory<Program>
 {
-    private static readonly string DbName = $"test-{Guid.NewGuid()}";
+    // Instance-level (not static) so each test class that constructs its own
+    // TestWebFactory gets a fresh InMemory store. A static field would share one
+    // store across the entire test run and let earlier classes leak state into
+    // later ones — exactly the kind of flake xUnit's collection isolation is
+    // meant to prevent.
+    private readonly string DbName = $"test-{Guid.NewGuid()}";
 
     /// <summary>
     /// Program.cs reads JWT_SECRET / ML_INTERNAL_TOKEN BEFORE the WAF host

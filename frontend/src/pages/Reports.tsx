@@ -69,9 +69,15 @@ async function downloadRapport(row: RapportRow): Promise<void> {
   a.href = url
   a.download = filename
   document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  try {
+    a.click()
+  } finally {
+    document.body.removeChild(a)
+    // Defer the revoke: Firefox aborts the download if the blob URL is freed
+    // in the same task as the click(). A short timeout is long enough for the
+    // browser to capture the blob and short enough that we don't leak memory.
+    setTimeout(() => URL.revokeObjectURL(url), 4_000)
+  }
 }
 
 function formatTaille(bytes: number): string {
@@ -134,14 +140,10 @@ export default function Reports() {
           <div className="cap mb-1">Rapports automatiques · Conseil pédagogique</div>
           <h1 className="text-[22px] font-semibold tracking-tight">Rapports</h1>
         </div>
-        <button
-          className="btn btn-sm btn-accent"
-          onClick={() => generateMutation.mutate()}
-          disabled={generateMutation.isPending}
-        >
-          <Icon name="plus" size={13} strokeWidth={2.2} />
-          {generateMutation.isPending ? 'Génération…' : 'Nouveau rapport'}
-        </button>
+        {/* The canonical "generate" action lives in the parameters panel below
+            ("Générer le rapport"). A duplicate header button would let two
+            clicks race the same mutation and produce two simultaneous file
+            downloads. */}
       </div>
 
       {generateMutation.isError && (

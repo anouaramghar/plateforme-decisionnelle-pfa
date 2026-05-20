@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
@@ -72,12 +73,52 @@ export default function Alerts() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
   })
 
+  // "Tout marquer lu" — resolves every currently-visible unresolved alert.
+  // The backend has no bulk endpoint, so fan out PATCH calls and invalidate
+  // once at the end. Scoped to the filtered view so the action matches what
+  // the user is looking at (not every alert in the system).
+  const resolveAllMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await Promise.all(ids.map(id => api.patch(`/alertes/${id}/resoudre`)))
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+  })
+
   const filtered = all.filter(a => {
     if (tab === 'active' && a.resolue) return false
     if (tab === 'resolu' && !a.resolue) return false
     if (typeFilter !== 'Tous' && a.type !== typeFilter) return false
     return true
   })
+
+  // Export the currently-filtered alerts to an .xlsx workbook. CLAUDE.md
+  // designates xlsx as the Excel export library for this project; this is
+  // the alerts feature's deliverable from the responsability split.
+  const handleExport = () => {
+    const rows = filtered.map(a => ({
+      ID:        a.id,
+      Type:      ALERT_TYPES[a.type as AlertType]?.label ?? a.type,
+      Niveau:    a.niveau,
+      Etudiant:  a.etudiant ? `${a.etudiant.prenom} ${a.etudiant.nom}` : `#${a.etudiantId}`,
+      Filière:   a.etudiant?.filiere ?? '',
+      Niveau_Et: a.etudiant?.niveau ?? '',
+      Message:   a.message,
+      Statut:    a.resolue ? 'Résolue' : 'Active',
+      'Créée le': new Date(a.creeLe).toLocaleString('fr-FR'),
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Alertes')
+    const stamp = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `alertes-${stamp}.xlsx`)
+  }
+
+  const handleMarkAllRead = () => {
+    const unresolvedIds = filtered.filter(a => !a.resolue).map(a => a.id)
+    if (unresolvedIds.length === 0) return
+    if (!window.confirm(`Marquer ${unresolvedIds.length} alerte(s) comme résolue(s) ?`)) return
+    resolveAllMutation.mutate(unresolvedIds)
+  }
 
   const counts: Record<AlertType, number> = {
     NoteFaible:       all.filter(a => a.type === 'NoteFaible'       && !a.resolue).length,
@@ -102,11 +143,19 @@ export default function Alerts() {
           <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm">
+          <button
+            className="btn btn-sm"
+            onClick={handleMarkAllRead}
+            disabled={resolveAllMutation.isPending || filtered.every(a => a.resolue)}
+          >
             <Icon name="check" size={13} />
-            Tout marquer lu
+            {resolveAllMutation.isPending ? 'Marquage…' : 'Tout marquer lu'}
           </button>
-          <button className="btn btn-sm">
+          <button
+            className="btn btn-sm"
+            onClick={handleExport}
+            disabled={filtered.length === 0}
+          >
             <Icon name="download" size={13} />
             Exporter
           </button>

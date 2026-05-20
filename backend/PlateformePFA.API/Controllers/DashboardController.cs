@@ -246,12 +246,24 @@ namespace PlateformePFA.API.Controllers
             // ── Sparkline + side stats (Phase 1 task 1.6) ────────────────────
             // Cumulative student count at the end of each of the last 14 weeks,
             // oldest first so the bars render left→right naturally on the UI.
+            // One DB roundtrip (vs 14 CountAsync calls) — sort once, then
+            // binary-search each weekEnd cutoff in memory.
+            var creeLeDates = await _context.Etudiants
+                .Select(e => e.CreeLe)
+                .ToListAsync();
+            creeLeDates.Sort();
             var sparkPoints = new List<int>();
             for (int w = 13; w >= 0; w--)
             {
                 var weekEnd = DateTime.UtcNow.Date.AddDays(-w * 7);
-                var count = await _context.Etudiants.CountAsync(e => e.CreeLe < weekEnd);
-                sparkPoints.Add(count);
+                int lo = 0, hi = creeLeDates.Count;
+                while (lo < hi)
+                {
+                    var mid = (lo + hi) >> 1;
+                    if (creeLeDates[mid] < weekEnd) lo = mid + 1;
+                    else hi = mid;
+                }
+                sparkPoints.Add(lo);
             }
             var nouveaux = await _context.Etudiants.CountAsync(e => e.CreeLe >= weekAgo);
             // No soft-delete column on Etudiant yet — retraits stays at 0 until
