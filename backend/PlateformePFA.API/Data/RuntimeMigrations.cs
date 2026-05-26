@@ -179,6 +179,55 @@ namespace PlateformePFA.API.Data
                     CREATE INDEX IX_AlertDrafts_CreatedBy_Status
                         ON AlertDrafts(CreatedBy, Status);
             ");
+
+            // L4: defense-in-depth CHECK constraints on Copilot enums.
+            // If the agent (or any future client) bypasses pydantic validation
+            // and tries to insert an invalid Severity/Status/Role, SQL refuses.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AlertDrafts_Severity'
+                                     AND parent_object_id = OBJECT_ID('dbo.AlertDrafts'))
+                    ALTER TABLE AlertDrafts
+                        ADD CONSTRAINT CK_AlertDrafts_Severity
+                        CHECK (Severity IN ('low', 'medium', 'high'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AlertDrafts_Status'
+                                     AND parent_object_id = OBJECT_ID('dbo.AlertDrafts'))
+                    ALTER TABLE AlertDrafts
+                        ADD CONSTRAINT CK_AlertDrafts_Status
+                        CHECK (Status IN ('pending_user_confirm', 'sent', 'expired', 'cancelled'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessionMessages', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentSessionMessages_Role'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentSessionMessages'))
+                    ALTER TABLE AgentSessionMessages
+                        ADD CONSTRAINT CK_AgentSessionMessages_Role
+                        CHECK (Role IN ('system', 'user', 'assistant', 'tool'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentAuditLogs_Kind'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    ALTER TABLE AgentAuditLogs
+                        ADD CONSTRAINT CK_AgentAuditLogs_Kind
+                        CHECK (Kind IN ('llm_call', 'tool_call', 'confirm', 'reject', 'safety_block'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentAuditLogs_Outcome'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    ALTER TABLE AgentAuditLogs
+                        ADD CONSTRAINT CK_AgentAuditLogs_Outcome
+                        CHECK (Outcome IN ('success', 'error', 'denied'));
+            ");
         }
     }
 }
