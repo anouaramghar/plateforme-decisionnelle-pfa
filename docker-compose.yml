@@ -42,6 +42,7 @@ services:
       - ConnectionStrings__DefaultConnection=Server=db;Database=${DB_NAME};User=pfa_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True;
       - ML_API_URL=${ML_API_URL}
       - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
+      - AGENT_SERVICE_URL=${AGENT_SERVICE_URL:-http://agent-service:8001}
       - ASPNETCORE_URLS=http://+:8080
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ISSUER=${JWT_ISSUER}
@@ -56,6 +57,8 @@ services:
       db:
         condition: service_healthy
       ml-service:
+        condition: service_healthy
+      agent-service:
         condition: service_healthy
     healthcheck:
       # curl is installed in the backend Dockerfile runtime stage.
@@ -101,6 +104,33 @@ services:
     networks:
       - pfa_internal_ml
       - pfa_internal_db
+
+  # 6. Copilot agent-service (Python 3.11 / FastAPI)
+  # Orchestrates the agentic AI loop against NVIDIA NIM. Reachable only from
+  # the backend over pfa_internal_ml (no host port, no nginx route).
+  agent-service:
+    build:
+      context: ./agent-service
+    environment:
+      - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
+      - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
+      - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-meta/llama-3.3-70b-instruct}
+      - COPILOT_MODEL_SQL=${COPILOT_MODEL_SQL:-minimaxai/minimax-m2.7}
+      - COPILOT_MODEL_REASON=${COPILOT_MODEL_REASON:-nvidia/llama-3.3-nemotron-super-49b-v1.5}
+      - COPILOT_MAX_TOOL_ITERATIONS=${COPILOT_MAX_TOOL_ITERATIONS:-8}
+      - COPILOT_TURN_TOKEN_BUDGET_IN=${COPILOT_TURN_TOKEN_BUDGET_IN:-20000}
+      - COPILOT_TURN_TOKEN_BUDGET_OUT=${COPILOT_TURN_TOKEN_BUDGET_OUT:-4000}
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - pfa_internal_ml
 
   # 4. Frontend React.js (nginx-unprivileged serves on 8080)
   frontend:
