@@ -73,3 +73,15 @@ BEGIN
     ALTER ROLE db_datawriter ADD MEMBER pfa_app;
 END
 GO
+
+-- ─── Copilot read-only access (agent-service /query_dw tool) ─────────────────
+IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app_readonly')
+   AND NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app_readonly')
+    CREATE USER pfa_app_readonly FOR LOGIN pfa_app_readonly;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app_readonly')
+BEGIN
+    ALTER ROLE db_datareader ADD MEMBER pfa_app_readonly;
+END
+GO

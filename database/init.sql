@@ -225,6 +225,16 @@ BEGIN
 END
 GO
 
+-- Copilot read-only login: used by agent-service /query_dw tool.
+-- Even if every safety layer is bypassed, this login physically cannot mutate the DW.
+IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app_readonly')
+BEGIN
+    DECLARE @sql_ro NVARCHAR(MAX) =
+        N'CREATE LOGIN pfa_app_readonly WITH PASSWORD = ''' + REPLACE('$(APP_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
+    EXEC sp_executesql @sql_ro;
+END
+GO
+
 USE PFA_DB;
 GO
 
