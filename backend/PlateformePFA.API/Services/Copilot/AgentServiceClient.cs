@@ -17,9 +17,9 @@ namespace PlateformePFA.API.Services.Copilot
         {
             _http = http;
             _log = log;
-            _internalToken = config["ML_INTERNAL_TOKEN"]
+            _internalToken = config["AGENT_INTERNAL_TOKEN"]
                 ?? throw new InvalidOperationException(
-                    "ML_INTERNAL_TOKEN missing — required to authenticate to agent-service");
+                    "AGENT_INTERNAL_TOKEN missing — required to authenticate to agent-service");
         }
 
         public async IAsyncEnumerable<ReadOnlyMemory<byte>> StreamAsync(

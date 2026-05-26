@@ -13,7 +13,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Shared secret with backend (X-Internal-Token on /agent/*).
-    internal_token: str = Field(..., alias="ML_INTERNAL_TOKEN")
+    # Distinct from ML_INTERNAL_TOKEN so leak of one does not compromise both.
+    internal_token: str = Field(..., alias="AGENT_INTERNAL_TOKEN")
 
     # NIM provider
     nim_api_key: str = Field(..., alias="NVIDIA_NIM_API_KEY")

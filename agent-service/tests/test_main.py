@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(monkeypatch):
     # Provide the minimal env so Settings() validates without a real NIM key.
-    monkeypatch.setenv("ML_INTERNAL_TOKEN", "test-internal-token")
+    monkeypatch.setenv("AGENT_INTERNAL_TOKEN", "test-internal-token")
     monkeypatch.setenv("NVIDIA_NIM_API_KEY", "nvapi-test")
 
     # Settings is cached via lru_cache; clear it so each test gets fresh env.
