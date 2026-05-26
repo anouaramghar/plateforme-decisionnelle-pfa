@@ -36,6 +36,8 @@ public class TestWebFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("JWT_AUDIENCE",      "test");
         Environment.SetEnvironmentVariable("ML_API_URL",        "http://localhost:9999");
         Environment.SetEnvironmentVariable("ML_INTERNAL_TOKEN", "test-token-not-placeholder");
+        Environment.SetEnvironmentVariable("AGENT_INTERNAL_TOKEN", "test-agent-token-not-placeholder");
+        Environment.SetEnvironmentVariable("AGENT_SERVICE_URL", "http://localhost:9998");
         Environment.SetEnvironmentVariable("ADMIN_SEED_EMAIL",  "ignored");
         Environment.SetEnvironmentVariable(
             "ADMIN_SEED_PASSWORD",
@@ -56,6 +58,8 @@ public class TestWebFactory : WebApplicationFactory<Program>
                 ["JWT_AUDIENCE"]      = "test",
                 ["ML_API_URL"]        = "http://localhost:9999",
                 ["ML_INTERNAL_TOKEN"] = "x",
+                ["AGENT_INTERNAL_TOKEN"] = "test-agent-token",
+                ["AGENT_SERVICE_URL"] = "http://localhost:9998",
                 ["ConnectionStrings:DefaultConnection"] = "InMemory",
                 ["ADMIN_SEED_EMAIL"]    = "ignored",
                 ["ADMIN_SEED_PASSWORD"] = "ignored-but-must-be-12-chars",

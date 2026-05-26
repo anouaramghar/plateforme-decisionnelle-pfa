@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +16,11 @@ namespace PlateformePFA.API.Controllers
     [Authorize]
     public class CopilotController : ControllerBase
     {
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true,
+        };
+
         private readonly AppDbContext _db;
         private readonly IAgentServiceClient _agent;
         private readonly ILogger<CopilotController> _log;
@@ -74,12 +81,13 @@ namespace PlateformePFA.API.Controllers
                 .Select(m => (int?)m.TurnIndex)
                 .MaxAsync(ct) ?? -1;
 
+            var userTurnIndex = lastTurnIndex + 1;
             _db.AgentSessionMessages.Add(new AgentSessionMessage
             {
                 SessionId   = session.Id,
-                TurnIndex   = lastTurnIndex + 1,
+                TurnIndex   = userTurnIndex,
                 Role        = "user",
-                ContentJson = System.Text.Json.JsonSerializer.Serialize(new
+                ContentJson = JsonSerializer.Serialize(new
                 {
                     role = "user",
                     content = body.Message,
@@ -88,22 +96,18 @@ namespace PlateformePFA.API.Controllers
 
             await _db.SaveChangesAsync(ct);
 
-            // 3. Build the agent request (last 20 turns).
-            var historyDesc = await _db.AgentSessionMessages
+            // 3. Build the agent request (last 20 turns, chronological).
+            var recent = await _db.AgentSessionMessages
                 .Where(m => m.SessionId == session.Id)
                 .OrderByDescending(m => m.TurnIndex)
                 .Take(20)
                 .Select(m => m.ContentJson)
                 .ToListAsync(ct);
-            historyDesc.Reverse();  // oldest -> newest
+            // recent is newest-first; flip back to oldest-first for the agent.
+            var history = ((IEnumerable<string>)recent).Reverse().ToList();
 
-            var messages = historyDesc
-                .Select(json => System.Text.Json.JsonSerializer.Deserialize<AgentChatMessage>(
-                    json,
-                    new System.Text.Json.JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true,
-                    })!)
+            var messages = history
+                .Select(json => JsonSerializer.Deserialize<AgentChatMessage>(json, JsonOptions)!)
                 .Where(m => m != null)
                 .ToList();
 
@@ -121,30 +125,90 @@ namespace PlateformePFA.API.Controllers
                 Messages = messages,
             };
 
-            // 4. Proxy the SSE stream byte-for-byte to the browser.
+            // 4. Proxy the SSE stream byte-for-byte to the browser, while
+            //    tee'ing it through SseParser to capture the assistant's
+            //    text for persistence.
             Response.StatusCode = StatusCodes.Status200OK;
             Response.ContentType = "text/event-stream";
             Response.Headers["Cache-Control"] = "no-cache";
             Response.Headers["X-Accel-Buffering"] = "no";
 
+            var parser = new SseParser();
+            var assistantText = new StringBuilder();
+            var doneSeen = false;
+
             try
             {
                 await foreach (var chunk in _agent.StreamAsync(agentReq, ct))
                 {
+                    // Pass through to the browser first — never block the user
+                    // on our local bookkeeping.
                     await Response.Body.WriteAsync(chunk, ct);
                     await Response.Body.FlushAsync(ct);
+
+                    // Tee — parse what we just wrote to extract assistant text.
+                    foreach (var ev in parser.Feed(chunk.Span))
+                    {
+                        if (ev.Name == "token")
+                        {
+                            // data is a JSON object with a "text" string field.
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(ev.Data);
+                                if (doc.RootElement.TryGetProperty("text", out var t)
+                                    && t.ValueKind == JsonValueKind.String)
+                                {
+                                    assistantText.Append(t.GetString());
+                                }
+                            }
+                            catch (JsonException)
+                            {
+                                // Don't fail the proxy on a malformed token event;
+                                // just skip it for persistence purposes.
+                            }
+                        }
+                        else if (ev.Name == "done")
+                        {
+                            doneSeen = true;
+                        }
+                    }
+                }
+
+                // 5. Persist the assistant turn (if we saw at least some text).
+                //    Skipped if the stream ended on an error event before done,
+                //    or if the client disconnected mid-stream.
+                if (doneSeen && assistantText.Length > 0)
+                {
+                    _db.AgentSessionMessages.Add(new AgentSessionMessage
+                    {
+                        SessionId   = session.Id,
+                        TurnIndex   = userTurnIndex + 1,
+                        Role        = "assistant",
+                        ContentJson = JsonSerializer.Serialize(new
+                        {
+                            role    = "assistant",
+                            content = assistantText.ToString(),
+                        }),
+                    });
+                    await _db.SaveChangesAsync(ct);
                 }
             }
             catch (OperationCanceledException)
             {
-                // Client disconnected; nothing to clean up.
+                // Client disconnected; partial assistant text is dropped on the floor.
             }
             catch (Exception ex)
             {
                 _log.LogError(ex, "copilot chat failed for session {SessionId}", session.Id);
-                var errorPayload =
-                    $"event: error\ndata: {{\"message\": \"{ex.GetType().Name}\"}}\n\n";
-                await Response.WriteAsync(errorPayload, ct);
+
+                // L5: use JsonSerializer instead of string-interpolation so that
+                // any future change (e.g. logging ex.Message) cannot inject into
+                // the JSON payload.
+                var errorJson = JsonSerializer.Serialize(new
+                {
+                    message = ex.GetType().Name,
+                });
+                await Response.WriteAsync($"event: error\ndata: {errorJson}\n\n", ct);
             }
         }
     }
