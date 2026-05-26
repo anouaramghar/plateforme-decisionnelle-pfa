@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
 namespace PlateformePFA.API.Models
@@ -32,7 +33,10 @@ namespace PlateformePFA.API.Models
 
         public DateTime? SentAt { get; set; }
 
-        [JsonIgnore] public Etudiant? Student { get; set; }
-        [JsonIgnore] public Utilisateur? Creator { get; set; }
+        [JsonIgnore] [ForeignKey(nameof(StudentId))]
+        public Etudiant? Student { get; set; }
+
+        [JsonIgnore] [ForeignKey(nameof(CreatedBy))]
+        public Utilisateur? Creator { get; set; }
     }
 }
