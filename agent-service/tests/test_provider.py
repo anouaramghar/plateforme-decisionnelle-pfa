@@ -1,0 +1,69 @@
+"""Provider interface + Mock implementation (no network) + NIM live test."""
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from schemas import ChatMessage
+
+
+@pytest.mark.asyncio
+async def test_mock_provider_chat_stream_yields_scripted_chunks():
+    from provider import MockLLMProvider
+
+    scripted = ["Bon", "jour", "."]
+    p = MockLLMProvider(scripted_chunks=scripted)
+
+    chunks: list[str] = []
+    async for delta in p.chat_stream(
+        model="any",
+        messages=[ChatMessage(role="user", content="hi")],
+    ):
+        chunks.append(delta.text or "")
+
+    assert "".join(chunks) == "Bonjour."
+
+
+@pytest.mark.asyncio
+async def test_mock_provider_reports_usage():
+    from provider import MockLLMProvider
+
+    p = MockLLMProvider(scripted_chunks=["abc"], tokens_in=11, tokens_out=22)
+    async for _ in p.chat_stream(
+        model="any",
+        messages=[ChatMessage(role="user", content="x")],
+    ):
+        pass
+    assert p.last_tokens_in == 11
+    assert p.last_tokens_out == 22
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("NVIDIA_NIM_API_KEY"),
+    reason="NVIDIA_NIM_API_KEY not set — skipping live NIM integration test",
+)
+async def test_nim_provider_real_round_trip():
+    """Smoke test against the real NIM free tier — short prompt, cheap."""
+    from provider import NIMProvider
+
+    p = NIMProvider(
+        api_key=os.environ["NVIDIA_NIM_API_KEY"],
+        base_url="https://integrate.api.nvidia.com/v1",
+    )
+
+    full_text = ""
+    finish: str | None = None
+    async for delta in p.chat_stream(
+        model="meta/llama-3.3-70b-instruct",
+        messages=[ChatMessage(role="user", content="Reponds par un seul mot bonjour")],
+        max_tokens=10,
+    ):
+        if delta.text:
+            full_text += delta.text
+        if delta.finish_reason:
+            finish = delta.finish_reason
+
+    assert finish in {"stop", "length"}
+    assert len(full_text) > 0
