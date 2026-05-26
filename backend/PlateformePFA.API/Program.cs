@@ -136,8 +136,11 @@ builder.Services.AddHttpClient<
     PlateformePFA.API.Services.Copilot.AgentServiceClient>(c =>
 {
     c.BaseAddress = new Uri(agentServiceUrl);
-    // Generous — NIM free tier can be slow.
-    c.Timeout = TimeSpan.FromMinutes(5);
+    // SSE streams can be arbitrarily long (multi-step agent turns + slow NIM).
+    // HttpClient.Timeout covers the entire request lifecycle including the
+    // streaming body read, so any finite value would cut long conversations.
+    // Cancellation comes from the CancellationToken on the request instead.
+    c.Timeout = Timeout.InfiniteTimeSpan;
 });
 
 builder.Services.AddAuthentication(options =>
