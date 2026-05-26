@@ -127,6 +127,19 @@ builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 
 builder.Services.AddHttpClient("MLService");
 
+// ── Copilot ──────────────────────────────────────────────────────────────────
+var agentServiceUrl = builder.Configuration["AGENT_SERVICE_URL"]
+    ?? "http://agent-service:8001";
+
+builder.Services.AddHttpClient<
+    PlateformePFA.API.Services.Copilot.IAgentServiceClient,
+    PlateformePFA.API.Services.Copilot.AgentServiceClient>(c =>
+{
+    c.BaseAddress = new Uri(agentServiceUrl);
+    // Generous — NIM free tier can be slow.
+    c.Timeout = TimeSpan.FromMinutes(5);
+});
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
