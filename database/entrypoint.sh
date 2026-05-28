@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${SA_PASSWORD:?SA_PASSWORD is required}"
 : "${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}"
+: "${READONLY_DB_PASSWORD:?READONLY_DB_PASSWORD is required (Copilot read-only DW login)}"
 
 # Start SQL Server in background
 /opt/mssql/bin/sqlservr &
@@ -59,6 +60,15 @@ if [ "$RESULT" = "0" ]; then
 else
     echo "Database PFA_DB already exists — skipping initialization."
 fi
+
+# Always run the Copilot read-only provisioning — idempotent, and crucially it
+# must roll forward onto volumes seeded BEFORE Copilot existed (the init.sql /
+# init_dw.sql branch above only fires on cold first boot).
+echo "Ensuring Copilot read-only login (idempotent)..."
+SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost -U sa -C -b \
+    -v READONLY_PASSWORD="$READONLY_DB_PASSWORD" \
+    -i /scripts/copilot_readonly.sql
 
 # Clear the trap — from here we want sqlservr to own the foreground.
 trap - EXIT

@@ -7,6 +7,9 @@ services:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=${SA_PASSWORD}
       - APP_DB_PASSWORD=${APP_DB_PASSWORD}
+      # Distinct credential for the Copilot read-only DW login (pfa_app_readonly).
+      # Kept separate from APP_DB_PASSWORD so a leak of one does not expose both.
+      - READONLY_DB_PASSWORD=${READONLY_DB_PASSWORD}
     # Bound to localhost only — dev convenience for SSMS / Azure Data Studio.
     ports:
       - "127.0.0.1:1433:1433"
@@ -59,8 +62,11 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_healthy
-      agent-service:
-        condition: service_healthy
+      # NOTE: agent-service is intentionally NOT a startup gate. Copilot is an
+      # optional add-on; the BI platform (auth, students, notes, exports) must
+      # boot and stay available even if the AI sidecar is down or unhealthy.
+      # CopilotController surfaces a clean SSE `error` event when it can't reach
+      # agent-service, so no hard dependency is needed here.
     healthcheck:
       # curl is installed in the backend Dockerfile runtime stage.
       test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/health || exit 1"]
@@ -118,9 +124,15 @@ services:
       - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-meta/llama-3.3-70b-instruct}
       - COPILOT_MODEL_SQL=${COPILOT_MODEL_SQL:-minimaxai/minimax-m2.7}
       - COPILOT_MODEL_REASON=${COPILOT_MODEL_REASON:-nvidia/llama-3.3-nemotron-super-49b-v1.5}
+      - COPILOT_MODEL_SAFETY=${COPILOT_MODEL_SAFETY:-nvidia/llama-3.1-nemotron-safety-guard-8b-v3}
+      - COPILOT_EMBED_MODEL=${COPILOT_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
       - COPILOT_MAX_TOOL_ITERATIONS=${COPILOT_MAX_TOOL_ITERATIONS:-8}
       - COPILOT_TURN_TOKEN_BUDGET_IN=${COPILOT_TURN_TOKEN_BUDGET_IN:-20000}
       - COPILOT_TURN_TOKEN_BUDGET_OUT=${COPILOT_TURN_TOKEN_BUDGET_OUT:-4000}
+      - COPILOT_DAILY_TOKEN_CAP_PER_USER=${COPILOT_DAILY_TOKEN_CAP_PER_USER:-200000}
+      # Read-only DW connection for the P1.B query_dw tool. Passed now so the
+      # env contract is stable; consumed once query_dw lands.
+      - COPILOT_DW_READONLY_CONN=${COPILOT_DW_READONLY_CONN:-}
     expose:
       - "8001"
     healthcheck:
