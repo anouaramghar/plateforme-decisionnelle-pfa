@@ -70,6 +70,71 @@ cd backend/PlateformePFA.Tests && dotnet test --nologo && cd ../..
 
 Expected: agent-service `10 passed, 1 skipped`; backend `Passed! ... Total: 13`.
 
+- [ ] **Step 0.3: Pre-flight — prove NIM actually tool-calls (fail-fast on the one real unknown)**
+
+Everything in this plan is mock-tested, so the whole suite can go green even if
+the live router model does not emit OpenAI-format `tool_calls` over NIM's free
+tier (P1.A only smoke-tested plain chat). Prove it *before* building the loop.
+
+Create a throwaway `agent-service/scripts/nim_toolcall_smoke.py`:
+
+```python
+"""One-off: does the router model emit a tool_call over NIM? Not committed."""
+import asyncio, os
+from openai import AsyncOpenAI
+
+TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_student",
+        "description": "Récupère le profil d'un étudiant par matricule.",
+        "parameters": {
+            "type": "object",
+            "properties": {"matricule": {"type": "string"}},
+            "required": ["matricule"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+async def main():
+    client = AsyncOpenAI(
+        api_key=os.environ["NVIDIA_NIM_API_KEY"],
+        base_url="https://integrate.api.nvidia.com/v1",
+    )
+    saw_tool_call = False
+    stream = await client.chat.completions.create(
+        model=os.environ.get("COPILOT_MODEL_ROUTER", "meta/llama-3.3-70b-instruct"),
+        messages=[{"role": "user", "content": "Donne-moi le profil de l'etudiant 20231042."}],
+        tools=[TOOL], tool_choice="auto", stream=True,
+    )
+    async for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.tool_calls:
+            saw_tool_call = True
+        if chunk.choices and chunk.choices[0].finish_reason:
+            print("finish_reason:", chunk.choices[0].finish_reason)
+    print("SAW TOOL CALL:", saw_tool_call)
+
+asyncio.run(main())
+```
+
+Run it with a real key:
+
+```bash
+cd agent-service
+# PowerShell: $env:NVIDIA_NIM_API_KEY = (real key)
+NVIDIA_NIM_API_KEY=<real-key> python scripts/nim_toolcall_smoke.py
+cd ..
+```
+
+Expected: `finish_reason: tool_calls` and `SAW TOOL CALL: True`.
+
+- **If it works:** delete the script (`rm agent-service/scripts/nim_toolcall_smoke.py`) and proceed.
+- **If the model does NOT tool-call** (some free-tier models ignore `tools`):
+  STOP and pick a tool-calling-capable model for `COPILOT_MODEL_ROUTER` (re-run
+  `scripts/nim_smoke_test.py` candidates), update `.env` + `.env.example`, and
+  only then continue. Better to learn this now than at Task 10.
+
 ---
 
 ## Task 1: Backend — `CopilotToolController` + `get_student`
@@ -88,9 +153,7 @@ Create `backend/PlateformePFA.Tests/Controllers/CopilotToolControllerTests.cs`:
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
-using PlateformePFA.API.Data;
-using PlateformePFA.API.Models;
+using PlateformePFA.Tests.Fixtures;
 using Xunit;
 
 namespace PlateformePFA.Tests.Controllers;
@@ -99,40 +162,27 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
 {
     private readonly TestWebFactory _factory;
 
-    public CopilotToolControllerTests(TestWebFactory factory) => _factory = factory;
+    public CopilotToolControllerTests(TestWebFactory factory)
+    {
+        _factory = factory;
+        _factory.SeedAdmin();
+        // Seeds student E10001 WITH a note (NoteFinal 12.2) + no absences. Using
+        // the shared seeder avoids a note-less student, whose empty .Average()
+        // projection can throw under the EF InMemory provider.
+        using var ctx = _factory.CreateContext();
+        SampleData.SeedOne(ctx);
+    }
 
     // The internal token the in-memory test config injects (see TestWebFactory).
     private const string InternalToken = "test-agent-token";
 
     private async Task<HttpClient> AuthedClientAsync()
     {
-        _factory.SeedAdmin();
         var client = _factory.CreateClient();
         var token = await AuthHelper.GetAdminTokenAsync(client);
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return client;
-    }
-
-    private void SeedStudent(string matricule)
-    {
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        if (db.Etudiants.Any(e => e.Matricule == matricule)) return;
-
-        var filiere = new Filiere { Code = "GI", Intitule = "Génie Informatique" };
-        db.Filieres.Add(filiere);
-        db.SaveChanges();
-        db.Etudiants.Add(new Etudiant
-        {
-            Matricule = matricule,
-            Nom = "ENGAR",
-            Prenom = "Ahmed",
-            FiliereId = filiere.Id,
-            Niveau = "CI2",
-            Annee = "2025/2026",
-        });
-        db.SaveChanges();
     }
 
     [Fact]
@@ -141,7 +191,7 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
         var client = await AuthedClientAsync();
         var res = await client.PostAsJsonAsync(
             "/api/copilot/tool/get_student",
-            new { args = new { matricule = "X" } });
+            new { args = new { matricule = "E10001" } });
         res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -149,18 +199,18 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
     public async Task Get_student_happy_path_returns_ok_envelope()
     {
         var client = await AuthedClientAsync();
-        SeedStudent("20231042");
         client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
 
         var res = await client.PostAsJsonAsync(
             "/api/copilot/tool/get_student",
-            new { args = new { matricule = "20231042" } });
+            new { args = new { matricule = "E10001" } });
 
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await res.Content.ReadAsStringAsync();
         body.Should().Contain("\"ok\":true");
-        body.Should().Contain("\"matricule\":\"20231042\"");
-        body.Should().Contain("\"risque\":");
+        body.Should().Contain("\"matricule\":\"E10001\"");
+        body.Should().Contain("\"moyenne_generale\":12.2");
+        body.Should().Contain("\"risque\":\"faible\"");  // moy 12.2, 0 absences
     }
 
     [Fact]
@@ -193,6 +243,10 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
     }
 }
 ```
+
+> Note: `moyenne_generale` is serialized as the JSON number `12.2`. If your
+> serializer renders it as `12.20`, assert on `"matricule":"E10001"` +
+> `"risque":"faible"` only and drop the exact-moyenne assertion.
 
 - [ ] **Step 1.2: Run the tests to verify they fail**
 
@@ -1143,20 +1197,29 @@ async def run_stream(
             for call in pending_calls:
                 name = call["name"]
                 call_id = call["id"]
-                yield "tool_call", ToolCallEvent(
-                    name=name, args={}, call_id=call_id,
-                ).model_dump()
 
                 try:
                     raw_args = json.loads(call["arguments"] or "{}")
-                    valid, payload = validate_tool_args(name, raw_args)
-                except json.JSONDecodeError:
-                    valid, payload = False, "arguments were not valid JSON"
+                    if not isinstance(raw_args, dict):
+                        raise ValueError
+                    json_ok = True
+                except (json.JSONDecodeError, ValueError):
+                    raw_args, json_ok = {}, False
 
-                if not valid:
-                    result = {"ok": False, "error": payload}
+                # Surface the requested call WITH its args before executing, so
+                # the UI chip can show what was called (spec §4.2).
+                yield "tool_call", ToolCallEvent(
+                    name=name, args=raw_args, call_id=call_id,
+                ).model_dump()
+
+                if not json_ok:
+                    result = {"ok": False, "error": "arguments were not valid JSON"}
                 else:
-                    result = await tool_caller(name, payload, jwt=jwt)
+                    valid, payload = validate_tool_args(name, raw_args)
+                    if not valid:
+                        result = {"ok": False, "error": payload}
+                    else:
+                        result = await tool_caller(name, payload, jwt=jwt)
 
                 yield "tool_result", ToolResultEvent(
                     name=name, call_id=call_id,
