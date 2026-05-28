@@ -91,6 +91,10 @@ class NIMProvider(LLMProvider):
 
     def __init__(self, api_key: str, base_url: str):
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        # Usage from the most recent stream — read by the agent loop on the
+        # final delta to populate DoneEvent.tokens_* (and the P1.B token cap).
+        self.last_tokens_in: int = 0
+        self.last_tokens_out: int = 0
 
     async def chat_stream(
         self,
@@ -101,6 +105,10 @@ class NIMProvider(LLMProvider):
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> AsyncIterator[StreamDelta]:
+        # Reset usage for this call.
+        self.last_tokens_in = 0
+        self.last_tokens_out = 0
+
         # Convert our ChatMessage shape -> OpenAI dicts.
         openai_messages: list[dict[str, Any]] = []
         for m in messages:
@@ -120,6 +128,10 @@ class NIMProvider(LLMProvider):
             "messages": openai_messages,
             "temperature": temperature,
             "stream": True,
+            # Ask NIM to emit a trailing usage-only chunk so we can report real
+            # token counts on the done event (OpenAI-compatible streaming omits
+            # usage otherwise).
+            "stream_options": {"include_usage": True},
         }
         if tools:
             kwargs["tools"] = tools
@@ -133,8 +145,16 @@ class NIMProvider(LLMProvider):
         # We accumulate per-index and only emit a tool_call StreamDelta once the
         # finish_reason is "tool_calls" — at that point all fragments are present.
         tool_buffers: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
 
         async for chunk in stream:
+            # The usage-only chunk (and sometimes the final content chunk) carries
+            # usage with empty choices. Capture it whenever present.
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                self.last_tokens_in = usage.prompt_tokens or 0
+                self.last_tokens_out = usage.completion_tokens or 0
+
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -157,8 +177,13 @@ class NIMProvider(LLMProvider):
                         buf["arguments"] += tc.function.arguments
 
             if choice.finish_reason:
-                if choice.finish_reason == "tool_calls":
-                    for idx in sorted(tool_buffers):
-                        yield StreamDelta(tool_call=tool_buffers[idx])
-                yield StreamDelta(finish_reason=choice.finish_reason)
-                return
+                # Don't return here: with include_usage a trailing usage-only
+                # chunk still follows. Remember the reason and keep draining the
+                # stream so last_tokens_* are set before we emit the final delta.
+                finish_reason = choice.finish_reason
+
+        # Stream exhausted (usage chunk, if any, has been consumed).
+        if finish_reason == "tool_calls":
+            for idx in sorted(tool_buffers):
+                yield StreamDelta(tool_call=tool_buffers[idx])
+        yield StreamDelta(finish_reason=finish_reason or "stop")

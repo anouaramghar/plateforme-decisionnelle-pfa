@@ -36,6 +36,14 @@ class Settings(BaseSettings):
         default="nvidia/llama-3.3-nemotron-super-49b-v1.5",
         alias="COPILOT_MODEL_REASON",
     )
+    model_safety: str = Field(
+        default="nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+        alias="COPILOT_MODEL_SAFETY",
+    )
+    embed_model: str = Field(
+        default="nvidia/nv-embedqa-e5-v5",
+        alias="COPILOT_EMBED_MODEL",
+    )
 
     # Limits (L6 of the safety layer).
     max_tool_iterations: int = Field(
@@ -46,6 +54,16 @@ class Settings(BaseSettings):
     )
     turn_budget_out: int = Field(
         default=4_000, alias="COPILOT_TURN_TOKEN_BUDGET_OUT"
+    )
+    # Per-user daily token ceiling. Enforcement lands in P1.B once token usage
+    # is accounted (DoneEvent.tokens_*). Loaded here so the env contract is
+    # stable and validated at startup.
+    daily_token_cap_per_user: int = Field(
+        default=200_000, alias="COPILOT_DAILY_TOKEN_CAP_PER_USER"
+    )
+    # Read-only DW connection for the P1.B query_dw tool. Optional until then.
+    dw_readonly_conn: str | None = Field(
+        default=None, alias="COPILOT_DW_READONLY_CONN"
     )
 
     model_config = {
