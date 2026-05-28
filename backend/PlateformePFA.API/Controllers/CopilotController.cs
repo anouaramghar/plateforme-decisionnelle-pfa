@@ -13,7 +13,9 @@ namespace PlateformePFA.API.Controllers
 {
     [ApiController]
     [Route("api/copilot")]
-    [Authorize]
+    // Copilot is a decision-support tool for staff. Restrict to the roles that
+    // own student outcomes — not every authenticated principal.
+    [Authorize(Roles = "Admin,Responsable")]
     public class CopilotController : ControllerBase
     {
         private static readonly JsonSerializerOptions JsonOptions = new()
@@ -54,7 +56,10 @@ namespace PlateformePFA.API.Controllers
             }
             var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Responsable";
 
-            // 1. Resolve or create the AgentSession.
+            // 1. Resolve or create the AgentSession. A brand-new session is NOT
+            //    persisted yet — it (and the turn) are written only once the turn
+            //    completes, so an abandoned/disconnected first turn leaves nothing
+            //    behind.
             AgentSession session;
             if (body.SessionId is Guid existingId)
             {
@@ -67,36 +72,20 @@ namespace PlateformePFA.API.Controllers
                     return;
                 }
                 session = found;
-                session.LastActivityAt = DateTime.UtcNow;
             }
             else
             {
                 session = new AgentSession { UserId = userId };
-                _db.AgentSessions.Add(session);
             }
 
-            // 2. Persist the user's incoming turn.
+            // 2. Load conversation history (last 20 turns, oldest-first) WITHOUT
+            //    persisting the new user turn. The incoming message is appended
+            //    in-memory; both turns are persisted together on completion (5).
             var lastTurnIndex = await _db.AgentSessionMessages
                 .Where(m => m.SessionId == session.Id)
                 .Select(m => (int?)m.TurnIndex)
                 .MaxAsync(ct) ?? -1;
 
-            var userTurnIndex = lastTurnIndex + 1;
-            _db.AgentSessionMessages.Add(new AgentSessionMessage
-            {
-                SessionId   = session.Id,
-                TurnIndex   = userTurnIndex,
-                Role        = "user",
-                ContentJson = JsonSerializer.Serialize(new
-                {
-                    role = "user",
-                    content = body.Message,
-                }),
-            });
-
-            await _db.SaveChangesAsync(ct);
-
-            // 3. Build the agent request (last 20 turns, chronological).
             var recent = await _db.AgentSessionMessages
                 .Where(m => m.SessionId == session.Id)
                 .OrderByDescending(m => m.TurnIndex)
@@ -104,12 +93,20 @@ namespace PlateformePFA.API.Controllers
                 .Select(m => m.ContentJson)
                 .ToListAsync(ct);
             // recent is newest-first; flip back to oldest-first for the agent.
-            var history = ((IEnumerable<string>)recent).Reverse().ToList();
-
-            var messages = history
+            var messages = ((IEnumerable<string>)recent).Reverse()
                 .Select(json => JsonSerializer.Deserialize<AgentChatMessage>(json, JsonOptions)!)
                 .Where(m => m != null)
                 .ToList();
+
+            // Append the new user message in-memory only.
+            messages.Add(new AgentChatMessage { Role = "user", Content = body.Message });
+
+            // 3. Build the agent request. Parse the bearer token scheme-aware so
+            //    a token never gets mangled and a non-"Bearer " scheme is ignored.
+            var authHeader = Request.Headers.Authorization.ToString();
+            var jwt = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? authHeader["Bearer ".Length..].Trim()
+                : null;
 
             var agentReq = new AgentRunRequest
             {
@@ -118,8 +115,7 @@ namespace PlateformePFA.API.Controllers
                 {
                     UserId      = userId,
                     Role        = role,
-                    Jwt         = Request.Headers.Authorization
-                                      .ToString().Replace("Bearer ", string.Empty),
+                    Jwt         = jwt,
                     PageContext = body.PageContext,
                 },
                 Messages = messages,
@@ -174,28 +170,19 @@ namespace PlateformePFA.API.Controllers
                     }
                 }
 
-                // 5. Persist the assistant turn (if we saw at least some text).
-                //    Skipped if the stream ended on an error event before done,
-                //    or if the client disconnected mid-stream.
+                // 5. Persist the completed turn — user + assistant together — only
+                //    if we saw a done event with some assistant text. If the stream
+                //    errored before done, or the client disconnected mid-stream,
+                //    nothing is written (no dangling user-only turns).
                 if (doneSeen && assistantText.Length > 0)
                 {
-                    _db.AgentSessionMessages.Add(new AgentSessionMessage
-                    {
-                        SessionId   = session.Id,
-                        TurnIndex   = userTurnIndex + 1,
-                        Role        = "assistant",
-                        ContentJson = JsonSerializer.Serialize(new
-                        {
-                            role    = "assistant",
-                            content = assistantText.ToString(),
-                        }),
-                    });
-                    await _db.SaveChangesAsync(ct);
+                    await PersistTurnAsync(
+                        session, lastTurnIndex, body.Message, assistantText.ToString(), ct);
                 }
             }
             catch (OperationCanceledException)
             {
-                // Client disconnected; partial assistant text is dropped on the floor.
+                // Client disconnected; nothing persisted for this turn.
             }
             catch (Exception ex)
             {
@@ -209,6 +196,64 @@ namespace PlateformePFA.API.Controllers
                     message = ex.GetType().Name,
                 });
                 await Response.WriteAsync($"event: error\ndata: {errorJson}\n\n", ct);
+            }
+        }
+
+        /// <summary>
+        /// Persist the user + assistant turns of one completed exchange in a single
+        /// SaveChanges. Lazily inserts a brand-new session row here (rather than up
+        /// front) so abandoned turns leave no orphan session.
+        ///
+        /// TurnIndex is derived from MAX(TurnIndex)+1 and guarded by a UNIQUE index
+        /// on (SessionId, TurnIndex). Two near-simultaneous turns on the same session
+        /// can compute the same indices and collide; on a unique violation we
+        /// recompute and retry a few times before giving up.
+        /// </summary>
+        private async Task PersistTurnAsync(
+            AgentSession session,
+            int lastTurnIndex,
+            string userMessage,
+            string assistantMessage,
+            CancellationToken ct)
+        {
+            if (_db.Entry(session).State == EntityState.Detached)
+                _db.AgentSessions.Add(session);
+            session.LastActivityAt = DateTime.UtcNow;
+
+            var userTurn = new AgentSessionMessage
+            {
+                SessionId   = session.Id,
+                Role        = "user",
+                ContentJson = JsonSerializer.Serialize(new { role = "user", content = userMessage }),
+            };
+            var assistantTurn = new AgentSessionMessage
+            {
+                SessionId   = session.Id,
+                Role        = "assistant",
+                ContentJson = JsonSerializer.Serialize(new { role = "assistant", content = assistantMessage }),
+            };
+            _db.AgentSessionMessages.Add(userTurn);
+            _db.AgentSessionMessages.Add(assistantTurn);
+
+            const int maxAttempts = 4;
+            for (int attempt = 1; ; attempt++)
+            {
+                userTurn.TurnIndex      = lastTurnIndex + 1;
+                assistantTurn.TurnIndex = lastTurnIndex + 2;
+                try
+                {
+                    await _db.SaveChangesAsync(ct);
+                    return;
+                }
+                catch (DbUpdateException) when (attempt < maxAttempts)
+                {
+                    // A concurrent turn grabbed these indices. Recompute the high
+                    // water mark from the DB and retry with fresh indices.
+                    lastTurnIndex = await _db.AgentSessionMessages
+                        .Where(m => m.SessionId == session.Id)
+                        .Select(m => (int?)m.TurnIndex)
+                        .MaxAsync(ct) ?? -1;
+                }
             }
         }
     }

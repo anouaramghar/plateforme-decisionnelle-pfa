@@ -39,14 +39,18 @@ namespace PlateformePFA.API.Services.Copilot
             _buffer.Append(charBuf, 0, charCount);
 
             var results = new List<SseEvent>();
-            while (true)
-            {
-                var current = _buffer.ToString();
-                int boundary = current.IndexOf("\n\n", StringComparison.Ordinal);
-                if (boundary < 0) break;
 
-                var block = current[..boundary];
-                _buffer.Remove(0, boundary + 2);
+            // Single linear pass over the accumulated buffer. We advance `start`
+            // past each consumed event instead of re-materializing + re-scanning
+            // the buffer from index 0 per event (the previous approach was O(n²)
+            // in the buffer length).
+            var current = _buffer.ToString();
+            int start = 0;
+            int boundary;
+            while ((boundary = current.IndexOf("\n\n", start, StringComparison.Ordinal)) >= 0)
+            {
+                var block = current.Substring(start, boundary - start);
+                start = boundary + 2;
 
                 string? name = null;
                 string? data = null;
@@ -59,6 +63,12 @@ namespace PlateformePFA.API.Services.Copilot
                 }
                 if (name is not null && data is not null)
                     results.Add(new SseEvent { Name = name, Data = data });
+            }
+
+            // Retain only the unconsumed remainder for the next Feed.
+            if (start > 0)
+            {
+                _buffer.Remove(0, start);
             }
             return results;
         }
