@@ -32,9 +32,46 @@ GET_STUDENT_TOOL: dict[str, Any] = {
     },
 }
 
+LIST_AT_RISK_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "list_at_risk",
+        "description": (
+            "Retourne la liste des étudiants dont le score de risque d'échec est "
+            "supérieur ou égal au seuil donné. Résultats triés par risque décroissant, "
+            "limités à 50 étudiants."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": (
+                        "Seuil de score de risque (0.0–1.0). "
+                        "0.35 = risque modéré+, 0.65 = risque élevé."
+                    ),
+                },
+                "filiere": {
+                    "type": "string",
+                    "description": "Code filière (ex: 'GI', 'IRSI'). Optionnel.",
+                },
+                "niveau": {
+                    "type": "string",
+                    "description": "Niveau (ex: 'CI1', 'CI2'). Optionnel.",
+                },
+            },
+            "required": ["threshold"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 # name -> (spec, allowed roles)
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
-    "get_student": {"spec": GET_STUDENT_TOOL, "roles": {"Admin", "Responsable"}},
+    "get_student":  {"spec": GET_STUDENT_TOOL,  "roles": {"Admin", "Responsable"}},
+    "list_at_risk": {"spec": LIST_AT_RISK_TOOL, "roles": {"Admin", "Responsable"}},
 }
 
 

@@ -17,6 +17,29 @@ def test_unknown_role_gets_no_tools():
     assert tools_for_role("Etudiant") == []
 
 
+def test_list_at_risk_tool_is_advertised_to_staff_roles():
+    from tools import tools_for_role
+
+    for role in ("Admin", "Responsable"):
+        names = [s["function"]["name"] for s in tools_for_role(role)]
+        assert "list_at_risk" in names
+
+
+def test_list_at_risk_schema_shape():
+    from tools import tools_for_role
+
+    spec = next(
+        s for s in tools_for_role("Admin")
+        if s["function"]["name"] == "list_at_risk"
+    )
+    params = spec["function"]["parameters"]
+    assert "threshold" in params["required"]
+    assert params["properties"]["threshold"]["type"] == "number"
+    assert "filiere" in params["properties"]
+    assert "niveau" in params["properties"]
+    assert params["additionalProperties"] is False
+
+
 def test_get_student_schema_shape():
     from tools import tools_for_role
 

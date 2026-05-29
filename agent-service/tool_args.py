@@ -15,9 +15,17 @@ class GetStudentArgs(BaseModel):
     matricule: str = Field(min_length=1, max_length=20)
 
 
+class ListAtRiskArgs(BaseModel):
+    model_config = {"extra": "forbid"}
+    threshold: float = Field(ge=0.0, le=1.0)
+    filiere: str | None = Field(default=None, max_length=20)
+    niveau:  str | None = Field(default=None, max_length=10)
+
+
 # name -> pydantic model
 TOOL_ARG_MODELS: dict[str, type[BaseModel]] = {
-    "get_student": GetStudentArgs,
+    "get_student":  GetStudentArgs,
+    "list_at_risk": ListAtRiskArgs,
 }
 
 
