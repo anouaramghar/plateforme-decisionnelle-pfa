@@ -83,6 +83,44 @@ class MockLLMProvider(LLMProvider):
         yield StreamDelta(finish_reason=self.finish_reason)
 
 
+class ScriptedLLMProvider(LLMProvider):
+    """
+    Multi-turn test provider. Each chat_stream() call consumes the next scripted
+    turn. A turn is either:
+      {"text": ["chunk", ...]}                      -> finish_reason "stop"
+      {"tool_call": {"id","name","arguments"}}      -> finish_reason "tool_calls"
+    `arguments` is a JSON string, matching what NIMProvider emits.
+    """
+
+    def __init__(self, turns: list[dict[str, Any]]):
+        self._turns = list(turns)
+        self.last_tokens_in: int = 0
+        self.last_tokens_out: int = 0
+
+    async def chat_stream(
+        self,
+        *,
+        model: str,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[StreamDelta]:
+        if not self._turns:
+            yield StreamDelta(text="(no more scripted turns)")
+            yield StreamDelta(finish_reason="stop")
+            return
+
+        turn = self._turns.pop(0)
+        if "tool_call" in turn:
+            yield StreamDelta(tool_call=turn["tool_call"])
+            yield StreamDelta(finish_reason="tool_calls")
+        else:
+            for chunk in turn.get("text", []):
+                yield StreamDelta(text=chunk)
+            yield StreamDelta(finish_reason="stop")
+
+
 class NIMProvider(LLMProvider):
     """
     NVIDIA NIM (OpenAI-compatible). Free tier latency is highly variable

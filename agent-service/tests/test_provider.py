@@ -67,3 +67,25 @@ async def test_nim_provider_real_round_trip():
 
     assert finish in {"stop", "length"}
     assert len(full_text) > 0
+
+
+@pytest.mark.asyncio
+async def test_scripted_provider_replays_turns_in_order():
+    from provider import ScriptedLLMProvider
+
+    p = ScriptedLLMProvider(turns=[
+        {"tool_call": {"id": "c1", "name": "get_student",
+                       "arguments": '{"matricule": "42"}'}},
+        {"text": ["Voici ", "le résumé."]},
+    ])
+
+    # First call -> a tool_call delta then finish 'tool_calls'.
+    first = [d async for d in p.chat_stream(model="m", messages=[])]
+    assert first[0].tool_call == {"id": "c1", "name": "get_student",
+                                  "arguments": '{"matricule": "42"}'}
+    assert first[-1].finish_reason == "tool_calls"
+
+    # Second call -> text deltas then finish 'stop'.
+    second = [d async for d in p.chat_stream(model="m", messages=[])]
+    assert "".join(d.text or "" for d in second) == "Voici le résumé."
+    assert second[-1].finish_reason == "stop"
