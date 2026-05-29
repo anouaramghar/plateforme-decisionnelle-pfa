@@ -14,6 +14,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -22,6 +23,7 @@ from auth import require_internal_token
 from config import get_settings
 from provider import NIMProvider
 from schemas import AgentRunRequest
+from tool_executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,20 @@ async def lifespan(app: FastAPI):
     app.state.provider = NIMProvider(
         api_key=settings.nim_api_key, base_url=settings.nim_base_url,
     )
+    # Backend callback client for tool execution (L2). Rides the internal
+    # network; 30s covers a normal API query.
+    app.state.backend_client = httpx.AsyncClient(
+        base_url=settings.backend_internal_url, timeout=30.0,
+    )
+    app.state.tool_executor = ToolExecutor(
+        app.state.backend_client, internal_token=settings.internal_token,
+    )
     logger.info(
         "agent-service starting. router=%s sql=%s reason=%s",
         settings.model_router, settings.model_sql, settings.model_reason,
     )
     yield
+    await app.state.backend_client.aclose()
     logger.info("agent-service shutting down.")
 
 
@@ -78,10 +89,14 @@ async def agent_run(req: AgentRunRequest, request: Request):
     """
     provider = request.app.state.provider
     settings = request.app.state.settings
+    executor: ToolExecutor = request.app.state.tool_executor
 
     async def gen():
         async for name, payload in run_stream(
-            req, provider=provider, model=settings.model_router,
+            req,
+            provider=provider,
+            settings=settings,
+            tool_caller=executor.execute,
         ):
             yield _sse_format(name, payload)
 
