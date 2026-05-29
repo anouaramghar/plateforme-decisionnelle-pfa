@@ -133,6 +133,9 @@ services:
       # Read-only DW connection for the P1.B query_dw tool. Passed now so the
       # env contract is stable; consumed once query_dw lands.
       - COPILOT_DW_READONLY_CONN=${COPILOT_DW_READONLY_CONN:-}
+      # How agent-service reaches the backend to execute tools (L2 callback).
+      # Resolves over pfa_internal_ml — both services share that network.
+      - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8080}
     expose:
       - "8001"
     healthcheck:
