@@ -55,4 +55,42 @@ public static class SampleData
 
         return (fil, mod, etu);
     }
+
+    /// <summary>
+    /// Seeds a second student with low grades (moy 6.0) and many absences (40h)
+    /// so list_at_risk tests can assert on threshold filtering.
+    /// Requires SeedOne to have been called first (shares the same Filiere + Module).
+    /// Idempotent.
+    /// </summary>
+    public static Etudiant SeedHighRisk(AppDbContext ctx)
+    {
+        var etu = ctx.Etudiants.FirstOrDefault(e => e.Matricule == "E10002");
+        if (etu != null) return etu;
+
+        var fil = ctx.Filieres.First(f => f.Code == "GI");
+        var mod = ctx.Modules.First(m => m.Code == "GI01");
+
+        etu = new Etudiant
+        {
+            Matricule = "E10002", Nom = "AtRisque", Prenom = "High",
+            FiliereId = fil.Id, Niveau = "CI1", Annee = "2025/2026",
+        };
+        ctx.Etudiants.Add(etu);
+        ctx.SaveChanges();
+
+        ctx.Notes.Add(new Note
+        {
+            EtudiantId = etu.Id, ModuleId = mod.Id,
+            NoteTD = 5m, NoteTP = 5m, NoteExamen = 6m, NoteFinal = 6.0m,
+            Annee = "2025/2026", Semestre = "S2",
+        });
+        ctx.Absences.Add(new Absence
+        {
+            EtudiantId = etu.Id, ModuleId = mod.Id,
+            NombreHeures = 40, DateAbsence = DateTime.UtcNow.AddDays(-10),
+        });
+        ctx.SaveChanges();
+
+        return etu;
+    }
 }

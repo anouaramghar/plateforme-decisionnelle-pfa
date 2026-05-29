@@ -51,7 +51,8 @@ namespace PlateformePFA.API.Controllers
 
             return name switch
             {
-                "get_student" => Ok(await GetStudentAsync(body.Args, ct)),
+                "get_student"  => Ok(await GetStudentAsync(body.Args, ct)),
+                "list_at_risk" => Ok(await ListAtRiskAsync(body.Args, ct)),
                 _ => Ok(new { ok = false, error = $"unknown tool: {name}" }),
             };
         }
@@ -117,6 +118,90 @@ namespace PlateformePFA.API.Controllers
                     risque = bucket,
                     score_risque = Math.Round(risk, 3),
                 },
+            };
+        }
+
+        private async Task<object> ListAtRiskAsync(JsonElement args, CancellationToken ct)
+        {
+            if (args.ValueKind != JsonValueKind.Object ||
+                !args.TryGetProperty("threshold", out var threshEl) ||
+                threshEl.ValueKind != JsonValueKind.Number ||
+                !threshEl.TryGetDouble(out var threshDouble) ||
+                threshDouble < 0.0 || threshDouble > 1.0)
+            {
+                return new { ok = false, error = "threshold must be a number between 0.0 and 1.0" };
+            }
+            var threshold = (decimal)threshDouble;
+
+            string? filiereFilter = null;
+            if (args.TryGetProperty("filiere", out var filEl) &&
+                filEl.ValueKind == JsonValueKind.String)
+            {
+                filiereFilter = filEl.GetString()?.Trim().ToUpperInvariant();
+            }
+
+            string? niveauFilter = null;
+            if (args.TryGetProperty("niveau", out var nivEl) &&
+                nivEl.ValueKind == JsonValueKind.String)
+            {
+                niveauFilter = nivEl.GetString()?.Trim();
+            }
+
+            const int Cap = 50;
+
+            var query = _db.Etudiants
+                .AsNoTracking()
+                .Where(e =>
+                    (filiereFilter == null || (e.Filiere != null && e.Filiere.Code.ToUpper() == filiereFilter)) &&
+                    (niveauFilter  == null || e.Niveau == niveauFilter))
+                .Select(e => new
+                {
+                    e.Matricule,
+                    e.Nom,
+                    e.Prenom,
+                    e.Niveau,
+                    Filiere   = e.Filiere != null ? e.Filiere.Code : "",
+                    Moyenne   = (decimal?)e.Notes!
+                        .Where(n => n.NoteFinal.HasValue)
+                        .Average(n => n.NoteFinal),
+                    AbsencesH = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
+                });
+
+            var rows = await query.ToListAsync(ct);
+
+            var result = rows
+                .Select(s =>
+                {
+                    var moy = s.Moyenne ?? 0m;
+                    decimal risk = (moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m)
+                                 + (s.AbsencesH > 30 ? 0.22m : s.AbsencesH > 18 ? 0.12m : 0m);
+                    risk = Math.Min(0.98m, risk);
+                    var bucket = risk >= 0.65m ? "eleve" : risk >= 0.35m ? "modere" : "faible";
+                    return new
+                    {
+                        matricule        = s.Matricule,
+                        nom              = s.Nom,
+                        prenom           = s.Prenom,
+                        filiere          = s.Filiere,
+                        niveau           = s.Niveau,
+                        moyenne_generale = Math.Round(moy, 2),
+                        total_absences_h = s.AbsencesH,
+                        score_risque     = Math.Round(risk, 3),
+                        risque           = bucket,
+                    };
+                })
+                .Where(s => s.score_risque >= threshold)
+                .OrderByDescending(s => s.score_risque)
+                .ToList();
+
+            var total      = result.Count;
+            var capApplied = total > Cap;
+            var students   = result.Take(Cap).ToList();
+
+            return new
+            {
+                ok   = true,
+                data = new { students, total, cap_applied = capApplied },
             };
         }
 

@@ -88,4 +88,79 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
     }
+
+    // ── list_at_risk tests ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task List_at_risk_threshold_zero_returns_all_students()
+    {
+        using (var ctx = _factory.CreateContext()) SampleData.SeedHighRisk(ctx);
+
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/list_at_risk",
+            new { args = new { threshold = 0.0 } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("\"ok\":true");
+        body.Should().Contain("\"students\"");
+        body.Should().Contain("E10001");
+        body.Should().Contain("E10002");
+    }
+
+    [Fact]
+    public async Task List_at_risk_high_threshold_filters_out_low_risk_students()
+    {
+        using (var ctx = _factory.CreateContext()) SampleData.SeedHighRisk(ctx);
+
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        // 0.60 threshold: only the high-risk student (E10002, moy 6.0 + 40h abs)
+        // E10001 (moy 12.2, 0 abs, score ~0.12) must be absent.
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/list_at_risk",
+            new { args = new { threshold = 0.60 } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("\"ok\":true");
+        body.Should().Contain("E10002");
+        body.Should().NotContain("E10001");
+    }
+
+    [Fact]
+    public async Task List_at_risk_filiere_filter_scopes_results()
+    {
+        using (var ctx = _factory.CreateContext()) SampleData.SeedHighRisk(ctx);
+
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/list_at_risk",
+            new { args = new { threshold = 0.0, filiere = "GI" } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("\"ok\":true");
+        body.Should().Contain("\"students\"");
+    }
+
+    [Fact]
+    public async Task List_at_risk_invalid_threshold_returns_ok_false()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/list_at_risk",
+            new { args = new { threshold = 1.5 } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
 }
