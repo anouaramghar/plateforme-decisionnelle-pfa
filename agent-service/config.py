@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     dw_readonly_conn: str | None = Field(
         default=None, alias="COPILOT_DW_READONLY_CONN"
     )
+    # Where agent-service reaches the backend to execute tools (L2 callback).
+    # Resolves over pfa_internal_ml; never the public nginx host.
+    backend_internal_url: str = Field(
+        default="http://backend:8080", alias="BACKEND_INTERNAL_URL"
+    )
 
     model_config = {
         "case_sensitive": False,
