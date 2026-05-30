@@ -161,9 +161,12 @@ Agent IA conversationnel pour le personnel pédagogique, utilisant NVIDIA NIM (L
 - [x] `POST /api/copilot/confirm` — promeut AlertDraft → Alerte (severity mapping, TTL + ownership guard)
 - [x] 53 tests pytest (+ 1 skipped), 31 tests dotnet
 
-### P4 — query_dw ⏳
-- [ ] `query_dw` — NL→SQL sur `PFA_DW` via MiniMax M2.7 (L4: SELECT-only + TOP 500 + timeout)
-- [ ] Exécution directe dans agent-service via `pfa_app_readonly` (pyodbc)
+### P4 — query_dw ✅
+- [x] `query_dw` — NL→SQL via MiniMax M2.7, L4 regex safety (SELECT-only + denylist)
+- [x] Exécution locale dans agent-service via `pfa_app_readonly` + pyodbc + asyncio.to_thread
+- [x] ODBC driver installé dans le Dockerfile agent-service
+- [x] `pfa_internal_db` ajouté aux réseaux agent-service (compose)
+- [x] 83 tests pytest (+ 1 skipped)
 
 ### Frontend Copilot Panel ❌
 - [ ] Composant `CopilotPanel` (chat flottant ou page dédiée)
@@ -201,6 +204,6 @@ Agent IA conversationnel pour le personnel pédagogique, utilisant NVIDIA NIM (L
 | Backend Copilot | ✅ 100% | SSE proxy + tool callbacks |
 | Service ML | ✅ 100% | predict/batch/retrain/metrics |
 | Frontend — 5 pages | ✅ 100% | Données réelles, pas de mocks |
-| Copilot agent-service | 🔄 85% | P1.A+P1.B+P2+P3 ok, query_dw (P4) + UI à faire |
+| Copilot agent-service | 🔄 95% | P1.A→P4 done (5 tools), frontend panel + audit (L8) restent |
 | Tests & Intégration | ⏳ 30% | Tests unitaires ok, E2E manquant |
 | Finalisation / Soutenance | ⏳ 0% | — |
