@@ -1,5 +1,7 @@
 # ENIAD Copilot — Phase 1.B: Agent Loop + First Read Tool Implementation Plan
 
+> **STATUS: ✅ COMPLETE** — All 10 tasks implemented and committed on `feat/copilot-p1a-foundations` (2026-05-28). 25 tests pass, 1 skipped. See git log `087b77a` through `f3f6900`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the P1.A chat-only proxy into a real **multi-iteration tool-calling agent**: the LLM can call one Tier-1 read tool (`get_student`), the agent-service executes it by calling back into the backend (JWT forwarded), feeds the result back to the model, and loops until the model produces a final answer — all streamed as typed SSE events. Proven end-to-end with `curl`. No UI yet (that is the next P1.B slice), no Tier-2/3 tools, no L1/L4/L7 guards (those are later P1.B slices).

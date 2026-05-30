@@ -1,5 +1,7 @@
 # ENIAD Copilot — Phase 2: `list_at_risk` Second Read Tool
 
+> **STATUS: ✅ COMPLETE** — All 3 tasks implemented and committed on `feat/copilot-p1a-foundations` (2026-05-29). 32 tests pass, 1 skipped. See git log `e212965` through `01f9272`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a second Tier-1 read tool — `list_at_risk` — that lets the LLM retrieve the full list of at-risk students filtered by risk threshold, filière, and niveau. The agent loop, SSE plumbing, and safety architecture are untouched; this plan is purely additive. Proven end-to-end with `curl` against the rebuilt stack.

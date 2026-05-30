@@ -1,5 +1,7 @@
 # ENIAD Copilot — Phase 1.A: Foundations Implementation Plan
 
+> **STATUS: ✅ COMPLETE** — All 17 tasks implemented and committed on `feat/copilot-p1a-foundations` (2026-05-26). See git log for `beecd19` through `66b8919`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up the plumbing for the ENIAD Copilot — the new `agent-service` microservice, the four new SQL tables, the read-only DW login, and a backend `POST /api/copilot/chat` SSE endpoint that proxies to `agent-service` which streams tokens from NVIDIA NIM. By the end, you can `curl` chat through the full stack and see real LLM tokens stream back. No tools, no UI, no safety layer yet — those are P1.B and P1.C.
