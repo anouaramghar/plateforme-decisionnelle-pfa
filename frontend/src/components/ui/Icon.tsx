@@ -34,6 +34,9 @@ const ICONS: Record<string, ReactElement> = {
   expand:    <path d="M9 4v16M10 8l4 4-4 4" />,
   graduation:<path d="M22 10L12 5 2 10l10 5 10-5zM6 12v5c0 1 3 3 6 3s6-2 6-3v-5" />,
   database:  <path d="M12 6c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3zM4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />,
+  send:      <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />,
+  stop:      <path d="M6 6h12v12H6z" />,
+  copilot:   <path d="M12 2a10 10 0 100 20 10 10 0 000-20zM8 11.5a4 4 0 008 0M9 9h.01M15 9h.01" />,
 }
 
 export type IconName = keyof typeof ICONS

@@ -12,9 +12,11 @@ const BREADCRUMBS: Record<string, [string, string]> = {
 
 interface TopbarProps {
   onCommandOpen: () => void
+  onCopilotOpen: () => void
+  copilotActive?: boolean
 }
 
-export function Topbar({ onCommandOpen }: TopbarProps) {
+export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarProps) {
   const { pathname } = useLocation()
   const { theme, toggleTheme, density, cycleDensity } = useTheme()
   const breadcrumb = BREADCRUMBS[pathname] ?? ['Pilotage', 'Page']
@@ -91,6 +93,20 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
         </button>
 
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+
+        <button
+          onClick={onCopilotOpen}
+          className="btn btn-sm"
+          title="ENIAD Copilot (⌘J)"
+          style={copilotActive ? {
+            background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',
+            color: 'var(--accent-600)',
+          } : undefined}
+        >
+          <Icon name="brain" size={13} />
+          Copilot
+        </button>
 
         <button className="btn btn-sm btn-accent">
           <Icon name="plus" size={13} strokeWidth={2.4} />
