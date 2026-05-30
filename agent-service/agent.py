@@ -25,6 +25,7 @@ from schemas import (
     AgentRunRequest, ChatMessage, ConfirmRequestEvent, DoneEvent, ErrorEvent,
     ToolCallEvent, ToolResultEvent, TokenEvent,
 )
+from query_dw import execute_query_dw
 from tool_args import validate_tool_args
 from tools import TIER2_TOOLS, tools_for_role
 
@@ -140,6 +141,15 @@ async def run_stream(
                     valid, payload = validate_tool_args(name, raw_args)
                     if not valid:
                         result = {"ok": False, "error": payload}
+                    elif name == "query_dw":
+                        # query_dw executes locally in agent-service (no backend
+                        # HTTP call) — direct pyodbc read against PFA_DW via the
+                        # pfa_app_readonly login.
+                        result = await execute_query_dw(
+                            question=payload["question"],
+                            settings=settings,
+                            provider=provider,
+                        )
                     else:
                         result = await tool_caller(name, payload, jwt=jwt)
 

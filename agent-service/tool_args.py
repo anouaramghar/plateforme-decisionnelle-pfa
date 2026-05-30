@@ -22,6 +22,11 @@ class ListAtRiskArgs(BaseModel):
     niveau:  str | None = Field(default=None, max_length=10)
 
 
+class QueryDwArgs(BaseModel):
+    model_config = {"extra": "forbid"}
+    question: str = Field(min_length=1, max_length=1000)
+
+
 class ExplainRiskArgs(BaseModel):
     model_config = {"extra": "forbid"}
     matricule: str = Field(min_length=1, max_length=20)
@@ -38,6 +43,7 @@ class DraftAlertArgs(BaseModel):
 TOOL_ARG_MODELS: dict[str, type[BaseModel]] = {
     "get_student":  GetStudentArgs,
     "list_at_risk": ListAtRiskArgs,
+    "query_dw":     QueryDwArgs,
     "explain_risk": ExplainRiskArgs,
     "draft_alert":  DraftAlertArgs,
 }

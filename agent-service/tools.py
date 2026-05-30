@@ -68,6 +68,32 @@ LIST_AT_RISK_TOOL: dict[str, Any] = {
     },
 }
 
+QUERY_DW_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "query_dw",
+        "description": (
+            "Interroge l'entrepôt de données PFA_DW par une question en langage naturel. "
+            "Retourne les lignes correspondantes, la requête SQL générée et le nombre de lignes. "
+            "Limité à 500 lignes, timeout 5 s. Seules les requêtes SELECT sont autorisées."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "Question analytique en français sur les données DW. "
+                        "Ex: 'Quels modules ont une note finale moyenne inférieure à 10 ?'"
+                    ),
+                },
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 EXPLAIN_RISK_TOOL: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -133,6 +159,7 @@ TIER2_TOOLS: frozenset[str] = frozenset({"draft_alert"})
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "get_student":   {"spec": GET_STUDENT_TOOL,   "roles": {"Admin", "Responsable"}},
     "list_at_risk":  {"spec": LIST_AT_RISK_TOOL,  "roles": {"Admin", "Responsable"}},
+    "query_dw":      {"spec": QUERY_DW_TOOL,      "roles": {"Admin", "Responsable"}},
     "explain_risk":  {"spec": EXPLAIN_RISK_TOOL,  "roles": {"Admin", "Responsable"}},
     "draft_alert":   {"spec": DRAFT_ALERT_TOOL,   "roles": {"Admin", "Responsable"}},
 }

@@ -82,6 +82,44 @@ def test_unknown_tool_rejected():
     assert "unknown tool" in result
 
 
+# ── query_dw ─────────────────────────────────────────────────────────────────
+
+def test_valid_query_dw_args():
+    from tool_args import validate_tool_args
+
+    ok, result = validate_tool_args("query_dw", {"question": "Combien d'étudiants ?"})
+    assert ok is True
+    assert result == {"question": "Combien d'étudiants ?"}
+
+
+def test_query_dw_empty_question_rejected():
+    from tool_args import validate_tool_args
+
+    ok, _ = validate_tool_args("query_dw", {"question": ""})
+    assert ok is False
+
+
+def test_query_dw_oversized_question_rejected():
+    from tool_args import validate_tool_args
+
+    ok, _ = validate_tool_args("query_dw", {"question": "x" * 1001})
+    assert ok is False
+
+
+def test_query_dw_extra_arg_rejected():
+    from tool_args import validate_tool_args
+
+    ok, _ = validate_tool_args("query_dw", {"question": "test", "sql": "DROP TABLE x"})
+    assert ok is False
+
+
+def test_query_dw_missing_question_rejected():
+    from tool_args import validate_tool_args
+
+    ok, _ = validate_tool_args("query_dw", {})
+    assert ok is False
+
+
 # ── explain_risk ──────────────────────────────────────────────────────────────
 
 def test_valid_explain_risk_args():

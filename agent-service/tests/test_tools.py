@@ -96,6 +96,28 @@ def test_draft_alert_schema_shape():
     assert params["additionalProperties"] is False
 
 
+def test_query_dw_tool_is_advertised_to_staff_roles():
+    from tools import tools_for_role
+
+    for role in ("Admin", "Responsable"):
+        names = [s["function"]["name"] for s in tools_for_role(role)]
+        assert "query_dw" in names
+
+
+def test_query_dw_schema_shape():
+    from tools import tools_for_role
+
+    spec = next(
+        s for s in tools_for_role("Admin")
+        if s["function"]["name"] == "query_dw"
+    )
+    assert spec["type"] == "function"
+    params = spec["function"]["parameters"]
+    assert params["required"] == ["question"]
+    assert params["properties"]["question"]["type"] == "string"
+    assert params["additionalProperties"] is False
+
+
 def test_tier2_tools_contains_draft_alert():
     from tools import TIER2_TOOLS
 
