@@ -22,11 +22,11 @@ from typing import Any
 from config import Settings
 from provider import LLMProvider
 from schemas import (
-    AgentRunRequest, ChatMessage, DoneEvent, ErrorEvent,
+    AgentRunRequest, ChatMessage, ConfirmRequestEvent, DoneEvent, ErrorEvent,
     ToolCallEvent, ToolResultEvent, TokenEvent,
 )
 from tool_args import validate_tool_args
-from tools import tools_for_role
+from tools import TIER2_TOOLS, tools_for_role
 
 # (name, args, *, jwt) -> tool result envelope dict
 ToolCaller = Callable[..., Awaitable[dict[str, Any]]]
@@ -148,6 +148,18 @@ async def run_stream(
                     ok=bool(result.get("ok")), summary=_summarize(result),
                     error=None if result.get("ok") else str(result.get("error", "")),
                 ).model_dump()
+
+                # Emit confirm_request for Tier-2 tools that succeeded (L5 gate).
+                # The browser renders a confirm card; the actual write only happens
+                # when the user POSTs /api/copilot/confirm.
+                if name in TIER2_TOOLS and result.get("ok"):
+                    draft_id = result.get("data", {}).get("draft_id")
+                    if draft_id is not None:
+                        yield "confirm_request", ConfirmRequestEvent(
+                            draft_id=draft_id,
+                            preview=result.get("data", {}),
+                            tool=name,
+                        ).model_dump()
 
                 messages.append(ChatMessage(
                     role="tool",

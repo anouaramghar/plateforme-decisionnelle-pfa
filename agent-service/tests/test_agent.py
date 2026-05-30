@@ -102,6 +102,63 @@ async def test_invalid_tool_args_do_not_call_backend():
 
 
 @pytest.mark.asyncio
+async def test_draft_alert_success_emits_confirm_request_before_done():
+    from agent import run_stream
+
+    provider = ScriptedLLMProvider(turns=[
+        {"tool_call": {"id": "c1", "name": "draft_alert",
+                       "arguments": '{"matricule":"E10001","severity":"high","message_fr":"Test alerte."}'}},
+        {"text": ["J'ai préparé l'alerte. Confirmez-vous ?"]},
+    ])
+
+    async def tool_caller(name, args, *, jwt):
+        return {
+            "ok": True,
+            "data": {
+                "draft_id": 7,
+                "preview": {"student_name": "Test Etudiant", "severity": "high",
+                             "message": "Test alerte."},
+                "expires_at": "2026-05-30T18:35:00Z",
+            },
+        }
+
+    events = [ev async for ev in run_stream(
+        _req(), provider=provider, settings=_settings(), tool_caller=tool_caller
+    )]
+    names = [n for n, _ in events]
+
+    assert "confirm_request" in names
+    cr_idx = names.index("confirm_request")
+    done_idx = names.index("done")
+    assert cr_idx < done_idx, "confirm_request must appear before done"
+
+    cr_payload = dict(events[cr_idx][1])
+    assert cr_payload["draft_id"] == 7
+    assert cr_payload["tool"] == "draft_alert"
+
+
+@pytest.mark.asyncio
+async def test_draft_alert_failure_does_not_emit_confirm_request():
+    from agent import run_stream
+
+    provider = ScriptedLLMProvider(turns=[
+        {"tool_call": {"id": "c1", "name": "draft_alert",
+                       "arguments": '{"matricule":"NOPE","severity":"high","message_fr":"x"}'}},
+        {"text": ["Étudiant introuvable."]},
+    ])
+
+    async def tool_caller(name, args, *, jwt):
+        return {"ok": False, "error": "étudiant introuvable: NOPE"}
+
+    events = [ev async for ev in run_stream(
+        _req(), provider=provider, settings=_settings(), tool_caller=tool_caller
+    )]
+    names = [n for n, _ in events]
+    assert "confirm_request" not in names
+    assert names[-1] == "done"
+
+
+@pytest.mark.asyncio
 async def test_loop_bound_emits_error_when_tools_never_stop():
     from agent import run_stream
 

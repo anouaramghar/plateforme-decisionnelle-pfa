@@ -5,7 +5,7 @@ the model rejects any field the schema didn't declare.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -22,10 +22,24 @@ class ListAtRiskArgs(BaseModel):
     niveau:  str | None = Field(default=None, max_length=10)
 
 
+class ExplainRiskArgs(BaseModel):
+    model_config = {"extra": "forbid"}
+    matricule: str = Field(min_length=1, max_length=20)
+
+
+class DraftAlertArgs(BaseModel):
+    model_config = {"extra": "forbid"}
+    matricule:  str                             = Field(min_length=1, max_length=20)
+    severity:   Literal["low", "medium", "high"]
+    message_fr: str                             = Field(min_length=1, max_length=1000)
+
+
 # name -> pydantic model
 TOOL_ARG_MODELS: dict[str, type[BaseModel]] = {
     "get_student":  GetStudentArgs,
     "list_at_risk": ListAtRiskArgs,
+    "explain_risk": ExplainRiskArgs,
+    "draft_alert":  DraftAlertArgs,
 }
 
 
