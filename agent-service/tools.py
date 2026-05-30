@@ -23,7 +23,7 @@ GET_STUDENT_TOOL: dict[str, Any] = {
             "properties": {
                 "matricule": {
                     "type": "string",
-                    "description": "Matricule exact de l'étudiant, ex: 20231042",
+                    "description": "Matricule exact de l'étudiant tel que mentionné par l'utilisateur.",
                 },
             },
             "required": ["matricule"],
@@ -55,11 +55,11 @@ LIST_AT_RISK_TOOL: dict[str, Any] = {
                 },
                 "filiere": {
                     "type": "string",
-                    "description": "Code filière (ex: 'GI', 'IRSI'). Optionnel.",
+                    "description": "Code filière mentionné par l'utilisateur (GI, IRSI, IA, TCP, ROC…). Optionnel.",
                 },
                 "niveau": {
                     "type": "string",
-                    "description": "Niveau (ex: 'CI1', 'CI2'). Optionnel.",
+                    "description": "Niveau académique mentionné par l'utilisateur (CP1, CP2, CI1, CI2, CI3). Optionnel.",
                 },
             },
             "required": ["threshold"],
@@ -83,8 +83,8 @@ QUERY_DW_TOOL: dict[str, Any] = {
                 "question": {
                     "type": "string",
                     "description": (
-                        "Question analytique en français sur les données DW. "
-                        "Ex: 'Quels modules ont une note finale moyenne inférieure à 10 ?'"
+                        "Question analytique en français posée par l'utilisateur sur les données "
+                        "de l'entrepôt (notes, absences, risques). Reformule fidèlement la question."
                     ),
                 },
             },
@@ -108,7 +108,7 @@ EXPLAIN_RISK_TOOL: dict[str, Any] = {
             "properties": {
                 "matricule": {
                     "type": "string",
-                    "description": "Matricule exact de l'étudiant, ex: 20231042",
+                    "description": "Matricule exact de l'étudiant tel que mentionné par l'utilisateur.",
                 },
             },
             "required": ["matricule"],
@@ -131,7 +131,7 @@ DRAFT_ALERT_TOOL: dict[str, Any] = {
             "properties": {
                 "matricule": {
                     "type": "string",
-                    "description": "Matricule exact de l'étudiant, ex: 20231042",
+                    "description": "Matricule exact de l'étudiant tel que mentionné par l'utilisateur.",
                 },
                 "severity": {
                     "type": "string",

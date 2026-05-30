@@ -131,28 +131,44 @@ namespace PlateformePFA.API.Controllers
 
         private async Task<object> ListAtRiskAsync(JsonElement args, CancellationToken ct)
         {
-            if (args.ValueKind != JsonValueKind.Object ||
-                !args.TryGetProperty("threshold", out var threshEl) ||
-                threshEl.ValueKind != JsonValueKind.Number ||
-                !threshEl.TryGetDouble(out var threshDouble) ||
-                threshDouble < 0.0 || threshDouble > 1.0)
-            {
+            // Parse threshold — accept both JSON number and JSON string (LLM sometimes passes "0").
+            double threshDouble = 0.0;
+            if (!args.TryGetProperty("threshold", out var threshEl))
+                return new { ok = false, error = "threshold is required" };
+            if (threshEl.ValueKind == JsonValueKind.Number)
+                threshEl.TryGetDouble(out threshDouble);
+            else if (threshEl.ValueKind == JsonValueKind.String &&
+                     double.TryParse(threshEl.GetString(), System.Globalization.NumberStyles.Any,
+                                     System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                threshDouble = parsed;
+            else
                 return new { ok = false, error = "threshold must be a number between 0.0 and 1.0" };
-            }
+
+            if (threshDouble < 0.0 || threshDouble > 1.0)
+                return new { ok = false, error = "threshold must be a number between 0.0 and 1.0" };
+
             var threshold = (decimal)threshDouble;
+
+            // Optional filters — treat JSON null, the string "null", or empty string as absent.
+            static bool IsAbsent(string? v) =>
+                v is null || string.IsNullOrWhiteSpace(v)
+                          || v.Equals("null", StringComparison.OrdinalIgnoreCase)
+                          || v.Equals("undefined", StringComparison.OrdinalIgnoreCase);
 
             string? filiereFilter = null;
             if (args.TryGetProperty("filiere", out var filEl) &&
                 filEl.ValueKind == JsonValueKind.String)
             {
-                filiereFilter = filEl.GetString()?.Trim().ToUpperInvariant();
+                var v = filEl.GetString()?.Trim().ToUpperInvariant();
+                if (!IsAbsent(v)) filiereFilter = v;
             }
 
             string? niveauFilter = null;
             if (args.TryGetProperty("niveau", out var nivEl) &&
                 nivEl.ValueKind == JsonValueKind.String)
             {
-                niveauFilter = nivEl.GetString()?.Trim();
+                var v = nivEl.GetString()?.Trim();
+                if (!IsAbsent(v)) niveauFilter = v;
             }
 
             const int Cap = 50;
