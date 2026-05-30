@@ -115,10 +115,11 @@ async def test_draft_alert_success_emits_confirm_request_before_done():
         return {
             "ok": True,
             "data": {
-                "draft_id": 7,
-                "preview": {"student_name": "Test Etudiant", "severity": "high",
-                             "message": "Test alerte."},
-                "expires_at": "2026-05-30T18:35:00Z",
+                "draft_id":    7,
+                "student_name": "Test Etudiant",
+                "severity":    "high",
+                "message":     "Test alerte.",
+                "expires_at":  "2026-05-30T18:35:00Z",
             },
         }
 

@@ -200,6 +200,64 @@ namespace PlateformePFA.API.Controllers
         }
 
         /// <summary>
+        /// POST /api/copilot/confirm — promote a pending AlertDraft to a real Alerte.
+        /// Called by the user clicking "Confirmer" in the chat panel after seeing
+        /// a confirm_request SSE event. Draft TTL is enforced server-side.
+        /// </summary>
+        [HttpPost("confirm")]
+        public async Task<IActionResult> ConfirmAsync(
+            [FromBody] ConfirmBody body,
+            CancellationToken ct)
+        {
+            var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(userIdStr, out var userId))
+                return Unauthorized();
+
+            var draft = await _db.AlertDrafts
+                .FirstOrDefaultAsync(
+                    d => d.Id == body.DraftId
+                      && d.CreatedBy == userId
+                      && d.Status == "pending_user_confirm"
+                      && d.ExpiresAt > DateTime.UtcNow,
+                    ct);
+
+            if (draft is null)
+                return BadRequest(new { ok = false, error = "draft not found, expired, or not owned by you" });
+
+            // Map draft severity to Alerte.Niveau
+            var niveau = draft.Severity switch
+            {
+                "low"    => "Faible",
+                "medium" => "Moyen",
+                "high"   => "Eleve",
+                _        => "Moyen",
+            };
+
+            var alerte = new Alerte
+            {
+                EtudiantId = draft.StudentId,
+                Type       = "RisqueEchec",
+                Niveau     = niveau,
+                Message    = draft.MessageFr,
+                Resolue    = false,
+                CreeLe     = DateTime.UtcNow,
+            };
+            _db.Alertes.Add(alerte);
+
+            draft.Status = "sent";
+            draft.SentAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync(ct);
+
+            return Ok(new { ok = true, data = new { alerte_id = alerte.Id } });
+        }
+
+        public class ConfirmBody
+        {
+            public int DraftId { get; set; }
+        }
+
+        /// <summary>
         /// Persist the user + assistant turns of one completed exchange in a single
         /// SaveChanges. Lazily inserts a brand-new session row here (rather than up
         /// front) so abandoned turns leave no orphan session.

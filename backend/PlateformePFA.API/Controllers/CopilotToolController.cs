@@ -379,14 +379,12 @@ namespace PlateformePFA.API.Controllers
                 ok = true,
                 data = new
                 {
-                    draft_id   = draft.Id,
-                    preview    = new
-                    {
-                        student_name = $"{etudiant.Prenom} {etudiant.Nom}".Trim(),
-                        severity,
-                        message  = messageFr,
-                    },
-                    expires_at = draft.ExpiresAt.ToString("o"),
+                    draft_id     = draft.Id,
+                    student_name = $"{etudiant.Prenom} {etudiant.Nom}".Trim(),
+                    matricule,
+                    severity,
+                    message      = messageFr,
+                    expires_at   = draft.ExpiresAt.ToString("o"),
                 },
             };
         }
