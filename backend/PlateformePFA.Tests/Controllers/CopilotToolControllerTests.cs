@@ -163,4 +163,106 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
     }
+
+    // ── explain_risk tests ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Explain_risk_happy_path_returns_ok_envelope()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/explain_risk",
+            new { args = new { matricule = "E10001" } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("\"ok\":true");
+        body.Should().Contain("\"matricule\":\"E10001\"");
+        body.Should().Contain("risk_factors");
+        body.Should().Contain("score_risque");
+    }
+
+    [Fact]
+    public async Task Explain_risk_not_found_returns_ok_false()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/explain_risk",
+            new { args = new { matricule = "NOPE-9999" } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
+
+    // ── draft_alert tests ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Draft_alert_happy_path_inserts_draft_and_returns_draft_id()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "high",
+                               message_fr = "Cet étudiant présente un risque élevé." } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("\"ok\":true");
+        body.Should().Contain("\"draft_id\"");
+        body.Should().Contain("\"expires_at\"");
+
+        // Verify draft was inserted in DB.
+        using var ctx = _factory.CreateContext();
+        ctx.AlertDrafts.Should().Contain(d => d.Status == "pending_user_confirm");
+    }
+
+    [Fact]
+    public async Task Draft_alert_unknown_matricule_returns_ok_false()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "NOPE-9999", severity = "medium",
+                               message_fr = "Test." } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
+
+    [Fact]
+    public async Task Draft_alert_invalid_severity_returns_ok_false()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "critical",
+                               message_fr = "Test." } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
+
+    [Fact]
+    public async Task Draft_alert_missing_message_returns_ok_false()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+
+        var res = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "low" } });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
 }

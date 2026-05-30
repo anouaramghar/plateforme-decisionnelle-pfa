@@ -32,6 +32,12 @@ namespace PlateformePFA.API.Controllers
             _internalToken = config["AGENT_INTERNAL_TOKEN"] ?? string.Empty;
         }
 
+        private int? GetUserId()
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var id) ? id : null;
+        }
+
         public class ToolCallBody
         {
             public JsonElement Args { get; set; }
@@ -51,8 +57,10 @@ namespace PlateformePFA.API.Controllers
 
             return name switch
             {
-                "get_student"  => Ok(await GetStudentAsync(body.Args, ct)),
-                "list_at_risk" => Ok(await ListAtRiskAsync(body.Args, ct)),
+                "get_student"   => Ok(await GetStudentAsync(body.Args, ct)),
+                "list_at_risk"  => Ok(await ListAtRiskAsync(body.Args, ct)),
+                "explain_risk"  => Ok(await ExplainRiskAsync(body.Args, ct)),
+                "draft_alert"   => Ok(await DraftAlertAsync(body.Args, ct)),
                 _ => Ok(new { ok = false, error = $"unknown tool: {name}" }),
             };
         }
@@ -202,6 +210,184 @@ namespace PlateformePFA.API.Controllers
             {
                 ok   = true,
                 data = new { students, total, cap_applied = capApplied },
+            };
+        }
+
+        private async Task<object> ExplainRiskAsync(JsonElement args, CancellationToken ct)
+        {
+            if (args.ValueKind != JsonValueKind.Object ||
+                !args.TryGetProperty("matricule", out var matEl) ||
+                matEl.ValueKind != JsonValueKind.String)
+            {
+                return new { ok = false, error = "missing required arg: matricule" };
+            }
+            var matricule = matEl.GetString()!;
+
+            var s = await _db.Etudiants
+                .AsNoTracking()
+                .Where(e => e.Matricule == matricule)
+                .Select(e => new
+                {
+                    e.Id,
+                    e.Matricule,
+                    e.Nom,
+                    e.Prenom,
+                    e.Niveau,
+                    Filiere        = e.Filiere != null ? e.Filiere.Code : "",
+                    Moyenne        = (decimal?)e.Notes!.Where(n => n.NoteFinal.HasValue).Average(n => n.NoteFinal),
+                    AbsencesH      = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
+                    ModulesTotal   = e.Notes!.Select(n => n.ModuleId).Distinct().Count(),
+                    ModulesValides = e.Notes!.Where(n => n.NoteFinal.HasValue && n.NoteFinal >= 10m)
+                                             .Select(n => n.ModuleId).Distinct().Count(),
+                    MlScore        = (decimal?)e.PredictionsML!
+                                       .Where(p => p.TypeModele == "RisqueEchec" && p.ScoreRisque.HasValue)
+                                       .OrderByDescending(p => p.CreeLe)
+                                       .Select(p => p.ScoreRisque)
+                                       .FirstOrDefault(),
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (s is null)
+            {
+                return new { ok = false, error = $"étudiant introuvable: {matricule}", hint = "Vérifiez le matricule." };
+            }
+
+            var moy = s.Moyenne ?? 0m;
+            var abs = s.AbsencesH;
+            var modVal = s.ModulesValides;
+            var modTotal = s.ModulesTotal;
+
+            // Risk factor weights — mirrors StudentDrawer in frontend (Students.tsx:486-504)
+            var wMoy  = moy  < 10m ? 0.82m : moy  < 12m ? 0.42m : 0.12m;
+            var wAbs  = Math.Min(0.95m, abs / 30.0m);
+            var wMod  = modTotal > 0 ? 1.0m - (modVal / (decimal)modTotal) : 0m;
+            const decimal wTend = 0.34m; // TODO: compute real semestral trend
+
+            // Score: use ML if available, else heuristic
+            decimal score;
+            string scoreSource;
+            if (s.MlScore.HasValue)
+            {
+                score = s.MlScore.Value;
+                scoreSource = "ml";
+            }
+            else
+            {
+                decimal h = (moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m)
+                          + (abs > 30 ? 0.22m : abs > 18 ? 0.12m : 0m);
+                score = Math.Min(0.98m, h);
+                scoreSource = "heuristic";
+            }
+            var risque = score >= 0.65m ? "eleve" : score >= 0.35m ? "modere" : "faible";
+
+            return new
+            {
+                ok = true,
+                data = new
+                {
+                    matricule     = s.Matricule,
+                    nom           = s.Nom,
+                    prenom        = s.Prenom,
+                    filiere       = s.Filiere,
+                    niveau        = s.Niveau,
+                    score_risque  = Math.Round(score, 3),
+                    score_source  = scoreSource,
+                    risque,
+                    risk_factors  = new[]
+                    {
+                        new { factor = "Moyenne basse",         weight = Math.Round(wMoy, 3),  negative = moy < 12m  },
+                        new { factor = "Absences élevées",       weight = Math.Round(wAbs, 3),  negative = abs > 15   },
+                        new { factor = "Modules non validés",    weight = Math.Round(wMod, 3),  negative = modTotal > 0 && modVal < Math.Ceiling(modTotal / 2.0) },
+                        new { factor = "Tendance trimestrielle", weight = Math.Round(wTend, 3), negative = false },
+                    },
+                    details = new
+                    {
+                        moyenne_generale  = Math.Round(moy, 2),
+                        total_absences_h  = abs,
+                        modules_valides   = modVal,
+                        modules_total     = modTotal,
+                    },
+                },
+            };
+        }
+
+        private async Task<object> DraftAlertAsync(JsonElement args, CancellationToken ct)
+        {
+            if (args.ValueKind != JsonValueKind.Object ||
+                !args.TryGetProperty("matricule", out var matEl) ||
+                matEl.ValueKind != JsonValueKind.String)
+            {
+                return new { ok = false, error = "missing required arg: matricule" };
+            }
+            var matricule = matEl.GetString()!;
+
+            if (!args.TryGetProperty("severity", out var sevEl) ||
+                sevEl.ValueKind != JsonValueKind.String)
+            {
+                return new { ok = false, error = "missing required arg: severity" };
+            }
+            var severity = sevEl.GetString()!;
+            if (severity is not ("low" or "medium" or "high"))
+            {
+                return new { ok = false, error = "severity must be one of: low, medium, high" };
+            }
+
+            if (!args.TryGetProperty("message_fr", out var msgEl) ||
+                msgEl.ValueKind != JsonValueKind.String)
+            {
+                return new { ok = false, error = "missing required arg: message_fr" };
+            }
+            var messageFr = msgEl.GetString()!;
+            if (string.IsNullOrWhiteSpace(messageFr))
+            {
+                return new { ok = false, error = "message_fr must not be empty" };
+            }
+
+            var userId = GetUserId();
+            if (userId is null)
+            {
+                return new { ok = false, error = "unauthorized: no user identity in token" };
+            }
+
+            var etudiant = await _db.Etudiants
+                .AsNoTracking()
+                .Where(e => e.Matricule == matricule)
+                .Select(e => new { e.Id, e.Nom, e.Prenom })
+                .FirstOrDefaultAsync(ct);
+
+            if (etudiant is null)
+            {
+                return new { ok = false, error = $"étudiant introuvable: {matricule}", hint = "Vérifiez le matricule." };
+            }
+
+            var now = DateTime.UtcNow;
+            var draft = new PlateformePFA.API.Models.AlertDraft
+            {
+                StudentId  = etudiant.Id,
+                Severity   = severity,
+                MessageFr  = messageFr,
+                CreatedBy  = userId.Value,
+                CreatedAt  = now,
+                ExpiresAt  = now.AddMinutes(5),
+                Status     = "pending_user_confirm",
+            };
+            _db.AlertDrafts.Add(draft);
+            await _db.SaveChangesAsync(ct);
+
+            return new
+            {
+                ok = true,
+                data = new
+                {
+                    draft_id   = draft.Id,
+                    preview    = new
+                    {
+                        student_name = $"{etudiant.Prenom} {etudiant.Nom}".Trim(),
+                        severity,
+                        message  = messageFr,
+                    },
+                    expires_at = draft.ExpiresAt.ToString("o"),
+                },
             };
         }
 
