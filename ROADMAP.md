@@ -154,10 +154,16 @@ Agent IA conversationnel pour le personnel pédagogique, utilisant NVIDIA NIM (L
 - [x] Backend handler + tests
 - [x] 32 tests pytest (+ 1 skipped)
 
-### P3 — Outils avancés ⏳
-- [ ] `query_dw` — NL → SQL sur `PFA_DW` (L4 safety layer)
-- [ ] `explain_risk` — explication des facteurs de risque
-- [ ] `draft_alert` — préparer une alerte (Tier-2, avec confirmation L5)
+### P3 — explain_risk + draft_alert ✅
+- [x] Outil `explain_risk` (Tier-1) — décompose le score en 4 facteurs, utilise ML score si dispo
+- [x] Outil `draft_alert` (Tier-2) — insère AlertDraft avec TTL 5 min, prévient double-confirm
+- [x] `TIER2_TOOLS` frozenset + émission `confirm_request` SSE dans agent loop
+- [x] `POST /api/copilot/confirm` — promeut AlertDraft → Alerte (severity mapping, TTL + ownership guard)
+- [x] 53 tests pytest (+ 1 skipped), 31 tests dotnet
+
+### P4 — query_dw ⏳
+- [ ] `query_dw` — NL→SQL sur `PFA_DW` via MiniMax M2.7 (L4: SELECT-only + TOP 500 + timeout)
+- [ ] Exécution directe dans agent-service via `pfa_app_readonly` (pyodbc)
 
 ### Frontend Copilot Panel ❌
 - [ ] Composant `CopilotPanel` (chat flottant ou page dédiée)
@@ -195,6 +201,6 @@ Agent IA conversationnel pour le personnel pédagogique, utilisant NVIDIA NIM (L
 | Backend Copilot | ✅ 100% | SSE proxy + tool callbacks |
 | Service ML | ✅ 100% | predict/batch/retrain/metrics |
 | Frontend — 5 pages | ✅ 100% | Données réelles, pas de mocks |
-| Copilot agent-service | 🔄 70% | P1.A+P1.B+P2 ok, P3 + UI à faire |
+| Copilot agent-service | 🔄 85% | P1.A+P1.B+P2+P3 ok, query_dw (P4) + UI à faire |
 | Tests & Intégration | ⏳ 30% | Tests unitaires ok, E2E manquant |
 | Finalisation / Soutenance | ⏳ 0% | — |
