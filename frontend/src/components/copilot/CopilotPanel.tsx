@@ -207,7 +207,7 @@ export function CopilotPanel({ onClose }: CopilotPanelProps) {
             }))
           } else if (event === 'done') {
             setAssistant(assistantMsgId, am => ({ ...am, done: true }))
-            // Extract session_id if ever added to done event
+          } else if (event === 'session') {
             if (data.session_id) setSessionId(data.session_id as string)
           } else if (event === 'error') {
             setAssistant(assistantMsgId, am => ({

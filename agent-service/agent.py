@@ -74,7 +74,7 @@ async def run_stream(
     tool_caller: ToolCaller,
 ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
     started = time.monotonic()
-    tokens_in = 0
+    tokens_in = 0   # accumulated across all LLM calls in this turn
     tokens_out = 0
 
     # Working message list seeded with system prompt + the inbound history.
@@ -102,8 +102,8 @@ async def run_stream(
                 if delta.finish_reason:
                     finish_reason = delta.finish_reason
 
-            tokens_in = getattr(provider, "last_tokens_in", 0) or 0
-            tokens_out = getattr(provider, "last_tokens_out", 0) or 0
+            tokens_in += getattr(provider, "last_tokens_in", 0) or 0
+            tokens_out += getattr(provider, "last_tokens_out", 0) or 0
 
             if finish_reason != "tool_calls" or not pending_calls:
                 # Model produced a final answer.

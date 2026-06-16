@@ -173,23 +173,28 @@ namespace PlateformePFA.API.Controllers
 
             const int Cap = 50;
 
+            // Risk is computed as a C# heuristic from (avg, absences); filtering by
+            // exact score can't be pushed to SQL cleanly without duplicating the formula.
+            // At ENIAD scale (single school, hundreds of students) materializing the
+            // filtered set is acceptable — a SQL pre-filter on correlated aggregates
+            // can't be verified against the in-memory EF Core test provider.
             var query = _db.Etudiants
                 .AsNoTracking()
                 .Where(e =>
                     (filiereFilter == null || (e.Filiere != null && e.Filiere.Code.ToUpper() == filiereFilter)) &&
                     (niveauFilter  == null || e.Niveau == niveauFilter))
                 .Select(e => new
-                {
-                    e.Matricule,
-                    e.Nom,
-                    e.Prenom,
-                    e.Niveau,
-                    Filiere   = e.Filiere != null ? e.Filiere.Code : "",
-                    Moyenne   = (decimal?)e.Notes!
-                        .Where(n => n.NoteFinal.HasValue)
-                        .Average(n => n.NoteFinal),
-                    AbsencesH = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
-                });
+            {
+                e.Matricule,
+                e.Nom,
+                e.Prenom,
+                e.Niveau,
+                Filiere   = e.Filiere != null ? e.Filiere.Code : "",
+                Moyenne   = (decimal?)e.Notes!
+                    .Where(n => n.NoteFinal.HasValue)
+                    .Average(n => n.NoteFinal),
+                AbsencesH = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
+            });
 
             var rows = await query.ToListAsync(ct);
 
@@ -273,9 +278,10 @@ namespace PlateformePFA.API.Controllers
             var modVal = s.ModulesValides;
             var modTotal = s.ModulesTotal;
 
-            // Risk factor weights — mirrors StudentDrawer in frontend (Students.tsx:486-504)
-            var wMoy  = moy  < 10m ? 0.82m : moy  < 12m ? 0.42m : 0.12m;
-            var wAbs  = Math.Min(0.95m, abs / 30.0m);
+            // Risk factor weights — use the same step-function values as the heuristic
+            // score formula so that the displayed breakdown matches the headline score.
+            var wMoy  = moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
+            var wAbs  = abs > 30  ? 0.22m : abs > 18  ? 0.12m : 0m;
             var wMod  = modTotal > 0 ? 1.0m - (modVal / (decimal)modTotal) : 0m;
             const decimal wTend = 0.34m; // TODO: compute real semestral trend
 
@@ -312,7 +318,7 @@ namespace PlateformePFA.API.Controllers
                     risk_factors  = new[]
                     {
                         new { factor = "Moyenne basse",         weight = Math.Round(wMoy, 3),  negative = moy < 12m  },
-                        new { factor = "Absences élevées",       weight = Math.Round(wAbs, 3),  negative = abs > 15   },
+                        new { factor = "Absences élevées",       weight = Math.Round(wAbs, 3),  negative = abs > 18   },
                         new { factor = "Modules non validés",    weight = Math.Round(wMod, 3),  negative = modTotal > 0 && modVal < Math.Ceiling(modTotal / 2.0) },
                         new { factor = "Tendance trimestrielle", weight = Math.Round(wTend, 3), negative = false },
                     },

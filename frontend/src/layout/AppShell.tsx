@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
+import { CopilotPopup } from '@copilotkit/react-core/v2'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
@@ -46,6 +47,9 @@ export function AppShell() {
       </div>
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       {copilotOpen && <CopilotPanel onClose={() => setCopilotOpen(false)} />}
+      <CopilotPopup
+        labels={{ title: 'ENIAD Copilot (demo)', initial: 'Bonjour ! Comment puis-je vous aider ?' }}
+      />
     </div>
   )
 }

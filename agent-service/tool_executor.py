@@ -19,9 +19,12 @@ class ToolExecutor:
     async def execute(
         self, name: str, args: dict[str, Any], *, jwt: str | None
     ) -> dict[str, Any]:
-        headers = {"X-Internal-Token": self._internal_token}
-        if jwt:
-            headers["Authorization"] = f"Bearer {jwt}"
+        if not jwt:
+            return {"ok": False, "error": "no JWT in agent context — tool call blocked"}
+        headers = {
+            "X-Internal-Token": self._internal_token,
+            "Authorization": f"Bearer {jwt}",
+        }
         try:
             resp = await self._client.post(
                 f"/api/copilot/tool/{name}",

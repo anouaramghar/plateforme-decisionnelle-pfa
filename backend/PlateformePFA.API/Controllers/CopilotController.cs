@@ -81,22 +81,35 @@ namespace PlateformePFA.API.Controllers
             // 2. Load conversation history (last 20 turns, oldest-first) WITHOUT
             //    persisting the new user turn. The incoming message is appended
             //    in-memory; both turns are persisted together on completion (5).
-            var lastTurnIndex = await _db.AgentSessionMessages
-                .Where(m => m.SessionId == session.Id)
-                .Select(m => (int?)m.TurnIndex)
-                .MaxAsync(ct) ?? -1;
+            //    Skip both queries for brand-new sessions — the fresh GUID has no
+            //    rows and the queries are guaranteed to return -1 / empty list.
+            int lastTurnIndex;
+            List<AgentChatMessage> messages;
 
-            var recent = await _db.AgentSessionMessages
-                .Where(m => m.SessionId == session.Id)
-                .OrderByDescending(m => m.TurnIndex)
-                .Take(20)
-                .Select(m => m.ContentJson)
-                .ToListAsync(ct);
-            // recent is newest-first; flip back to oldest-first for the agent.
-            var messages = ((IEnumerable<string>)recent).Reverse()
-                .Select(json => JsonSerializer.Deserialize<AgentChatMessage>(json, JsonOptions)!)
-                .Where(m => m != null)
-                .ToList();
+            if (body.SessionId is not null)
+            {
+                lastTurnIndex = await _db.AgentSessionMessages
+                    .Where(m => m.SessionId == session.Id)
+                    .Select(m => (int?)m.TurnIndex)
+                    .MaxAsync(ct) ?? -1;
+
+                var recent = await _db.AgentSessionMessages
+                    .Where(m => m.SessionId == session.Id)
+                    .OrderByDescending(m => m.TurnIndex)
+                    .Take(20)
+                    .Select(m => m.ContentJson)
+                    .ToListAsync(ct);
+                // recent is newest-first; flip back to oldest-first for the agent.
+                messages = ((IEnumerable<string>)recent).Reverse()
+                    .Select(json => JsonSerializer.Deserialize<AgentChatMessage>(json, JsonOptions)!)
+                    .Where(m => m != null)
+                    .ToList();
+            }
+            else
+            {
+                lastTurnIndex = -1;
+                messages = new List<AgentChatMessage>();
+            }
 
             // Append the new user message in-memory only.
             messages.Add(new AgentChatMessage { Role = "user", Content = body.Message });
@@ -170,14 +183,21 @@ namespace PlateformePFA.API.Controllers
                     }
                 }
 
-                // 5. Persist the completed turn — user + assistant together — only
-                //    if we saw a done event with some assistant text. If the stream
-                //    errored before done, or the client disconnected mid-stream,
-                //    nothing is written (no dangling user-only turns).
-                if (doneSeen && assistantText.Length > 0)
+                // 5. Persist the completed turn whenever we saw a done event.
+                //    Persist even when assistantText is empty (tool-only turns with no
+                //    final text) so the user message is not silently lost from history.
+                if (doneSeen)
                 {
                     await PersistTurnAsync(
                         session, lastTurnIndex, body.Message, assistantText.ToString(), ct);
+
+                    // 6. Inject a 'session' event so the browser can attach subsequent
+                    //    turns to this session. session.Id is known immediately (assigned
+                    //    when the AgentSession object was created), so we can send it
+                    //    regardless of whether the session was brand-new this turn.
+                    var sessionJson = JsonSerializer.Serialize(new { session_id = session.Id });
+                    await Response.WriteAsync($"event: session\ndata: {sessionJson}\n\n", ct);
+                    await Response.Body.FlushAsync(ct);
                 }
             }
             catch (OperationCanceledException)
@@ -303,16 +323,27 @@ namespace PlateformePFA.API.Controllers
                     await _db.SaveChangesAsync(ct);
                     return;
                 }
-                catch (DbUpdateException) when (attempt < maxAttempts)
+                catch (DbUpdateException ex) when (attempt < maxAttempts && IsUniqueViolation(ex))
                 {
-                    // A concurrent turn grabbed these indices. Recompute the high
-                    // water mark from the DB and retry with fresh indices.
+                    // A concurrent turn grabbed these TurnIndex values. Recompute
+                    // the high-water mark and retry with fresh indices.
                     lastTurnIndex = await _db.AgentSessionMessages
                         .Where(m => m.SessionId == session.Id)
                         .Select(m => (int?)m.TurnIndex)
                         .MaxAsync(ct) ?? -1;
                 }
+                // Any other DbUpdateException (FK violation, column overflow, etc.)
+                // is not retryable and propagates immediately to the caller.
             }
+        }
+
+        private static bool IsUniqueViolation(DbUpdateException ex)
+        {
+            // SQL Server error 2627 = unique constraint violation;
+            // 2601 = duplicate key in unique index.
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            return msg.Contains("2627") || msg.Contains("2601") ||
+                   msg.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

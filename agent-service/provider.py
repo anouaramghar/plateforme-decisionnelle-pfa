@@ -221,7 +221,12 @@ class NIMProvider(LLMProvider):
                 finish_reason = choice.finish_reason
 
         # Stream exhausted (usage chunk, if any, has been consumed).
-        if finish_reason == "tool_calls":
+        # Emit buffered tool calls when reason is "tool_calls" OR when the stream
+        # drained without a reason chunk (network reset before the final chunk) but
+        # we accumulated tool-call fragments — treat that as an implicit "tool_calls".
+        if tool_buffers and finish_reason in ("tool_calls", None):
             for idx in sorted(tool_buffers):
                 yield StreamDelta(tool_call=tool_buffers[idx])
+            if finish_reason is None:
+                finish_reason = "tool_calls"
         yield StreamDelta(finish_reason=finish_reason or "stop")

@@ -61,12 +61,15 @@ _BLOCKLIST = re.compile(
     re.IGNORECASE,
 )
 _CROSS_DB = re.compile(r"\bPFA_DB\b", re.IGNORECASE)
-_MULTI_STMT = re.compile(r";\s*\S")
+_MULTI_STMT = re.compile(r";")
 
 
 def _validate_sql(sql: str) -> tuple[bool, str]:
     """Return (True, '') or (False, reason). Primary guard is the read-only login."""
-    s = sql.strip()
+    # Strip trailing semicolons: LLMs routinely append one to a single SELECT.
+    # A true multi-statement payload ("SELECT 1; SELECT 2") still has a semicolon
+    # after stripping the last one, so _MULTI_STMT still catches it.
+    s = sql.strip().rstrip(";").rstrip()
     if not s:
         return False, "SQL vide"
     if not re.match(r"^\s*(WITH\b|SELECT\b)", s, re.IGNORECASE):
@@ -88,11 +91,15 @@ _FENCE_RE  = re.compile(r"^```[a-z]*\n?(.*?)```$", re.DOTALL)
 
 
 def _clean_model_output(raw: str) -> str:
-    """Strip <think> blocks and markdown fences from MiniMax M2.7 output."""
+    """Strip <think> blocks, markdown fences, and trailing semicolons from model output."""
     cleaned = _THINK_RE.sub("", raw).strip()
     m = _FENCE_RE.match(cleaned)
     if m:
         cleaned = m.group(1).strip()
+    # Remove a trailing semicolon that LLMs routinely append to single SELECT statements.
+    # This must happen before the _MULTI_STMT check so "SELECT ...;" is accepted while
+    # "SELECT 1; SELECT 2" (semicolon followed by more SQL) is still rejected.
+    cleaned = cleaned.rstrip().rstrip(";").rstrip()
     return cleaned
 
 
