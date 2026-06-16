@@ -48,7 +48,7 @@ export function AppShell() {
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       {copilotOpen && <CopilotPanel onClose={() => setCopilotOpen(false)} />}
       <CopilotPopup
-        labels={{ title: 'ENIAD Copilot (demo)', initial: 'Bonjour ! Comment puis-je vous aider ?' }}
+        labels={{ welcomeMessageText: 'Bonjour ! Comment puis-je vous aider ?' }}
       />
     </div>
   )
