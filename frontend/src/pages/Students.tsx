@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -92,6 +94,83 @@ export default function Students() {
   }, [filiere, niveau, risque, q])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
+
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+
+  // Pre-fill search from URL ?q= param (used by navigate_to_student copilot action)
+  useEffect(() => {
+    const qParam = searchParams.get('q')
+    if (qParam) setQ(qParam)
+  }, [searchParams])
+
+  useCopilotReadable({
+    description: 'Currently visible students after filters — name, matricule, filière, niveau, risk score',
+    value: slice.map(s => ({
+      matricule: s.matricule,
+      name: s.nomComplet,
+      filiere: s.filiereCode,
+      niveau: s.niveau,
+      averageScore: s.moyenne,
+      absences: s.absences,
+      riskScore: s.scoreRisque,
+      riskLevel: s.risque,
+    })),
+  })
+
+  useCopilotAction({
+    name: 'filter_students',
+    description: 'Filter the student table by filière, niveau, risk level, or search text.',
+    parameters: [
+      { name: 'filiere', type: 'string', description: 'Filière code: TCP, GI, IA, ROC, IRSI, or Tous to clear.', required: false },
+      { name: 'niveau', type: 'string', description: 'Academic level: CP1, CP2, CI1, CI2, CI3, or Tous.', required: false },
+      { name: 'risque', type: 'string', description: 'Risk level: faible, modere, eleve, or Tous.', required: false },
+      { name: 'search', type: 'string', description: 'Free text search on name or matricule.', required: false },
+    ],
+    handler: async ({ filiere: f, niveau: n, risque: r, search: s }: { filiere?: string; niveau?: string; risque?: string; search?: string }) => {
+      if (f !== undefined) setFiliere(f)
+      if (n !== undefined) setNiveau(n)
+      if (r !== undefined) setRisque(r)
+      if (s !== undefined) setQ(s)
+      return 'Filtres appliqués'
+    },
+  })
+
+  useCopilotAction({
+    name: 'open_student',
+    description: 'Open the detail panel for a specific student by matricule.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule to open.', required: true },
+    ],
+    handler: async ({ matricule }: { matricule: string }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
+      if (!student) return `Étudiant ${matricule} introuvable`
+      setSelected(student)
+      return `Profil de ${student.nomComplet} ouvert`
+    },
+  })
+
+  useCopilotAction({
+    name: 'draft_alert',
+    description:
+      'Propose creating an alert for a student. Always confirm with the user first. ' +
+      'Severity values: high, medium, low.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
+      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
+      { name: 'message', type: 'string', description: 'Alert message content', required: true },
+    ],
+    handler: async ({ matricule, severity, message }: { matricule: string; severity: string; message: string }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
+      const severiteMap: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
+      await api.post('/alertes', {
+        etudiantId: student?.id,
+        severite: severiteMap[severity] ?? severity,
+        message,
+      })
+      return `Alerte créée pour ${student?.nomComplet ?? matricule}`
+    },
+  })
 
   return (
     <div className="space-y-4">
