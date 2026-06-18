@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -77,6 +78,7 @@ async function runBatch(input: { filiereCode?: string; niveau?: string }): Promi
 export default function Predictions() {
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
+  const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -103,6 +105,61 @@ export default function Predictions() {
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       queryClient.invalidateQueries({ queryKey: ['alertes'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
+    },
+  })
+
+  useCopilotReadable({
+    description: 'Top at-risk students on the predictions page — matricule, name, filière, niveau, risk score',
+    value: data?.topARisque.map(s => ({
+      matricule: s.matricule,
+      name: s.nomComplet,
+      filiere: s.filiere,
+      niveau: s.niveau,
+      averageScore: s.moyenne,
+      absences: s.absences,
+      riskScore: s.scoreRisque,
+    })) ?? [],
+  })
+
+  useCopilotReadable({
+    description: 'Current ML model metrics — AUC, F1, precision, recall',
+    value: ml ? { auc: ml.auc, f1: ml.f1, precision: ml.precision, recall: ml.recall } : null,
+  })
+
+  useCopilotAction({
+    name: 'highlight_student',
+    description: 'Highlight a specific student row in the top-at-risk table by matricule.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule to highlight.', required: true },
+    ],
+    handler: async ({ matricule }: { matricule: string }) => {
+      setHighlightedMatricule(matricule)
+      const found = data?.topARisque.find(s => s.matricule === matricule)
+      if (!found) return `Étudiant ${matricule} absent du tableau`
+      setTimeout(() => {
+        document.querySelector(`[data-matricule="${matricule}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+      return `${found.nomComplet} mis en évidence (score: ${found.scoreRisque.toFixed(2)})`
+    },
+  })
+
+  useCopilotAction({
+    name: 'draft_alert',
+    description: 'Create an alert for a student at risk. Severity values: high, medium, low.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
+      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
+      { name: 'message', type: 'string', description: 'Alert message content', required: true },
+    ],
+    handler: async ({ matricule, severity, message }: { matricule: string; severity: string; message: string }) => {
+      const student = data?.topARisque.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
+      const severiteMap: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
+      await api.post('/alertes', {
+        etudiantId: student?.id,
+        severite: severiteMap[severity] ?? severity,
+        message,
+      })
+      return `Alerte créée pour ${student?.nomComplet ?? matricule}`
     },
   })
 
@@ -276,7 +333,14 @@ export default function Predictions() {
               <div className="cap text-center py-4">Aucune donnée</div>
             ) : (
               topARisque.map((e, i) => (
-                <div key={e.id} className="flex items-center gap-2.5">
+                <div
+                  key={e.id}
+                  data-matricule={e.matricule}
+                  className="flex items-center gap-2.5"
+                  style={highlightedMatricule === e.matricule
+                    ? { background: 'color-mix(in oklch, var(--accent-500) 10%, transparent)', borderRadius: 6, padding: '2px 4px' }
+                    : undefined}
+                >
                   <span className="num text-[11px] w-5" style={{ color: 'var(--text-4)' }}>
                     {String(i + 1).padStart(2, '0')}
                   </span>
