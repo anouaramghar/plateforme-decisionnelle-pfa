@@ -113,7 +113,7 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onCopilotKitOpen, copilot
         <button
           onClick={onCopilotKitOpen}
           className="btn btn-sm"
-          title="CopilotKit (Ctrl+Shift+J)"
+          title="CopilotKit (Ctrl+M)"
           style={copilotKitActive ? {
             background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
             borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',

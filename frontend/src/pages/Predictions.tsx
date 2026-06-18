@@ -203,9 +203,11 @@ export default function Predictions() {
 
   async function confirmAlert() {
     if (!pendingAlert) return
+    const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
     await api.post('/alertes', {
       etudiantId: pendingAlert.student.id,
-      severite: pendingAlert.severite,
+      type: 'RisqueEchec',
+      niveau: NIVEAU_MAP[pendingAlert.severite] ?? 'Moyen',
       message: pendingAlert.message,
     })
     setPendingAlert(null)

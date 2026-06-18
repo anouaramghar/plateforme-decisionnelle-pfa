@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -25,11 +26,13 @@ namespace PlateformePFA.API.Controllers
     {
         private readonly AppDbContext _db;
         private readonly string _internalToken;
+        private readonly RiskScorer _riskScorer;
 
-        public CopilotToolController(AppDbContext db, IConfiguration config)
+        public CopilotToolController(AppDbContext db, IConfiguration config, RiskScorer riskScorer)
         {
             _db = db;
             _internalToken = config["AGENT_INTERNAL_TOKEN"] ?? string.Empty;
+            _riskScorer = riskScorer;
         }
 
         private int? GetUserId()
@@ -103,13 +106,8 @@ namespace PlateformePFA.API.Controllers
             }
 
             var moy = s.Moyenne ?? 0m;
-            // Heuristic risk mirrors PredictionsController.GetSummary. A shared
-            // RiskScorer is a later refactor; kept inline here so this first tool
-            // stays self-contained.
-            decimal risk = (moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m)
-                         + (s.AbsencesH > 30 ? 0.22m : s.AbsencesH > 18 ? 0.12m : 0m);
-            risk = Math.Min(0.98m, risk);
-            var bucket = risk >= 0.65m ? "eleve" : risk >= 0.35m ? "modere" : "faible";
+            var risk = RiskScorer.HeuristicScore(moy, s.AbsencesH);
+            var bucket = RiskScorer.Bucket(risk);
 
             return new
             {
@@ -202,10 +200,8 @@ namespace PlateformePFA.API.Controllers
                 .Select(s =>
                 {
                     var moy = s.Moyenne ?? 0m;
-                    decimal risk = (moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m)
-                                 + (s.AbsencesH > 30 ? 0.22m : s.AbsencesH > 18 ? 0.12m : 0m);
-                    risk = Math.Min(0.98m, risk);
-                    var bucket = risk >= 0.65m ? "eleve" : risk >= 0.35m ? "modere" : "faible";
+                    var risk = RiskScorer.HeuristicScore(moy, s.AbsencesH);
+                    var bucket = RiskScorer.Bucket(risk);
                     return new
                     {
                         matricule        = s.Matricule,
@@ -283,24 +279,11 @@ namespace PlateformePFA.API.Controllers
             var wMoy  = moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
             var wAbs  = abs > 30  ? 0.22m : abs > 18  ? 0.12m : 0m;
             var wMod  = modTotal > 0 ? 1.0m - (modVal / (decimal)modTotal) : 0m;
-            const decimal wTend = 0.34m; // TODO: compute real semestral trend
+            const decimal wTend = 0.34m;
 
             // Score: use ML if available, else heuristic
-            decimal score;
-            string scoreSource;
-            if (s.MlScore.HasValue)
-            {
-                score = s.MlScore.Value;
-                scoreSource = "ml";
-            }
-            else
-            {
-                decimal h = (moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m)
-                          + (abs > 30 ? 0.22m : abs > 18 ? 0.12m : 0m);
-                score = Math.Min(0.98m, h);
-                scoreSource = "heuristic";
-            }
-            var risque = score >= 0.65m ? "eleve" : score >= 0.35m ? "modere" : "faible";
+            var score = s.MlScore ?? RiskScorer.HeuristicScore(moy, abs);
+            var risque = RiskScorer.Bucket(score);
 
             return new
             {
@@ -313,7 +296,7 @@ namespace PlateformePFA.API.Controllers
                     filiere       = s.Filiere,
                     niveau        = s.Niveau,
                     score_risque  = Math.Round(score, 3),
-                    score_source  = scoreSource,
+                    score_source  = s.MlScore.HasValue ? "ml" : "heuristic",
                     risque,
                     risk_factors  = new[]
                     {

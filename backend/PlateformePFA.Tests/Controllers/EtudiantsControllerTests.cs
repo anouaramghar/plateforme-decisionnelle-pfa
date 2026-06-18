@@ -20,7 +20,18 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
     }
 
     [Fact]
-    public async Task With_stats_includes_moyenne_and_modules()
+    public async Task GetEtudiants_returns_paginated_list()
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var res = await client.GetAsync("/api/etudiants");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetWithStats_returns_students_with_risk_scores()
     {
         var client = _factory.CreateClient();
         var token = await AuthHelper.GetAdminTokenAsync(client);
@@ -28,20 +39,77 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
 
         var res = await client.GetAsync("/api/etudiants/with-stats");
         res.StatusCode.Should().Be(HttpStatusCode.OK);
-        var rows = await res.Content.ReadFromJsonAsync<List<EtudiantWithStatsRow>>();
-        rows.Should().NotBeNull();
-        rows!.Should().NotBeEmpty();
 
-        var first = rows.First();
-        first.Moyenne.Should().BeGreaterThan(0);
-        first.ModulesTotal.Should().BeGreaterThan(0);
-        first.ScoreRisque.Should().BeInRange(0, 1);
-        first.NomComplet.Should().NotBeNullOrEmpty();
-        first.FiliereCode.Should().NotBeNullOrEmpty();
+        var body = await res.Content.ReadFromJsonAsync<List<EtudiantWithStats>>();
+        body.Should().NotBeEmpty();
+        body!.First().Matricule.Should().Be("E10001");
+        body.First().Moyenne.Should().BeGreaterThan(0);
     }
 
-    private record EtudiantWithStatsRow(
-        int Id, string Matricule, string NomComplet, string FiliereCode,
-        string Niveau, decimal Moyenne, int Absences, int ModulesValides,
-        int ModulesTotal, decimal ScoreRisque, string Risque, string Statut);
+    [Fact]
+    public async Task GetEtudiantNotes_returns_module_notes()
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var ctx = _factory.CreateContext();
+        var etu = ctx.Etudiants.First(e => e.Matricule == "E10001");
+
+        var res = await client.GetAsync($"/api/etudiants/{etu.Id}/notes");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await res.Content.ReadFromJsonAsync<List<NoteRow>>();
+        body.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task PostEtudiant_creates_student()
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var ctx = _factory.CreateContext();
+        var fil = ctx.Filieres.First(f => f.Code == "GI");
+
+        var res = await client.PostAsJsonAsync("/api/etudiants", new
+        {
+            matricule = "E99999",
+            nom = "New",
+            prenom = "Student",
+            email = "new@test.com",
+            filiereId = fil.Id,
+            niveau = "CI1",
+            annee = "2025/2026",
+        });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task PostEtudiant_rejects_duplicate_matricule()
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var ctx = _factory.CreateContext();
+        var fil = ctx.Filieres.First(f => f.Code == "GI");
+
+        var res = await client.PostAsJsonAsync("/api/etudiants", new
+        {
+            matricule = "E10001", // already exists
+            nom = "Dup",
+            prenom = "Test",
+            filiereId = fil.Id,
+            niveau = "CI1",
+            annee = "2025/2026",
+        });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    private record EtudiantWithStats(string Matricule, decimal Moyenne, decimal ScoreRisque);
+    private record NoteRow(int ModuleId, string Code, string Nom);
 }

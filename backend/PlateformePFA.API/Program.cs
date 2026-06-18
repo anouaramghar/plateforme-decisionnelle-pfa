@@ -5,7 +5,10 @@ using PlateformePFA.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using QuestPDF.Infrastructure;
 using System.Text;
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -123,6 +126,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAlerteService, AlerteService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<RiskScorer>();
 builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 
 builder.Services.AddHttpClient("MLService");

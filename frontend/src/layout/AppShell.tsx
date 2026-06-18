@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { CopilotSidebar } from '@copilotkit/react-ui'
+import { CopilotSidebar, useCopilotChatConfiguration } from '@copilotkit/react-core/v2'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
@@ -9,7 +9,18 @@ import { CopilotPanel } from '../components/copilot/CopilotPanel'
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [copilotOpen, setCopilotOpen] = useState(false)
-  const [copilotKitOpen, setCopilotKitOpen] = useState(false)
+  const chatConfig = useCopilotChatConfiguration()
+  
+  const copilotKitOpen = chatConfig?.isModalOpen ?? false
+  const setCopilotKitOpen = (open: boolean | ((o: boolean) => boolean)) => {
+    if (chatConfig) {
+      if (typeof open === 'function') {
+        chatConfig.setModalOpen(open(chatConfig.isModalOpen))
+      } else {
+        chatConfig.setModalOpen(open)
+      }
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -21,7 +32,7 @@ export function AppShell() {
         e.preventDefault()
         setCopilotOpen(o => !o)
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'J') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'm') {
         e.preventDefault()
         setCopilotKitOpen(o => !o)
       }
@@ -31,7 +42,7 @@ export function AppShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [chatConfig])
 
   return (
     <div className="vh-full flex" style={{ background: 'var(--bg)' }}>
@@ -55,12 +66,9 @@ export function AppShell() {
       <CopilotSidebar
         defaultOpen={false}
         labels={{
-          title: 'ENIAD Copilot · CopilotKit',
-          initial: 'Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.',
+          modalHeaderTitle: 'ENIAD Copilot · CopilotKit',
+          welcomeMessageText: 'Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.',
         }}
-        clickOutsideToClose={false}
-        open={copilotKitOpen}
-        onSetOpen={setCopilotKitOpen}
       />
     </div>
   )

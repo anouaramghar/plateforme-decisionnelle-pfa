@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -99,7 +99,6 @@ export default function Students() {
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
 
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
 
   // Pre-fill search from URL ?q= param (used by navigate_to_student copilot action)
   useEffect(() => {
@@ -177,9 +176,11 @@ export default function Students() {
 
   async function confirmAlert() {
     if (!pendingAlert) return
+    const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
     await api.post('/alertes', {
       etudiantId: pendingAlert.student.id,
-      severite: pendingAlert.severite,
+      type: 'RisqueEchec',
+      niveau: NIVEAU_MAP[pendingAlert.severite] ?? 'Moyen',
       message: pendingAlert.message,
     })
     setPendingAlert(null)

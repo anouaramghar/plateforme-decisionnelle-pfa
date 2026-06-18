@@ -23,19 +23,22 @@ namespace PlateformePFA.API.Controllers
         private readonly IConfiguration      _configuration;
         private readonly ILogger<PredictionsController> _logger;
         private readonly IAuditService _audit;
+        private readonly RiskScorer _riskScorer;
 
         public PredictionsController(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             ILogger<PredictionsController> logger,
-            IAuditService audit)
+            IAuditService audit,
+            RiskScorer riskScorer)
         {
             _context           = context;
             _httpClientFactory = httpClientFactory;
             _configuration     = configuration;
             _logger            = logger;
             _audit             = audit;
+            _riskScorer        = riskScorer;
         }
 
         // GET: api/predictions/metrics — proxies the ML service's /metrics so
@@ -145,27 +148,7 @@ namespace PlateformePFA.API.Controllers
                 })
                 .ToListAsync();
 
-            var latestPredictions = await _context.PredictionsML
-                .AsNoTracking()
-                .Where(p => p.ScoreRisque.HasValue)
-                .GroupBy(p => p.EtudiantId)
-                .Select(g => new
-                {
-                    EtudiantId = g.Key,
-                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
-                })
-                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
-
-            decimal RiskScore(decimal? moy, int absH, int etuId)
-            {
-                if (latestPredictions.TryGetValue(etuId, out var ml)) return ml;
-                if (!moy.HasValue) return 0.4m;
-                var fromMoy = moy.Value < 10m ? 0.55m : (moy.Value < 12m ? 0.32m : 0.12m);
-                var fromAbs = absH > 30 ? 0.22m : (absH > 18 ? 0.12m : 0m);
-                return Math.Min(0.98m, fromMoy + fromAbs);
-            }
-
-            string Bucket(decimal s) => s >= 0.65m ? "eleve" : s >= 0.35m ? "modere" : "faible";
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             var enriched = students.Select(s => new
             {
@@ -177,7 +160,7 @@ namespace PlateformePFA.API.Controllers
                 s.Filiere,
                 Moyenne = s.Moyenne ?? 0m,
                 s.Absences,
-                Score = RiskScore(s.Moyenne, s.Absences, s.Id),
+                Score = _riskScorer.Score(s.Moyenne, s.Absences, s.Id, latestPredictions),
             }).ToList();
 
             // Scatter: cap at 400 points to keep the SVG renderer happy.
@@ -188,7 +171,7 @@ namespace PlateformePFA.API.Controllers
                 {
                     X = s.Absences,
                     Y = Math.Round(s.Moyenne, 2),
-                    R = Bucket(s.Score),
+                    R = RiskScorer.Bucket(s.Score),
                 })
                 .ToList();
 

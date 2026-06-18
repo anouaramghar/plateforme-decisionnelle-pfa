@@ -10,7 +10,7 @@ import './index.css'
 
 const copilotRuntimeUrl =
   (import.meta.env.VITE_COPILOTKIT_URL as string | undefined) ??
-  'http://localhost:4000/api/copilotkit'
+  (import.meta.env.DEV ? 'http://localhost:4000/api/copilotkit' : '/api/copilotkit')
 
 const queryClient = new QueryClient({
   defaultOptions: {

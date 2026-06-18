@@ -13,6 +13,7 @@ Training on 1000 synthetic students takes ~2-5 seconds per model — acceptable
 for a startup delay.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -86,11 +87,21 @@ def _ensure_forecast_model() -> None:
     logger.info("forecast_model trained and saved.")
 
 
+async def ensure_all_models_async() -> None:
+    """
+    Async entry point — runs blocking training off the event loop so
+    Docker health probes stay responsive during startup.
+    """
+    SAVED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(_ensure_risk_model)
+    await asyncio.to_thread(_ensure_cluster_model)
+    await asyncio.to_thread(_ensure_forecast_model)
+
+
 def ensure_all_models() -> None:
     """
-    Entry point called by main.py lifespan.
-    Creates saved_models/ if needed, then trains any missing model.
-    Models already on disk are untouched.
+    Synchronous entry point — kept for backward compatibility with
+    retrain endpoint and direct script invocation.
     """
     SAVED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
     _ensure_risk_model()

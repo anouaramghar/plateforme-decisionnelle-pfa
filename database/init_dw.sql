@@ -17,7 +17,7 @@ GO
 IF OBJECT_ID('dbo.DimEtudiant', 'U') IS NULL
 CREATE TABLE DimEtudiant (
     EtudiantKey INT IDENTITY(1,1) PRIMARY KEY,
-    Matricule   NVARCHAR(20)  NOT NULL,
+    Matricule   NVARCHAR(20)  NOT NULL UNIQUE,
     Nom         NVARCHAR(100) NOT NULL,
     Prenom      NVARCHAR(100) NOT NULL,
     Filiere     NVARCHAR(100) NOT NULL,

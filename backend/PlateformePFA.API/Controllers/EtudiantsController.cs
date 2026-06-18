@@ -5,6 +5,7 @@ using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Etudiants;
 using PlateformePFA.API.Models;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -14,10 +15,12 @@ namespace PlateformePFA.API.Controllers
     public class EtudiantsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly RiskScorer _riskScorer;
 
-        public EtudiantsController(AppDbContext context)
+        public EtudiantsController(AppDbContext context, RiskScorer riskScorer)
         {
             _context = context;
+            _riskScorer = riskScorer;
         }
 
         // Project Etudiant + Filiere into a flat DTO once. Used by both list and detail.
@@ -65,16 +68,7 @@ namespace PlateformePFA.API.Controllers
                 })
                 .ToListAsync();
 
-            var latestPredictions = await _context.PredictionsML
-                .AsNoTracking()
-                .Where(p => p.ScoreRisque.HasValue)
-                .GroupBy(p => p.EtudiantId)
-                .Select(g => new
-                {
-                    EtudiantId = g.Key,
-                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
-                })
-                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             var result = rows.Select(r =>
             {
@@ -84,30 +78,10 @@ namespace PlateformePFA.API.Controllers
                     ? Math.Round(r.NotesFinales.Average(), 2)
                     : 0m;
 
-                decimal score;
-                if (latestPredictions.TryGetValue(r.Id, out var ml))
-                {
-                    score = ml;
-                }
-                else
-                {
-                    var fromMoy = moyenne == 0m ? 0.4m
-                        : moyenne < 10m ? 0.55m
-                        : moyenne < 12m ? 0.32m
-                        : 0.12m;
-                    var fromAbs = r.AbsencesH > 30 ? 0.22m
-                        : r.AbsencesH > 18 ? 0.12m
-                        : 0m;
-                    score = Math.Min(0.98m, fromMoy + fromAbs);
-                }
+                var score = _riskScorer.Score(moyenne, r.AbsencesH, r.Id, latestPredictions);
 
-                var risque = score >= 0.65m ? "eleve"
-                    : score >= 0.35m ? "modere"
-                    : "faible";
-                var statut = moyenne == 0m ? "Suivi"
-                    : moyenne < 10m ? "En difficulté"
-                    : moyenne < 12m ? "Suivi"
-                    : "Régulier";
+                var risque = RiskScorer.Bucket(score);
+                var statut = RiskScorer.StatutLabel(moyenne);
 
                 return new EtudiantWithStatsDto
                 {

@@ -17,13 +17,12 @@ namespace PlateformePFA.API.Services
     public class ReportGenerator
     {
         private readonly AppDbContext _context;
+        private readonly RiskScorer _riskScorer;
 
-        public ReportGenerator(AppDbContext context)
+        public ReportGenerator(AppDbContext context, RiskScorer riskScorer)
         {
             _context = context;
-            // QuestPDF requires acknowledging the licence at startup.
-            // "Community" is free for individuals and small businesses.
-            QuestPDF.Settings.License = LicenseType.Community;
+            _riskScorer = riskScorer;
         }
 
         /// <summary>Result of a generation pass.</summary>
@@ -125,30 +124,14 @@ namespace PlateformePFA.API.Services
                 })
                 .ToListAsync();
 
-            var latestPredictions = await _context.PredictionsML
-                .AsNoTracking()
-                .Where(p => p.ScoreRisque.HasValue)
-                .GroupBy(p => p.EtudiantId)
-                .Select(g => new
-                {
-                    EtudiantId = g.Key,
-                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
-                })
-                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             var etudiants = rawStudents.Select(s =>
             {
                 var finals = s.Notes.Where(n => n.NoteFinal.HasValue).Select(n => n.NoteFinal!.Value).ToList();
                 var moy = finals.Count > 0 ? Math.Round(finals.Average(), 2) : 0m;
                 var absH = s.Absences.Sum(a => a.NombreHeures);
-                decimal score;
-                if (latestPredictions.TryGetValue(s.Id, out var ml)) score = ml;
-                else
-                {
-                    var fromMoy = moy == 0m ? 0.4m : moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
-                    var fromAbs = absH > 30 ? 0.22m : absH > 18 ? 0.12m : 0m;
-                    score = Math.Min(0.98m, fromMoy + fromAbs);
-                }
+                var score = _riskScorer.Score(moy, absH, s.Id, latestPredictions);
                 return new EtudiantRow(s.Id, s.Matricule, s.Nom, s.Prenom, s.Filiere, s.Niveau, moy, absH, Math.Round(score, 3));
             }).ToList();
 

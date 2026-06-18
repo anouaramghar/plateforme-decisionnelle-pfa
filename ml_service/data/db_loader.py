@@ -144,7 +144,7 @@ def load_forecast_data() -> pd.DataFrame | None:
                 fn.NoteFinale                                                 AS note_finale,
                 fn.NbAbsences * 1.0 / 32.0                                    AS taux_absence,
                 AVG(CAST(fn.NoteFinale AS FLOAT))     OVER (PARTITION BY fn.EtudiantKey) AS moyenne_actuelle,
-                COUNT(DISTINCT fn.ModuleKey)          OVER (PARTITION BY fn.EtudiantKey) AS nb_modules
+                COUNT(fn.ModuleKey)          OVER (PARTITION BY fn.EtudiantKey) AS nb_modules
             FROM FaitNotes fn
             WHERE fn.NoteFinale IS NOT NULL
         """
