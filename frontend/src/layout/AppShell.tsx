@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { CopilotPopup } from '@copilotkit/react-core/v2'
+import { CopilotSidebar } from '@copilotkit/react-ui'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
@@ -9,6 +9,7 @@ import { CopilotPanel } from '../components/copilot/CopilotPanel'
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [copilotOpen, setCopilotOpen] = useState(false)
+  const [copilotKitOpen, setCopilotKitOpen] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -16,14 +17,16 @@ export function AppShell() {
         e.preventDefault()
         setCmdOpen(o => !o)
       }
-      // ⌘J / Ctrl+J toggles the Copilot panel
-      if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'j') {
         e.preventDefault()
         setCopilotOpen(o => !o)
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'J') {
+        e.preventDefault()
+        setCopilotKitOpen(o => !o)
+      }
       if (e.key === 'Escape') {
         setCmdOpen(false)
-        // CopilotPanel handles its own ESC internally
       }
     }
     window.addEventListener('keydown', onKey)
@@ -37,7 +40,9 @@ export function AppShell() {
         <Topbar
           onCommandOpen={() => setCmdOpen(true)}
           onCopilotOpen={() => setCopilotOpen(true)}
+          onCopilotKitOpen={() => setCopilotKitOpen(o => !o)}
           copilotActive={copilotOpen}
+          copilotKitActive={copilotKitOpen}
         />
         <div className="flex-1 overflow-y-auto scroll-thin">
           <div className="px-8 py-7 max-w-[1480px] mx-auto">
@@ -47,8 +52,15 @@ export function AppShell() {
       </div>
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       {copilotOpen && <CopilotPanel onClose={() => setCopilotOpen(false)} />}
-      <CopilotPopup
-        labels={{ welcomeMessageText: 'Bonjour ! Comment puis-je vous aider ?' }}
+      <CopilotSidebar
+        defaultOpen={false}
+        labels={{
+          title: 'ENIAD Copilot · CopilotKit',
+          initial: 'Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.',
+        }}
+        clickOutsideToClose={false}
+        open={copilotKitOpen}
+        onSetOpen={setCopilotKitOpen}
       />
     </div>
   )
