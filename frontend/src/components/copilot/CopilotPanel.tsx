@@ -22,7 +22,7 @@ interface ToolEvent {
   error?: string
 }
 
-interface ConfirmData {
+export interface ConfirmData {
   draftId: number
   preview: {
     student_name?: string
@@ -589,7 +589,7 @@ function ToolChip({ tool }: { tool: ToolEvent }) {
   )
 }
 
-function ConfirmCard({
+export function ConfirmCard({
   data,
   onConfirm,
   onDismiss,

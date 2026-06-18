@@ -5,27 +5,20 @@ import { z } from "zod";
 export const authStore = new AsyncLocalStorage<string>();
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:5135";
+const AGENT_INTERNAL_TOKEN = process.env.AGENT_INTERNAL_TOKEN ?? "";
 
-async function backendGet(path: string): Promise<unknown> {
+async function backendToolCall(name: string, args: unknown): Promise<unknown> {
   const token = authStore.getStore() ?? "";
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return { error: `Backend error ${res.status}` };
-  return res.json();
-}
-
-async function backendPost(path: string, body: unknown): Promise<unknown> {
-  const token = authStore.getStore() ?? "";
-  const res = await fetch(`${BACKEND_URL}${path}`, {
+  const res = await fetch(`${BACKEND_URL}/api/copilot/tool/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      "X-Internal-Token": AGENT_INTERNAL_TOKEN,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ args }),
   });
-  if (!res.ok) return { error: `Backend error ${res.status}` };
+  if (!res.ok) return { ok: false, error: `Backend error ${res.status}` };
   return res.json();
 }
 
@@ -39,31 +32,8 @@ export const serverTools = [
       matricule: z.string().describe("Student matricule, e.g. E10001"),
     }),
     execute: async ({ matricule }) => {
-      const students = (await backendGet("/api/etudiants/with-stats")) as {
-        matricule: string;
-        nomComplet: string;
-        filiereCode: string;
-        niveau: string;
-        moyenne: number;
-        absences: number;
-        scoreRisque: number;
-        risque: string;
-      }[];
-      if (!Array.isArray(students)) return JSON.stringify(students);
-      const student = students.find(
-        (s) => s.matricule.toLowerCase() === matricule.toLowerCase()
-      );
-      if (!student) return JSON.stringify({ error: `Student ${matricule} not found` });
-      return JSON.stringify({
-        matricule: student.matricule,
-        name: student.nomComplet,
-        filiere: student.filiereCode,
-        niveau: student.niveau,
-        averageScore: student.moyenne,
-        absences: student.absences,
-        riskScore: student.scoreRisque,
-        riskLevel: student.risque,
-      });
+      const result = await backendToolCall("get_student", { matricule });
+      return JSON.stringify(result);
     },
   }),
 
@@ -83,49 +53,28 @@ export const serverTools = [
       niveau: z.string().optional().describe("Academic level filter (optional)"),
     }),
     execute: async ({ threshold = 0.6, filiere, niveau }) => {
-      const students = (await backendGet("/api/etudiants/with-stats")) as {
-        matricule: string;
-        nomComplet: string;
-        filiereCode: string;
-        niveau: string;
-        moyenne: number;
-        absences: number;
-        scoreRisque: number;
-        risque: string;
-      }[];
-      if (!Array.isArray(students)) return JSON.stringify(students);
-      const filtered = students.filter((s) => {
-        if (s.scoreRisque < threshold) return false;
-        if (filiere && s.filiereCode !== filiere) return false;
-        if (niveau && s.niveau !== niveau) return false;
-        return true;
+      const result = await backendToolCall("list_at_risk", {
+        threshold,
+        filiere,
+        niveau,
       });
-      return JSON.stringify(
-        filtered
-          .sort((a, b) => b.scoreRisque - a.scoreRisque)
-          .slice(0, 20)
-          .map((s) => ({
-            matricule: s.matricule,
-            name: s.nomComplet,
-            filiere: s.filiereCode,
-            niveau: s.niveau,
-            averageScore: s.moyenne,
-            absences: s.absences,
-            riskScore: s.scoreRisque,
-          }))
-      );
+      return JSON.stringify(result);
     },
   }),
 
   defineTool({
-    name: "get_dashboard_summary",
+    name: "query_dw",
     description:
-      "Get aggregated dashboard statistics: total students, average score, success rate, " +
-      "active alerts count, top at-risk students, and performance by filière.",
-    parameters: z.object({}),
-    execute: async () => {
-      const data = await backendGet("/api/dashboard/summary");
-      return JSON.stringify(data);
+      "Answer a natural-language question about aggregated student data using the data warehouse. " +
+      "Examples: 'How many students are enrolled?', 'Average score by filière', 'Modules with highest failure rate'.",
+    parameters: z.object({
+      question: z
+        .string()
+        .describe("Natural language question about student data."),
+    }),
+    execute: async ({ question }) => {
+      const result = await backendToolCall("query_dw", { question });
+      return JSON.stringify(result);
     },
   }),
 
@@ -138,41 +87,8 @@ export const serverTools = [
       matricule: z.string().describe("Student matricule to explain risk for"),
     }),
     execute: async ({ matricule }) => {
-      const students = (await backendGet("/api/etudiants/with-stats")) as {
-        id: number;
-        matricule: string;
-        nomComplet: string;
-        filiereCode: string;
-        niveau: string;
-        moyenne: number;
-        absences: number;
-        modulesValides: number;
-        modulesTotal: number;
-        scoreRisque: number;
-        risque: string;
-      }[];
-      if (!Array.isArray(students)) return JSON.stringify(students);
-      const student = students.find(
-        (s) => s.matricule.toLowerCase() === matricule.toLowerCase()
-      );
-      if (!student) return JSON.stringify({ error: `Student ${matricule} not found` });
-
-      const notes = await backendGet(`/api/etudiants/${student.id}/notes`);
-      return JSON.stringify({
-        student: {
-          matricule: student.matricule,
-          name: student.nomComplet,
-          filiere: student.filiereCode,
-          niveau: student.niveau,
-          averageScore: student.moyenne,
-          absences: student.absences,
-          modulesValidated: student.modulesValides,
-          modulesTotal: student.modulesTotal,
-          riskScore: student.scoreRisque,
-          riskLevel: student.risque,
-        },
-        gradeDetails: notes,
-      });
+      const result = await backendToolCall("explain_risk", { matricule });
+      return JSON.stringify(result);
     },
   }),
 ];

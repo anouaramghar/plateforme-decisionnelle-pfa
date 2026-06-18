@@ -32,7 +32,7 @@ export function AppShell() {
         e.preventDefault()
         setCopilotOpen(o => !o)
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'm') {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'J') {
         e.preventDefault()
         setCopilotKitOpen(o => !o)
       }

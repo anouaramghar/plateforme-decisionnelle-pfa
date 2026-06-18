@@ -26,6 +26,7 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
   return (
     <CopilotKit
       runtimeUrl={copilotRuntimeUrl}
+      useSingleEndpoint
       headers={token ? { Authorization: `Bearer ${token}` } : {}}
     >
       {children}

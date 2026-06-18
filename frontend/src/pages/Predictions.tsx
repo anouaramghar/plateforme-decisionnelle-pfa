@@ -10,6 +10,8 @@ import { SectionHeader } from '../components/ui/SectionHeader'
 import { Select } from '../components/ui/Select'
 import { ChartScatter } from '../components/charts'
 import { api } from '../services/api'
+import { ConfirmCard } from '../components/copilot/CopilotPanel'
+import type { ConfirmData } from '../components/copilot/CopilotPanel'
 
 const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
 const NIVEAUX  = ['Toutes', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
@@ -157,14 +159,44 @@ export default function Predictions() {
       { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
       { name: 'message', type: 'string', description: 'Alert message content', required: true },
     ],
-    handler: async ({ matricule, severity, message }: { matricule: string; severity: string; message: string }) => {
+    renderAndWaitForResponse: ({ args, status, respond }: { args: { matricule?: string; severity?: string; message?: string }; status: string; respond?: (r: unknown) => void }) => {
+      const student = data?.topARisque.find(s => s.matricule.toLowerCase() === (args.matricule ?? '').toLowerCase())
+      
+      const confirmData: ConfirmData = {
+        draftId: 0,
+        preview: {
+          student_name: student?.nomComplet ?? args.matricule ?? '',
+          matricule: args.matricule ?? '',
+          severity: args.severity ?? 'medium',
+          message: args.message ?? '',
+        },
+        tool: 'draft_alert',
+        state: status === 'complete' ? 'confirmed' : 'pending',
+      }
+
       const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
-      const severite = VALID_SEVERITES[severity]
-      if (!severite) return `Sévérité invalide — utilise high, medium, ou low`
-      const student = data?.topARisque.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
-      if (!student) return `Étudiant ${matricule} introuvable dans le tableau`
-      setPendingAlert({ student, severite, message })
-      return `Brouillon créé pour ${student.nomComplet} — confirme dans l'interface`
+      const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
+
+      return (
+        <ConfirmCard
+          data={confirmData}
+          onConfirm={async () => {
+            const severite = VALID_SEVERITES[args.severity ?? 'medium']
+            if (!severite || !student) {
+              respond?.({ confirmed: false })
+              return
+            }
+            await api.post('/alertes', {
+              etudiantId: student.id,
+              type: 'RisqueEchec',
+              niveau: NIVEAU_MAP[severite] ?? 'Moyen',
+              message: args.message ?? '',
+            })
+            respond?.({ confirmed: true })
+          }}
+          onDismiss={() => respond?.({ confirmed: false })}
+        />
+      )
     },
   })
 

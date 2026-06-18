@@ -165,7 +165,7 @@ export default function Alerts() {
         {summary.map(c => (
           <button
             key={c.k}
-            onClick={() => setTypeFilter(c.k)}
+            onClick={() => setTypeFilter(c.k as TypeFilter)}
             className="card p-4 text-left hover:border-stone-400"
             style={{
               borderColor: typeFilter === c.k ? 'var(--accent-500)' : 'var(--border)',
