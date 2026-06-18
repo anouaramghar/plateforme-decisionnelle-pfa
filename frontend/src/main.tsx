@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CopilotKit } from '@copilotkit/react-core/v2'
+import '@copilotkit/react-ui/styles.css'
 import App from './App'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -25,7 +26,6 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
   return (
     <CopilotKit
       runtimeUrl={copilotRuntimeUrl}
-      useSingleEndpoint
       headers={token ? { Authorization: `Bearer ${token}` } : {}}
     >
       {children}
