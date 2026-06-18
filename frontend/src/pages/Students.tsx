@@ -73,6 +73,9 @@ export default function Students() {
   const [filiere, setFiliere] = useState('Tous')
   const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
+  const [pendingAlert, setPendingAlert] = useState<{
+    student: EtudiantRow; severite: string; message: string
+  } | null>(null)
   const PAGE = 14
 
   const filtered = useMemo(
@@ -153,7 +156,8 @@ export default function Students() {
   useCopilotAction({
     name: 'draft_alert',
     description:
-      'Propose creating an alert for a student. Always confirm with the user first. ' +
+      'Propose creating an alert for a student at risk. This only drafts the alert — ' +
+      'the user must click "Confirmer" in the UI before anything is saved. ' +
       'Severity values: high, medium, low.',
     parameters: [
       { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
@@ -161,19 +165,47 @@ export default function Students() {
       { name: 'message', type: 'string', description: 'Alert message content', required: true },
     ],
     handler: async ({ matricule, severity, message }: { matricule: string; severity: string; message: string }) => {
+      const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
+      const severite = VALID_SEVERITES[severity]
+      if (!severite) return `Sévérité invalide — utilise high, medium, ou low`
       const student = all.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
-      const severiteMap: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
-      await api.post('/alertes', {
-        etudiantId: student?.id,
-        severite: severiteMap[severity] ?? severity,
-        message,
-      })
-      return `Alerte créée pour ${student?.nomComplet ?? matricule}`
+      if (!student) return `Étudiant ${matricule} introuvable`
+      setPendingAlert({ student, severite, message })
+      return `Brouillon créé pour ${student.nomComplet} — confirme dans l'interface`
     },
   })
 
+  async function confirmAlert() {
+    if (!pendingAlert) return
+    await api.post('/alertes', {
+      etudiantId: pendingAlert.student.id,
+      severite: pendingAlert.severite,
+      message: pendingAlert.message,
+    })
+    setPendingAlert(null)
+  }
+
   return (
     <div className="space-y-4">
+      {pendingAlert && (
+        <div
+          className="card p-4 flex items-start gap-4"
+          style={{ borderColor: 'var(--warn)', background: 'color-mix(in oklch, var(--warn) 8%, transparent)' }}
+        >
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold mb-0.5">Brouillon d'alerte — confirmation requise</div>
+            <div className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
+              <span className="font-medium">{pendingAlert.student.nomComplet}</span>
+              {' · '}sévérité <span className="font-medium">{pendingAlert.severite}</span>
+            </div>
+            <div className="text-[12px] mt-1" style={{ color: 'var(--text-3)' }}>{pendingAlert.message}</div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button className="btn btn-sm" onClick={() => setPendingAlert(null)}>Annuler</button>
+            <button className="btn btn-sm btn-primary" onClick={confirmAlert}>Confirmer l'envoi</button>
+          </div>
+        </div>
+      )}
       <div className="flex items-end justify-between">
         <div>
           <div className="cap mb-1">
