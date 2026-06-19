@@ -30,6 +30,8 @@ class StreamDelta:
     text: str | None = None
     tool_call: dict[str, Any] | None = None
     finish_reason: str | None = None
+    usage_in: int | None = None
+    usage_out: int | None = None
 
 
 class LLMProvider(ABC):
@@ -63,8 +65,6 @@ class MockLLMProvider(LLMProvider):
         self.tokens_in = tokens_in
         self.tokens_out = tokens_out
         self.finish_reason = finish_reason
-        self.last_tokens_in: int = 0
-        self.last_tokens_out: int = 0
 
     async def chat_stream(
         self,
@@ -78,9 +78,11 @@ class MockLLMProvider(LLMProvider):
         for chunk in self.scripted_chunks:
             yield StreamDelta(text=chunk)
             await asyncio.sleep(0)  # cooperative scheduling
-        self.last_tokens_in = self.tokens_in
-        self.last_tokens_out = self.tokens_out
-        yield StreamDelta(finish_reason=self.finish_reason)
+        yield StreamDelta(
+            finish_reason=self.finish_reason,
+            usage_in=self.tokens_in,
+            usage_out=self.tokens_out,
+        )
 
 
 class ScriptedLLMProvider(LLMProvider):
@@ -94,8 +96,6 @@ class ScriptedLLMProvider(LLMProvider):
 
     def __init__(self, turns: list[dict[str, Any]]):
         self._turns = list(turns)
-        self.last_tokens_in: int = 0
-        self.last_tokens_out: int = 0
 
     async def chat_stream(
         self,
@@ -129,10 +129,6 @@ class NIMProvider(LLMProvider):
 
     def __init__(self, api_key: str, base_url: str):
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        # Usage from the most recent stream — read by the agent loop on the
-        # final delta to populate DoneEvent.tokens_* (and the P1.B token cap).
-        self.last_tokens_in: int = 0
-        self.last_tokens_out: int = 0
 
     async def chat_stream(
         self,
@@ -143,9 +139,8 @@ class NIMProvider(LLMProvider):
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> AsyncIterator[StreamDelta]:
-        # Reset usage for this call.
-        self.last_tokens_in = 0
-        self.last_tokens_out = 0
+        local_tokens_in = 0
+        local_tokens_out = 0
 
         # Convert our ChatMessage shape -> OpenAI dicts.
         openai_messages: list[dict[str, Any]] = []
@@ -190,8 +185,8 @@ class NIMProvider(LLMProvider):
             # usage with empty choices. Capture it whenever present.
             usage = getattr(chunk, "usage", None)
             if usage is not None:
-                self.last_tokens_in = usage.prompt_tokens or 0
-                self.last_tokens_out = usage.completion_tokens or 0
+                local_tokens_in = usage.prompt_tokens or 0
+                local_tokens_out = usage.completion_tokens or 0
 
             if not chunk.choices:
                 continue
@@ -217,7 +212,7 @@ class NIMProvider(LLMProvider):
             if choice.finish_reason:
                 # Don't return here: with include_usage a trailing usage-only
                 # chunk still follows. Remember the reason and keep draining the
-                # stream so last_tokens_* are set before we emit the final delta.
+                # stream so usage is set before we emit the final delta.
                 finish_reason = choice.finish_reason
 
         # Stream exhausted (usage chunk, if any, has been consumed).
@@ -229,4 +224,8 @@ class NIMProvider(LLMProvider):
                 yield StreamDelta(tool_call=tool_buffers[idx])
             if finish_reason is None:
                 finish_reason = "tool_calls"
-        yield StreamDelta(finish_reason=finish_reason or "stop")
+        yield StreamDelta(
+            finish_reason=finish_reason or "stop",
+            usage_in=local_tokens_in if local_tokens_in > 0 else None,
+            usage_out=local_tokens_out if local_tokens_out > 0 else None,
+        )

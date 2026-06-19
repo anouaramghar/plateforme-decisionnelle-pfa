@@ -30,13 +30,14 @@ async def test_mock_provider_reports_usage():
     from provider import MockLLMProvider
 
     p = MockLLMProvider(scripted_chunks=["abc"], tokens_in=11, tokens_out=22)
-    async for _ in p.chat_stream(
+    deltas = []
+    async for delta in p.chat_stream(
         model="any",
         messages=[ChatMessage(role="user", content="x")],
     ):
-        pass
-    assert p.last_tokens_in == 11
-    assert p.last_tokens_out == 22
+        deltas.append(delta)
+    assert any(d.usage_in == 11 for d in deltas)
+    assert any(d.usage_out == 22 for d in deltas)
 
 
 @pytest.mark.asyncio

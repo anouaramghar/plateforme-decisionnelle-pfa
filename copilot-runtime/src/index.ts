@@ -1,10 +1,16 @@
 import "dotenv/config";
 import express from "express";
 import { CopilotRuntime, BuiltInAgent, createCopilotExpressHandler } from "@copilotkit/runtime/v2";
+import { createOpenAI } from "@ai-sdk/openai";
 import { authStore, serverTools } from "./tools.js";
 
+const nim = createOpenAI({
+  baseURL: process.env.NVIDIA_NIM_BASE_URL ?? "https://integrate.api.nvidia.com/v1",
+  apiKey: process.env.NVIDIA_NIM_API_KEY,
+});
+
 const agent = new BuiltInAgent({
-  model: "anthropic/claude-sonnet-4-5",
+  model: nim(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
   prompt:
     "Tu es ENIAD Copilot, un assistant d'aide à la décision pour le personnel " +
     "pédagogique de l'ENIAD (École Nationale d'Ingénieurs et d'Architectes, Berkane, Maroc). " +
@@ -30,10 +36,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// Capture JWT per-request so tool handlers can forward it to the backend.
-app.use("/api/copilotkit", (req, _res, next) => {
+// Unauthenticated liveness probe for the Docker healthcheck / depends_on.
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+import jwt from "jsonwebtoken";
+
+// Capture JWT per-request, verify its signature, and run tool handlers within ALS.
+app.use("/api/copilotkit", (req, res, next) => {
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-  authStore.run(token, () => next());
+  if (!token) {
+    return res.status(401).json({ error: "Missing authorization token" });
+  }
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error("JWT_SECRET environment variable is not configured");
+    return res.status(500).json({ error: "Server configuration error" });
+  }
+
+  try {
+    jwt.verify(token, secret);
+    authStore.run(token, () => next());
+  } catch (err: any) {
+    console.error("JWT validation error:", err.message);
+    return res.status(401).json({ error: "Invalid token signature" });
+  }
 });
 
 app.use(

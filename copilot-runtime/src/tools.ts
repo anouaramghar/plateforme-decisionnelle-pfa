@@ -79,6 +79,31 @@ export const serverTools = [
   }),
 
   defineTool({
+    name: "draft_alert",
+    description:
+      "Draft an alert for a student that requires human confirmation before being sent. " +
+      "This tool does NOT send the alert — it creates a draft that the user must approve in the UI. " +
+      "Requires matricule, severity (low/medium/high), and a message_fr explaining the reason in French.",
+    parameters: z.object({
+      matricule: z.string().describe("Student matricule, e.g. E10001"),
+      severity: z
+        .enum(["low", "medium", "high"])
+        .describe("Alert severity level"),
+      message_fr: z
+        .string()
+        .describe("Alert message in French explaining the reason"),
+    }),
+    execute: async ({ matricule, severity, message_fr }) => {
+      const result = await backendToolCall("draft_alert", {
+        matricule,
+        severity,
+        message_fr,
+      });
+      return JSON.stringify(result);
+    },
+  }),
+
+  defineTool({
     name: "explain_risk",
     description:
       "Explain why a specific student has their current risk score by listing key factors: " +

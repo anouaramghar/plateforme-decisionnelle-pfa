@@ -91,6 +91,8 @@ async def run_stream(
             pending_calls: list[dict[str, Any]] = []
             finish_reason: str | None = None
 
+            stream_tokens_in = 0
+            stream_tokens_out = 0
             async for delta in provider.chat_stream(
                 model=settings.model_router, messages=messages, tools=tools,
             ):
@@ -101,9 +103,13 @@ async def run_stream(
                     pending_calls.append(delta.tool_call)
                 if delta.finish_reason:
                     finish_reason = delta.finish_reason
+                if delta.usage_in is not None:
+                    stream_tokens_in = delta.usage_in
+                if delta.usage_out is not None:
+                    stream_tokens_out = delta.usage_out
 
-            tokens_in += getattr(provider, "last_tokens_in", 0) or 0
-            tokens_out += getattr(provider, "last_tokens_out", 0) or 0
+            tokens_in += stream_tokens_in
+            tokens_out += stream_tokens_out
 
             if finish_reason != "tool_calls" or not pending_calls:
                 # Model produced a final answer.

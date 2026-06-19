@@ -33,14 +33,14 @@ Test-Endpoint -Method GET -Uri "/health" -Desc "Health check"
 Write-Host "`n====== AUTH ======" -ForegroundColor Cyan
 Test-Endpoint -Method POST -Uri "/api/Auth/login" -Body @{email="bad@x.com";motDePasse="wrong1"} -Desc "Login - invalid creds" -Expected @(401)
 
-$login = Test-Endpoint -Method POST -Uri "/api/Auth/login" -Body @{email="admin@eniad.ma";motDePasse="Admin@ENIAD2026!"} -Desc "Login - admin seed"
+$login = Test-Endpoint -Method POST -Uri "/api/Auth/login" -Body @{email="admin@eniad.ma";motDePasse="MLqWhJXHuq3zEgV3u6I5TAAa1!"} -Desc "Login - admin seed"
 if (-not $login.token) {
     # Try registering an admin first
     Write-Host "  -> No seed admin found, trying to register..." -ForegroundColor Yellow
     # Check if there's a register endpoint we can use without auth
-    $regBody = @{nom="Admin";prenom="ENIAD";email="admin@eniad.ma";motDePasse="Admin@ENIAD2026!";role="Admin"}
+    $regBody = @{nom="Admin";prenom="ENIAD";email="admin@eniad.ma";motDePasse="MLqWhJXHuq3zEgV3u6I5TAAa1!";role="Admin"}
     Test-Endpoint -Method POST -Uri "/api/Auth/register" -Body $regBody -Desc "Register admin (fallback)" -Expected @(200,201,404,405)
-    $login = Test-Endpoint -Method POST -Uri "/api/Auth/login" -Body @{email="admin@eniad.ma";motDePasse="Admin@ENIAD2026!"} -Desc "Login - retry"
+    $login = Test-Endpoint -Method POST -Uri "/api/Auth/login" -Body @{email="admin@eniad.ma";motDePasse="MLqWhJXHuq3zEgV3u6I5TAAa1!"} -Desc "Login - retry"
 }
 $TOKEN = $login.token
 if (-not $TOKEN) { Write-Host "FATAL: Cannot get JWT token. Aborting." -ForegroundColor Red; exit 1 }
