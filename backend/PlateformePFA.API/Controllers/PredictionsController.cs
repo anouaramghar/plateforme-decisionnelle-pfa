@@ -470,6 +470,66 @@ namespace PlateformePFA.API.Controllers
                 .ToListAsync();
         }
 
+        // GET: api/predictions/explain/5
+        [HttpGet("explain/{etudiantId:int}")]
+        public async Task<ActionResult<ShapExplainDto>> ExplainRisk(int etudiantId, CancellationToken ct)
+        {
+            var etudiant = await _context.Etudiants
+                .AsNoTracking()
+                .Include(e => e.Notes)
+                .Include(e => e.Absences)
+                .FirstOrDefaultAsync(e => e.Id == etudiantId, ct);
+
+            if (etudiant is null) return NotFound();
+
+            var notes    = etudiant.Notes    ?? new List<Note>();
+            var absences = etudiant.Absences ?? new List<Absence>();
+
+            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules      = notes.Select(n => n.ModuleId).Distinct().Count();
+
+            if (nbModules == 0 || notesAvecFinal.Count == 0)
+                return UnprocessableEntity("Données insuffisantes pour l'explication SHAP.");
+
+            decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
+            double scheduledHours   = nbModules * 32.0;
+            int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
+
+            var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+            var client   = _httpClientFactory.CreateClient("MLService");
+
+            var body = JsonSerializer.Serialize(new
+            {
+                moyenne_generale = (double)moyenneGenerale,
+                taux_absence     = tauxAbsence,
+                nb_modules       = nbModules,
+            });
+
+            var req = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/explain")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"] ?? "");
+
+            HttpResponseMessage resp;
+            try { resp = await client.SendAsync(req, ct); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ML /predict/explain unreachable for etudiantId={Id}", etudiantId);
+                return StatusCode(503, "ML service unavailable");
+            }
+
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode((int)resp.StatusCode, "ML explain failed");
+
+            var json   = await resp.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<ShapExplainDto>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            return Ok(result);
+        }
+
         // POST: api/predictions/predict/5
         [HttpPost("predict/{etudiantId}")]
         public async Task<ActionResult<PredictionML>> PredictForEtudiant(int etudiantId)

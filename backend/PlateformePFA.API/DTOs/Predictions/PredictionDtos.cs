@@ -61,4 +61,19 @@ namespace PlateformePFA.API.DTOs.Predictions
         public int Skipped    { get; set; }
         public int RisqueEleve { get; set; }
     }
+
+    public class ShapContributionDto
+    {
+        public string Feature { get; set; } = string.Empty;
+        public string Label   { get; set; } = string.Empty;
+        public float  Value   { get; set; }   // log-odds SHAP; positive = increases risk
+        public float  Pct     { get; set; }   // abs(value) / sum(abs) — relative importance
+    }
+
+    public class ShapExplainDto
+    {
+        public List<ShapContributionDto> Contributions { get; set; } = new();
+        public float BaseValue   { get; set; }
+        public float Probability { get; set; }
+    }
 }
