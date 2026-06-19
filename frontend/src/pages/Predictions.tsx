@@ -10,8 +10,8 @@ import { SectionHeader } from '../components/ui/SectionHeader'
 import { Select } from '../components/ui/Select'
 import { ChartScatter } from '../components/charts'
 import { api } from '../services/api'
-import { ConfirmCard } from '../components/copilot/CopilotPanel'
-import type { ConfirmData } from '../components/copilot/CopilotPanel'
+import { ConfirmCard } from '../components/copilot/ConfirmCard'
+import type { ConfirmData } from '../components/copilot/ConfirmCard'
 
 const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
 const NIVEAUX  = ['Toutes', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']

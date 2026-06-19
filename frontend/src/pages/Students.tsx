@@ -10,8 +10,8 @@ import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { ChartRadial } from '../components/charts'
 import { api } from '../services/api'
-import { ConfirmCard } from '../components/copilot/CopilotPanel'
-import type { ConfirmData } from '../components/copilot/CopilotPanel'
+import { ConfirmCard } from '../components/copilot/ConfirmCard'
+import type { ConfirmData } from '../components/copilot/ConfirmCard'
 
 // Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
 const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']

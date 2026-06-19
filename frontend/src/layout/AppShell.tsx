@@ -4,15 +4,13 @@ import { CopilotSidebar, useCopilotChatConfiguration } from '@copilotkit/react-c
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
-import { CopilotPanel } from '../components/copilot/CopilotPanel'
 
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false)
-  const [copilotOpen, setCopilotOpen] = useState(false)
   const chatConfig = useCopilotChatConfiguration()
-  
-  const copilotKitOpen = chatConfig?.isModalOpen ?? false
-  const setCopilotKitOpen = (open: boolean | ((o: boolean) => boolean)) => {
+
+  const copilotOpen = chatConfig?.isModalOpen ?? false
+  const setCopilotOpen = (open: boolean | ((o: boolean) => boolean)) => {
     if (chatConfig) {
       if (typeof open === 'function') {
         chatConfig.setModalOpen(open(chatConfig.isModalOpen))
@@ -28,13 +26,9 @@ export function AppShell() {
         e.preventDefault()
         setCmdOpen(o => !o)
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'j') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
         e.preventDefault()
         setCopilotOpen(o => !o)
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'J') {
-        e.preventDefault()
-        setCopilotKitOpen(o => !o)
       }
       if (e.key === 'Escape') {
         setCmdOpen(false)
@@ -50,10 +44,8 @@ export function AppShell() {
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
           onCommandOpen={() => setCmdOpen(true)}
-          onCopilotOpen={() => setCopilotOpen(true)}
-          onCopilotKitOpen={() => setCopilotKitOpen(o => !o)}
+          onCopilotOpen={() => setCopilotOpen(o => !o)}
           copilotActive={copilotOpen}
-          copilotKitActive={copilotKitOpen}
         />
         <div className="flex-1 overflow-y-auto scroll-thin">
           <div className="px-8 py-7 max-w-[1480px] mx-auto">
@@ -62,11 +54,10 @@ export function AppShell() {
         </div>
       </div>
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
-      {copilotOpen && <CopilotPanel onClose={() => setCopilotOpen(false)} />}
       <CopilotSidebar
         defaultOpen={false}
         labels={{
-          modalHeaderTitle: 'ENIAD Copilot · CopilotKit',
+          modalHeaderTitle: 'ENIAD Copilot',
           welcomeMessageText: 'Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.',
         }}
       />

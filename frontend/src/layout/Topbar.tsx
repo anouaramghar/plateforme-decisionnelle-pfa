@@ -13,12 +13,10 @@ const BREADCRUMBS: Record<string, [string, string]> = {
 interface TopbarProps {
   onCommandOpen: () => void
   onCopilotOpen: () => void
-  onCopilotKitOpen: () => void
   copilotActive?: boolean
-  copilotKitActive?: boolean
 }
 
-export function Topbar({ onCommandOpen, onCopilotOpen, onCopilotKitOpen, copilotActive, copilotKitActive }: TopbarProps) {
+export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarProps) {
   const { pathname } = useLocation()
   const { theme, toggleTheme, density, cycleDensity } = useTheme()
   const breadcrumb = BREADCRUMBS[pathname] ?? ['Pilotage', 'Page']
@@ -108,20 +106,6 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onCopilotKitOpen, copilot
         >
           <Icon name="brain" size={13} />
           Copilot
-        </button>
-
-        <button
-          onClick={onCopilotKitOpen}
-          className="btn btn-sm"
-          title="CopilotKit (Ctrl+Shift+J)"
-          style={copilotKitActive ? {
-            background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
-            borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',
-            color: 'var(--accent-600)',
-          } : undefined}
-        >
-          <Icon name="brain" size={13} />
-          <span className="text-[10px] font-bold ml-0.5 opacity-60">CK</span>
         </button>
 
         <button className="btn btn-sm btn-accent">
