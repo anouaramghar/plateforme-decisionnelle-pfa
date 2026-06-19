@@ -1,3 +1,4 @@
+@import "@copilotkit/react-ui/styles.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -325,6 +326,14 @@ html.dark .pill-accent { color: var(--accent-300); }
 /* shake / pulse for live alerts */
 @keyframes liveDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .live-dot { animation: liveDot 1.6s ease-in-out infinite; }
+
+/* Copilot thinking dots */
+@keyframes thinkDot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+.think-dot { animation: thinkDot 1.2s ease-in-out infinite; }
+
+/* Copilot panel slide-in */
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.copilot-panel { animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* divider */
 .divider { height: 1px; background: var(--border); }

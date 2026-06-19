@@ -10,6 +10,8 @@ using PlateformePFA.API.Services;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+
 
 namespace PlateformePFA.API.Controllers
 {
@@ -23,19 +25,22 @@ namespace PlateformePFA.API.Controllers
         private readonly IConfiguration      _configuration;
         private readonly ILogger<PredictionsController> _logger;
         private readonly IAuditService _audit;
+        private readonly RiskScorer _riskScorer;
 
         public PredictionsController(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             ILogger<PredictionsController> logger,
-            IAuditService audit)
+            IAuditService audit,
+            RiskScorer riskScorer)
         {
             _context           = context;
             _httpClientFactory = httpClientFactory;
             _configuration     = configuration;
             _logger            = logger;
             _audit             = audit;
+            _riskScorer        = riskScorer;
         }
 
         // GET: api/predictions/metrics — proxies the ML service's /metrics so
@@ -145,27 +150,7 @@ namespace PlateformePFA.API.Controllers
                 })
                 .ToListAsync();
 
-            var latestPredictions = await _context.PredictionsML
-                .AsNoTracking()
-                .Where(p => p.ScoreRisque.HasValue)
-                .GroupBy(p => p.EtudiantId)
-                .Select(g => new
-                {
-                    EtudiantId = g.Key,
-                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
-                })
-                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
-
-            decimal RiskScore(decimal? moy, int absH, int etuId)
-            {
-                if (latestPredictions.TryGetValue(etuId, out var ml)) return ml;
-                if (!moy.HasValue) return 0.4m;
-                var fromMoy = moy.Value < 10m ? 0.55m : (moy.Value < 12m ? 0.32m : 0.12m);
-                var fromAbs = absH > 30 ? 0.22m : (absH > 18 ? 0.12m : 0m);
-                return Math.Min(0.98m, fromMoy + fromAbs);
-            }
-
-            string Bucket(decimal s) => s >= 0.65m ? "eleve" : s >= 0.35m ? "modere" : "faible";
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             var enriched = students.Select(s => new
             {
@@ -177,7 +162,7 @@ namespace PlateformePFA.API.Controllers
                 s.Filiere,
                 Moyenne = s.Moyenne ?? 0m,
                 s.Absences,
-                Score = RiskScore(s.Moyenne, s.Absences, s.Id),
+                Score = _riskScorer.Score(s.Moyenne, s.Absences, s.Id, latestPredictions),
             }).ToList();
 
             // Scatter: cap at 400 points to keep the SVG renderer happy.
@@ -188,7 +173,7 @@ namespace PlateformePFA.API.Controllers
                 {
                     X = s.Absences,
                     Y = Math.Round(s.Moyenne, 2),
-                    R = Bucket(s.Score),
+                    R = RiskScorer.Bucket(s.Score),
                 })
                 .ToList();
 
@@ -268,7 +253,10 @@ namespace PlateformePFA.API.Controllers
         [HttpPost("batch")]
         public async Task<ActionResult<BatchResultDto>> RunBatch([FromBody] BatchRequestDto request)
         {
-            var query = _context.Etudiants.AsQueryable();
+            var query = _context.Etudiants
+                .Include(e => e.Notes)
+                .Include(e => e.Absences)
+                .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(request.FiliereCode))
             {
@@ -279,34 +267,131 @@ namespace PlateformePFA.API.Controllers
                 query = query.Where(e => e.Niveau == request.Niveau);
             }
 
-            var ids = await query.Select(e => e.Id).ToListAsync();
-            var result = new BatchResultDto { Total = ids.Count };
+            var students = await query.ToListAsync();
+            var result = new BatchResultDto { Total = students.Count };
 
-            foreach (var id in ids)
+            var validStudents = new List<(Etudiant Student, decimal MoyenneGenerale, double TauxAbsence, int NbModules)>();
+
+            foreach (var student in students)
             {
+                var notes = student.Notes ?? new List<Note>();
+                var absences = student.Absences ?? new List<Absence>();
+
+                var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
+                int nbModules = notes.Select(n => n.ModuleId).Distinct().Count();
+
+                if (nbModules == 0 || notesAvecFinal.Count == 0)
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
+                double scheduledHours = nbModules * 32.0;
+                int absenceHours = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+                double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
+
+                validStudents.Add((student, moyenneGenerale, tauxAbsence, nbModules));
+            }
+
+            if (validStudents.Count > 0)
+            {
+                var requestBody = validStudents.Select(vs => new
+                {
+                    moyenne_generale = vs.MoyenneGenerale,
+                    taux_absence = vs.TauxAbsence,
+                    nb_modules = vs.NbModules
+                }).ToList();
+
+                string jsonBody = JsonSerializer.Serialize(requestBody);
+                List<MlResponseItem>? mlResults = null;
+                string status = "Ok";
+
                 try
                 {
-                    var actionResult = await PredictForEtudiant(id);
-                    if (actionResult.Result is CreatedAtActionResult created
-                        && created.Value is PredictionML pred)
+                    var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+                    var client = _httpClientFactory.CreateClient("MLService");
+
+                    var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/batch")
                     {
-                        result.Predicted++;
-                        if (pred.Niveau is "Eleve" or "Critique") result.RisqueEleve++;
-                    }
-                    else if (actionResult.Result is UnprocessableEntityObjectResult)
+                        Content = new StringContent(jsonBody, Encoding.UTF8, "application/json"),
+                    };
+                    httpRequest.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+
+                    var response = await client.SendAsync(httpRequest);
+                    if (response.IsSuccessStatusCode)
                     {
-                        result.Skipped++;
+                        var body = await response.Content.ReadAsStringAsync();
+                        mlResults = JsonSerializer.Deserialize<List<MlResponseItem>>(body, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
                     }
                     else
                     {
-                        result.Failed++;
+                        status = "MlUnavailable";
+                        _logger.LogWarning("ML service returned {Code} for batch prediction", response.StatusCode);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Batch predict failed for etudiantId={Id}", id);
-                    result.Failed++;
+                    status = "MlUnavailable";
+                    _logger.LogWarning(ex, "ML service unreachable for batch prediction");
                 }
+
+                var annee = _configuration["CurrentAcademicYear"] ?? CurrentAcademicYear();
+
+                for (int i = 0; i < validStudents.Count; i++)
+                {
+                    var (student, moyenneGenerale, tauxAbsence, nbModules) = validStudents[i];
+
+                    decimal scoreRisque = 0;
+                    string niveauRisque = "Faible";
+                    string studentStatus = status;
+
+                    if (mlResults != null && i < mlResults.Count && status == "Ok")
+                    {
+                        scoreRisque = mlResults[i].Probabilite;
+                        niveauRisque = mlResults[i].NiveauRisque;
+                        result.Predicted++;
+                    }
+                    else
+                    {
+                        studentStatus = "MlUnavailable";
+                        scoreRisque = 0;
+                        niveauRisque = "Faible";
+                        result.Failed++;
+                    }
+
+                    var prediction = new PredictionML
+                    {
+                        EtudiantId  = student.Id,
+                        TypeModele  = "RisqueEchec",
+                        ScoreRisque = scoreRisque,
+                        Niveau      = niveauRisque,
+                        Status      = studentStatus,
+                        Annee       = annee,
+                        CreeLe      = DateTime.UtcNow,
+                    };
+                    _context.PredictionsML.Add(prediction);
+
+                    if (niveauRisque is "Eleve" or "Critique")
+                    {
+                        result.RisqueEleve++;
+
+                        _context.Alertes.Add(new Alerte
+                        {
+                            EtudiantId = student.Id,
+                            Type       = "RisqueEchec",
+                            Niveau     = niveauRisque,
+                            Message    = $"Risque élevé détecté : {niveauRisque} ({scoreRisque:P0})",
+                            Resolue    = false,
+                            CreeLe     = DateTime.UtcNow,
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync();
             }
 
             await _audit.LogAsync(
@@ -383,6 +468,66 @@ namespace PlateformePFA.API.Controllers
                 .OrderByDescending(p => p.CreeLe)
                 .Take(200)
                 .ToListAsync();
+        }
+
+        // GET: api/predictions/explain/5
+        [HttpGet("explain/{etudiantId:int}")]
+        public async Task<ActionResult<ShapExplainDto>> ExplainRisk(int etudiantId, CancellationToken ct)
+        {
+            var etudiant = await _context.Etudiants
+                .AsNoTracking()
+                .Include(e => e.Notes)
+                .Include(e => e.Absences)
+                .FirstOrDefaultAsync(e => e.Id == etudiantId, ct);
+
+            if (etudiant is null) return NotFound();
+
+            var notes    = etudiant.Notes    ?? new List<Note>();
+            var absences = etudiant.Absences ?? new List<Absence>();
+
+            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules      = notes.Select(n => n.ModuleId).Distinct().Count();
+
+            if (nbModules == 0 || notesAvecFinal.Count == 0)
+                return UnprocessableEntity("Données insuffisantes pour l'explication SHAP.");
+
+            decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
+            double scheduledHours   = nbModules * 32.0;
+            int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
+
+            var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+            var client   = _httpClientFactory.CreateClient("MLService");
+
+            var body = JsonSerializer.Serialize(new
+            {
+                moyenne_generale = (double)moyenneGenerale,
+                taux_absence     = tauxAbsence,
+                nb_modules       = nbModules,
+            });
+
+            var req = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/explain")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"] ?? "");
+
+            HttpResponseMessage resp;
+            try { resp = await client.SendAsync(req, ct); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ML /predict/explain unreachable for etudiantId={Id}", etudiantId);
+                return StatusCode(503, "ML service unavailable");
+            }
+
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode((int)resp.StatusCode, "ML explain failed");
+
+            var json   = await resp.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<ShapExplainDto>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            return Ok(result);
         }
 
         // POST: api/predictions/predict/5
@@ -562,6 +707,15 @@ namespace PlateformePFA.API.Controllers
                 _logger.LogWarning(ex, "Could not fetch ML summary");
                 return (0m, "—");
             }
+        }
+
+        private class MlResponseItem
+        {
+            [JsonPropertyName("probabilite")]
+            public decimal Probabilite { get; set; }
+
+            [JsonPropertyName("niveau_risque")]
+            public string NiveauRisque { get; set; } = "Faible";
         }
     }
 }

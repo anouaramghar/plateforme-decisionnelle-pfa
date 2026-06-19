@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Dashboard;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -12,6 +13,7 @@ namespace PlateformePFA.API.Controllers
     public class DashboardController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly RiskScorer _riskScorer;
 
         // Stable colour map for the five filières — matches the frontend palette.
         private static readonly Dictionary<string, string> FiliereColors = new()
@@ -23,9 +25,10 @@ namespace PlateformePFA.API.Controllers
             ["IRSI"] = "#0ea5e9",
         };
 
-        public DashboardController(AppDbContext context)
+        public DashboardController(AppDbContext context, RiskScorer riskScorer)
         {
             _context = context;
+            _riskScorer = riskScorer;
         }
 
         // GET: api/dashboard/activity?limit=8
@@ -76,16 +79,7 @@ namespace PlateformePFA.API.Controllers
             // 2) Latest ML prediction per student (if any). Falls back to a
             //    deterministic heuristic when no real prediction exists yet, so
             //    the dashboard is never blank on a fresh seed.
-            var latestPredictions = await _context.PredictionsML
-                .AsNoTracking()
-                .Where(p => p.ScoreRisque.HasValue)
-                .GroupBy(p => p.EtudiantId)
-                .Select(g => new
-                {
-                    EtudiantId = g.Key,
-                    Score = g.OrderByDescending(p => p.CreeLe).First().ScoreRisque,
-                })
-                .ToDictionaryAsync(x => x.EtudiantId, x => (decimal)x.Score!.Value);
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             // 3) Active alerts count.
             var alertesActives = await _context.Alertes.CountAsync(a => !a.Resolue);
@@ -131,15 +125,6 @@ namespace PlateformePFA.API.Controllers
 
             // 7) Risk score per student: ML prediction if present, otherwise a
             //    heuristic based on moyenne + absences. Never returns NaN.
-            decimal RiskScore(decimal? moy, int absH, int etuId)
-            {
-                if (latestPredictions.TryGetValue(etuId, out var ml)) return ml;
-                if (!moy.HasValue) return 0.4m;
-                var fromMoy = moy.Value < 10m ? 0.55m : (moy.Value < 12m ? 0.32m : 0.12m);
-                var fromAbs = absH > 30 ? 0.22m : (absH > 18 ? 0.12m : 0m);
-                return Math.Min(0.98m, fromMoy + fromAbs);
-            }
-
             var withRisk = students
                 .Select(s => new
                 {
@@ -151,7 +136,7 @@ namespace PlateformePFA.API.Controllers
                     s.FiliereCode,
                     Moyenne = s.Moyenne ?? 0m,
                     s.Absences,
-                    Score = RiskScore(s.Moyenne, s.Absences, s.Id),
+                    Score = _riskScorer.Score(s.Moyenne, s.Absences, s.Id, latestPredictions),
                 })
                 .ToList();
 
@@ -266,9 +251,9 @@ namespace PlateformePFA.API.Controllers
                 sparkPoints.Add(lo);
             }
             var nouveaux = await _context.Etudiants.CountAsync(e => e.CreeLe >= weekAgo);
-            // No soft-delete column on Etudiant yet — retraits stays at 0 until
-            // a DesinscritLe field is added. Kept in the DTO so the UI binds.
-            var retraits = 0;
+            
+            var retraits = await _context.Etudiants
+                .CountAsync(e => e.DesinscritLe >= weekAgo);
 
             return new DashboardSummaryDto
             {

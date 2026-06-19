@@ -52,3 +52,16 @@ class ForecastResponse(BaseModel):
 
     note_predite: float = Field(..., ge=0, le=20,
         description="Predicted final average grade")
+
+
+class ShapContribution(BaseModel):
+    feature: str = Field(..., description="Feature key: moyenne_generale | taux_absence | nb_modules")
+    label: str   = Field(..., description="Human-readable French label")
+    value: float = Field(..., description="Raw SHAP value in log-odds space. Positive = increases risk.")
+    pct: float   = Field(..., ge=0, le=1, description="Fraction of total absolute SHAP mass for this feature")
+
+
+class ExplainResponse(BaseModel):
+    contributions: list[ShapContribution]
+    base_value: float  = Field(..., description="SHAP base value (expected model log-odds)")
+    probability: float = Field(..., ge=0, le=1, description="Model predicted risk probability")

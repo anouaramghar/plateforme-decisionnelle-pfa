@@ -12,9 +12,8 @@ import { api } from '../services/api'
 const ALERT_TYPES: Record<string, { label: string; severity: string; pill: 'bad' | 'warn' | 'info' }> = {
   NoteFaible:       { label: 'Note faible',         severity: 'haute',   pill: 'bad'  },
   AbsenceExcessive: { label: 'Absences excessives', severity: 'moyenne', pill: 'warn' },
-  RisqueEleve:      { label: 'Risque élevé (ML)',   severity: 'haute',   pill: 'bad'  },
-  ModuleNonValide:  { label: 'Module non validé',   severity: 'moyenne', pill: 'warn' },
-  RetardRecurrent:  { label: 'Retards récurrents',  severity: 'basse',   pill: 'info' },
+  RisqueEchec:      { label: 'Risque élevé (ML)',   severity: 'haute',   pill: 'bad'  },
+  Abandon:          { label: 'Abandon',             severity: 'haute',   pill: 'bad'  },
 }
 
 // ── Backend types ────────────────────────────────────────────
@@ -46,10 +45,10 @@ interface PaginatedResult<T> {
 }
 
 type Tab = 'active' | 'resolu' | 'all'
-type AlertType = 'NoteFaible' | 'AbsenceExcessive' | 'RisqueEleve'
+type AlertType = 'NoteFaible' | 'AbsenceExcessive' | 'RisqueEchec' | 'Abandon'
 type TypeFilter = AlertType | 'Tous'
 
-const FILTERABLE_TYPES: AlertType[] = ['NoteFaible', 'AbsenceExcessive', 'RisqueEleve']
+const FILTERABLE_TYPES: AlertType[] = ['NoteFaible', 'AbsenceExcessive', 'RisqueEchec']
 
 async function fetchAlertes(): Promise<BackendAlerte[]> {
   // Fetch up to 200 most recent alerts in a single request — enough for the UI.
@@ -74,13 +73,9 @@ export default function Alerts() {
   })
 
   // "Tout marquer lu" — resolves every currently-visible unresolved alert.
-  // The backend has no bulk endpoint, so fan out PATCH calls and invalidate
-  // once at the end. Scoped to the filtered view so the action matches what
-  // the user is looking at (not every alert in the system).
+  // Scoped to the filtered view so the action matches what the user is looking at.
   const resolveAllMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      await Promise.all(ids.map(id => api.patch(`/alertes/${id}/resoudre`)))
-    },
+    mutationFn: (ids: number[]) => api.patch('/alertes/batch-resolve', { ids }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
   })
 
@@ -120,16 +115,16 @@ export default function Alerts() {
     resolveAllMutation.mutate(unresolvedIds)
   }
 
-  const counts: Record<AlertType, number> = {
+  const counts: Record<string, number> = {
     NoteFaible:       all.filter(a => a.type === 'NoteFaible'       && !a.resolue).length,
     AbsenceExcessive: all.filter(a => a.type === 'AbsenceExcessive' && !a.resolue).length,
-    RisqueEleve:      all.filter(a => a.type === 'RisqueEleve'      && !a.resolue).length,
+    RisqueEchec:      all.filter(a => a.type === 'RisqueEchec'      && !a.resolue).length,
   }
 
-  const summary: { k: AlertType; label: string; n: number; tone: PillTone; desc: string }[] = [
+  const summary: { k: string; label: string; n: number; tone: PillTone; desc: string }[] = [
     { k: 'NoteFaible',       label: 'Note faible',         n: counts.NoteFaible,       tone: 'bad',  desc: 'Étudiants avec note < 10' },
     { k: 'AbsenceExcessive', label: 'Absences excessives', n: counts.AbsenceExcessive, tone: 'warn', desc: '> 20h non justifiées' },
-    { k: 'RisqueEleve',      label: 'Risque élevé (ML)',   n: counts.RisqueEleve,      tone: 'bad',  desc: 'Score modèle > 65%' },
+    { k: 'RisqueEchec',      label: 'Risque élevé (ML)',   n: counts.RisqueEchec,      tone: 'bad',  desc: 'Score modèle > 65%' },
   ]
 
   return (
@@ -166,7 +161,7 @@ export default function Alerts() {
         {summary.map(c => (
           <button
             key={c.k}
-            onClick={() => setTypeFilter(c.k)}
+            onClick={() => setTypeFilter(c.k as TypeFilter)}
             className="card p-4 text-left hover:border-stone-400"
             style={{
               borderColor: typeFilter === c.k ? 'var(--accent-500)' : 'var(--border)',

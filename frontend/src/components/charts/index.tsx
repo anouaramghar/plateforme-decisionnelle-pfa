@@ -136,6 +136,64 @@ export function ChartScatter({ points, height = 260 }: ChartScatterProps) {
   return <Chart key={k} options={options} series={series} type="scatter" height={height} />
 }
 
+// ─── SHAP feature-importance chart ───────────────────────────────────────────
+
+export interface ShapContribution {
+  feature: string
+  label: string
+  value: number   // log-odds; positive = increases risk
+  pct: number     // abs(value) / sum(abs) — relative importance 0-1
+}
+
+export interface ShapExplainData {
+  contributions: ShapContribution[]
+  baseValue: number
+  probability: number
+}
+
+export function ChartShap({ data }: { data: ShapExplainData }) {
+  const sorted = [...data.contributions].sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+  const maxPct = Math.max(...sorted.map(c => c.pct), 0.01)
+
+  return (
+    <div className="space-y-2.5">
+      {sorted.map(c => {
+        const isRisk = c.value > 0
+        const barWidth = Math.round((c.pct / maxPct) * 100)
+        return (
+          <div key={c.feature} className="flex items-center gap-3">
+            <span className="text-[11.5px]" style={{ minWidth: 136, color: 'var(--text-2)' }}>
+              {c.label}
+            </span>
+            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+              <div
+                style={{
+                  width: `${barWidth}%`,
+                  height: '100%',
+                  borderRadius: '9999px',
+                  background: isRisk ? 'var(--bad)' : 'var(--ok)',
+                  transition: 'width 0.45s ease',
+                }}
+              />
+            </div>
+            <span
+              className="text-[11px] font-medium num"
+              style={{ minWidth: 38, textAlign: 'right', color: isRisk ? 'var(--bad)' : 'var(--ok)' }}
+            >
+              {isRisk ? '+' : '−'}{(c.pct * 100).toFixed(0)}%
+            </span>
+          </div>
+        )
+      })}
+      <div className="flex items-center gap-4 pt-0.5 text-[10.5px]" style={{ color: 'var(--text-4)' }}>
+        <span>Probabilité ML : <strong className="num">{(data.probability * 100).toFixed(0)}%</strong></span>
+        <span style={{ color: 'var(--bad)' }}>■</span><span>Augmente le risque</span>
+        <span style={{ color: 'var(--ok)' }}>■</span><span>Réduit le risque</span>
+      </div>
+    </div>
+  )
+}
+
 interface ChartRadialProps {
   value: number // 0..1
   label: string

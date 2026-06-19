@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import joblib
 
-from models.auto_train import ensure_all_models
+from models.auto_train import ensure_all_models_async
 from routers import predict, cluster, forecast, metrics
 
 logger = logging.getLogger(__name__)
@@ -35,8 +35,9 @@ async def lifespan(app: FastAPI):
 
     # Train any missing models before we try to load them.
     # On a warm container with saved_models/ already present this is instant.
-    # Run training off the event loop to keep liveness probes responsive.
-    await asyncio.to_thread(ensure_all_models)
+    # Runs training off the event loop via asyncio.to_thread so liveness probes
+    # stay responsive during startup.
+    await ensure_all_models_async()
 
     logger.info("Loading ML models...")
 

@@ -225,6 +225,11 @@ BEGIN
 END
 GO
 
+-- NOTE: the Copilot read-only login (pfa_app_readonly) is provisioned by
+-- database/copilot_readonly.sql, which entrypoint.sh runs on EVERY boot — not
+-- here. init.sql only runs on cold first boot, so putting it here would never
+-- fire on volumes seeded with an older schema. See entrypoint.sh.
+
 USE PFA_DB;
 GO
 

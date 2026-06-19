@@ -45,10 +45,15 @@ def generate_data(n: int, seed: int) -> pd.DataFrame:
       - High absence (> 0.30) OR very low average (< 8)  -> likely at risk
     We add gaussian noise so the model has to learn a fuzzy boundary,
     not a perfect rule -- which is closer to reality.
+
+    Moyenne uses a truncated normal (mean=11.5, std=3.5) to approximate
+    real grade distributions that cluster around 10-14, rather than a
+    uniform distribution which would over-represent extremes.
     """
     rng = np.random.default_rng(seed)
 
-    moyenne = rng.uniform(0, 20, n)          # grade 0-20
+    # Truncated normal: real grades cluster around 10-14, not uniform 0-20.
+    moyenne = np.clip(rng.normal(loc=11.5, scale=3.5, size=n), 0, 20)
     absence = rng.uniform(0, 0.6, n)         # absence rate 0-60%
     nb_modules = rng.integers(3, 12, n)      # 3 to 11 modules
 

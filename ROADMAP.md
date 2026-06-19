@@ -1,19 +1,21 @@
 # Roadmap — Plateforme Décisionnelle ENIAD 2025/2026
 **Équipe** : AIT ALI Marouane · AMGHAR Anouar · ENGAR  
 **Encadrant** : Prof. LHIADI  
-**Stack** : ASP.NET Core 8 · SQL Server · FastAPI · React 19 · Docker · Nginx
+**Stack** : ASP.NET Core 8 · SQL Server · FastAPI · React 19 · Docker · Nginx  
+**Dernière mise à jour** : 2026-05-30
 
 ---
 
 ## Phase 1 — Infrastructure & Base de données ✅
 
-- [x] Docker Compose (db, backend, ml-service, frontend, nginx)
+- [x] Docker Compose (db, backend, ml-service, frontend, nginx, agent-service)
 - [x] Réseaux Docker isolés (`pfa_internal_db`, `pfa_internal_ml`, `pfa_public`)
 - [x] SQL Server containerisé avec `init.sql` et `init_dw.sql`
-- [x] Base OLTP `PFA_DB` — tables : Utilisateurs, Filieres, Modules, Etudiants, Notes, Absences, Alertes, Predictions
+- [x] Base OLTP `PFA_DB` — tables : Utilisateurs, Filieres, Modules, Etudiants, Notes, Absences, Alertes, Predictions, Rapports, AuditEntries, AgentSessions, AgentSessionMessages, AgentAuditLogs, AlertDrafts
 - [x] Base DW `PFA_DW` — tables : DimEtudiant, DimModule, DimTemps, FaitNotes
 - [x] Script d'entrée sécurisé (`entrypoint.sh`) avec guard "already initialized"
 - [x] Variables d'environnement via `.env`
+- [x] Login SQL read-only `pfa_app_readonly` pour le Copilot
 
 ---
 
@@ -25,34 +27,35 @@
 - [x] Hash BCrypt des mots de passe
 - [x] Rôles : Admin, Responsable, Enseignant
 - [x] Refresh token — DB-backed via `RefreshTokens` table, single-use rotation
-- [x] Middleware de validation des rôles sur toutes les routes sensibles (audit)
+- [x] Middleware de validation des rôles
 
 ### Contrôleurs CRUD
-- [x] `EtudiantsController` — CRUD complet
-- [x] `FilieresController` — CRUD complet
-- [x] `ModulesController` — CRUD complet
-- [x] `NotesController` — CRUD complet + alerte auto sur note < 10
+- [x] `EtudiantsController` — CRUD + `/with-stats` + `/notes` par étudiant
+- [x] `FilieresController` — CRUD
+- [x] `ModulesController` — CRUD
+- [x] `NotesController` — CRUD + alerte auto sur note < 10
 - [x] `AbsencesController` — CRUD + filtres + alerte auto sur absences > 20h
 - [x] `AlertesController` — CRUD + résoudre (PATCH)
-- [x] `PredictionsController` — CRUD + appel ML service + alerte auto risque élevé
+- [x] `PredictionsController` — CRUD + appel ML service + alerte auto risque élevé + batch + retrain + metrics proxy + summary
 - [x] `UtilisateurController` — CRUD + Register
+- [x] `DashboardController` — summary (KPIs + deltas + sparkline + charts) + activity feed
+- [x] `RapportsController` — generate (PDF/XLSX/CSV) + download + list
+- [x] `AdminController` — sync-dw (ETL)
 
 ### Logique métier
-- [x] **Génération automatique des alertes** (`AlerteService`) :
-  - Étudiant avec NoteFinal < 10 sur un module → alerte `NoteFaible`
-  - Étudiant avec absences non justifiées > 20h → alerte `AbsenceExcessive`
-  - Déclenché automatiquement lors de la création/modification d'une note ou absence
-- [x] **Intégration ML → Backend** — `PredictionsController.PredictForEtudiant` :
-  - `POST /api/Predictions/predict/{etudiantId}` → appelle `http://ml-service:8000/predict`
-  - Sauvegarde le résultat en base + crée une alerte si risque élevé
-- [x] **ETL OLTP → DW** — `AdminController.SyncDataWarehouse` :
-  - `POST /api/admin/sync-dw` exécute le script MERGE (etl.sql)
-  - Alimente DimEtudiant, DimModule, DimTemps, FaitNotes
+- [x] **Génération automatique des alertes** (`AlerteService`)
+- [x] **Intégration ML → Backend** — `PredictionsController.PredictForEtudiant`
+- [x] **ETL OLTP → DW** — `AdminController.SyncDataWarehouse`
+- [x] **Journal d'audit** — `AuditService` + `AuditEntries` table
 
-### Qualité
-- [x] `AuthService` + `IAuthService` — refactorisé : DB-backed refresh tokens (plus dead code)
-- [x] `HasPrecision` ajouté sur Coefficient, Notes (5,2), ScoreRisque/Confiance (5,4)
-- [x] Swagger documenté (description API, contact, security scheme)
+### Copilot backend
+- [x] `CopilotController` — `POST /api/copilot/chat` (SSE proxy vers agent-service)
+- [x] `CopilotToolController` — `POST /api/copilot/tool/{name}` (callbacks d'outils, double gate JWT + internal token)
+- [x] `AgentServiceClient` (typed HttpClient + SSE passthrough)
+- [x] Entités DB : `AgentSession`, `AgentSessionMessage`, `AgentAuditLog`, `AlertDraft`
+
+### Tests
+- [x] xUnit avec in-memory EF — Auth, Etudiants, Dashboard, Predictions, Rapports, CopilotController, CopilotToolController
 
 ---
 
@@ -62,70 +65,129 @@
 - [x] Endpoint de prédiction de risque (`/predict`)
 - [x] Endpoint de clustering étudiant (`/cluster`)
 - [x] Endpoint de prévision (`/forecast`)
+- [x] Endpoint batch (`/predict/batch` — jusqu'à 500 étudiants)
+- [x] Endpoint retrain (`/predict/retrain`)
+- [x] Endpoint métriques (`/metrics` — AUC, F1, précision, rappel + eval set persisté)
 - [x] Auto-entraînement au démarrage (DW réel → fallback synthétique)
-- [x] **Entraînement sur données réelles** — `data/db_loader.py` lit `PFA_DW.FaitNotes` via pyodbc
-- [x] **Validation du modèle** — classification_report, ROC-AUC, R², MAE loggés à chaque entraînement
-- [x] **Endpoint `/predict/batch`** — prédit pour une liste d'étudiants en un seul appel (limite : 500)
-- [x] **Endpoint `/predict/retrain`** — ré-entraîne les 3 modèles à la demande depuis le DW
-- [x] Sécurisé avec `X-Internal-Token` sur tous les endpoints (verify_token Depends)
-- [x] Features documentées dans les Pydantic schemas (`Field` avec `ge`, `le`, `description`)
-
+- [x] Sécurisé avec `X-Internal-Token`
 
 ---
 
-## Phase 4 — Frontend React 19 ⏳
+## Phase 4 — Frontend React 19 ✅
 
-> **À commencer après validation des Phases 2 & 3**
-
-### Auth (fait)
+### Auth
 - [x] Page Login
-- [x] Page Register
-- [x] AuthContext + persistance JWT
+- [x] AuthContext + persistance JWT (in-memory + refresh token automatique)
 - [x] Routes protégées / publiques
+- [x] Axios avec intercepteur 401 → refresh token (single-flight)
 
-### Dashboard principal
-- [ ] KPIs en haut : nb étudiants, taux de réussite, nb alertes actives, nb à risque
-- [ ] Graphique : distribution des notes par filière (BarChart)
-- [ ] Graphique : taux d'absence par module (LineChart)
-- [ ] Graphique : répartition des niveaux de risque (PieChart)
-- [ ] Filtre global par filière / semestre / année
+### Layout
+- [x] `AppShell` (Sidebar + Topbar + CommandPalette)
+- [x] Design system : Pill, RiskBar, KpiCard, Avatar, Icon, SectionHeader, Select, FilterChip, Empty, Field
+
+### Charts (ApexCharts)
+- [x] `ChartBars` — moyennes par filière
+- [x] `ChartHistogram` — distribution des moyennes
+- [x] `ChartArea` — tendance absences
+- [x] `ChartRadial` — score de risque
+- [x] `ChartScatter` — cartographie du risque
+
+### Dashboard
+- [x] KPIs en haut avec deltas vs période précédente
+- [x] Hero card : étudiants suivis + sparkline 14 semaines
+- [x] Répartition du risque ML (barre segmentée)
+- [x] Graphiques : notes par filière, distribution, absences
+- [x] Tableau : étudiants à surveiller (top risque)
+- [x] Feed d'activité récente (audit log, polling 30s)
+- [x] Carte modèle ML : AUC/F1/Précision/Rappel en temps réel
 
 ### Page Étudiants
-- [ ] Tableau paginé avec filtres (filière, niveau, statut)
-- [ ] Fiche étudiant : notes, absences, score de risque ML
-- [ ] Badge de risque coloré (vert/orange/rouge)
+- [x] Tableau paginé avec 4 filtres + recherche
+- [x] Fiche étudiant (drawer) : notes par module, analyse ML
+- [x] Badge de risque coloré (vert/orange/rouge)
+- [x] Accessibilité : trap focus, ESC, ARIA
 
 ### Page Alertes
-- [ ] Liste des alertes actives avec sévérité
-- [ ] Filtres par type (absence / note / risque)
-- [ ] Marquer comme traitée
+- [x] Résumé 3 catégories (NoteFaible, AbsenceExcessive, RisqueEleve)
+- [x] Tabs : actives / résolues / toutes
+- [x] Résoudre individuellement + "tout marquer lu"
+- [x] Export XLSX
+- [x] Polling 30s
 
 ### Page Prédictions ML
-- [ ] Lancer une prédiction batch sur une filière
-- [ ] Tableau des étudiants à risque avec score
-- [ ] Graphique d'évolution du risque
+- [x] Lancer une prédiction batch (filière + niveau)
+- [x] Scatter plot : moy vs absences, colorié par risque
+- [x] Top à risque
+- [x] Historique des lots
+- [x] Bouton ré-entraîner
 
 ### Page Rapports / Exports
-- [ ] Export CSV des notes par filière
-- [ ] Export PDF du rapport de performance
-- [ ] Statistiques agrégées par semestre
+- [x] 6 modèles de rapports
+- [x] Panneau paramètres (période, filière, format)
+- [x] Aperçu document (page de couverture)
+- [x] Téléchargement auth-aware (blob via axios)
+- [x] Table des rapports récents
 
 ---
 
-## Phase 5 — Intégration & Tests ⏳
+## Phase 5 — ENIAD Copilot (agent-service) 🔄
+
+Agent IA conversationnel pour le personnel pédagogique, utilisant NVIDIA NIM (LLaMA 3.3 70B).
+
+### P1.A — Fondations ✅
+- [x] Microservice `agent-service` (FastAPI, port 8001)
+- [x] LLMProvider abstraction + NIMProvider (OpenAI-compatible, streaming)
+- [x] Schémas SSE : `token`, `tool_call`, `tool_result`, `done`, `error`
+- [x] `/agent/run` SSE endpoint + auth `X-Internal-Token`
+- [x] Sessions persistées en DB
+
+### P1.B — Agent loop + premier outil ✅
+- [x] Boucle multi-itérations avec cap (L6)
+- [x] Registre d'outils filtré par rôle
+- [x] Outil `get_student` (lecture profil par matricule)
+- [x] Validation des args Pydantic `extra=forbid` (L3)
+- [x] `ToolExecutor` — callback vers backend avec JWT + internal token (L2)
+- [x] 25 tests pytest (+ 1 skipped pour NIM réel)
+
+### P2 — Deuxième outil read ✅
+- [x] Outil `list_at_risk` (threshold + filière + niveau, cap 50 résultats)
+- [x] Backend handler + tests
+- [x] 32 tests pytest (+ 1 skipped)
+
+### P3 — explain_risk + draft_alert ✅
+- [x] Outil `explain_risk` (Tier-1) — décompose le score en 4 facteurs, utilise ML score si dispo
+- [x] Outil `draft_alert` (Tier-2) — insère AlertDraft avec TTL 5 min, prévient double-confirm
+- [x] `TIER2_TOOLS` frozenset + émission `confirm_request` SSE dans agent loop
+- [x] `POST /api/copilot/confirm` — promeut AlertDraft → Alerte (severity mapping, TTL + ownership guard)
+- [x] 53 tests pytest (+ 1 skipped), 31 tests dotnet
+
+### P4 — query_dw ✅
+- [x] `query_dw` — NL→SQL via MiniMax M2.7, L4 regex safety (SELECT-only + denylist)
+- [x] Exécution locale dans agent-service via `pfa_app_readonly` + pyodbc + asyncio.to_thread
+- [x] ODBC driver installé dans le Dockerfile agent-service
+- [x] `pfa_internal_db` ajouté aux réseaux agent-service (compose)
+- [x] 83 tests pytest (+ 1 skipped)
+
+### Frontend Copilot Panel ❌
+- [ ] Composant `CopilotPanel` (chat flottant ou page dédiée)
+- [ ] Rendu des SSE events (tokens en streaming, chips tool_call/tool_result)
+- [ ] Bouton de confirmation pour `draft_alert`
+- [ ] Intégration dans `AppShell` (bouton dans Topbar ou Sidebar)
+
+---
+
+## Phase 6 — Intégration & Tests ⏳
 
 - [ ] Test end-to-end du flux complet : login → dashboard → prédiction ML → alerte
-- [ ] Test Docker full stack (`docker compose up`) sans erreurs
-- [ ] Vérifier que le DW est bien alimenté après ETL
+- [ ] Test Docker full stack (`docker compose up`) sans erreurs sur volume vierge
 - [ ] Test de charge léger (300 étudiants, 1200 notes)
-- [ ] Vérifier CORS en production (nginx → backend)
 
 ---
 
-## Phase 6 — Finalisation & Soutenance ⏳
+## Phase 7 — Finalisation & Soutenance ⏳
 
 - [ ] Nettoyer le code (supprimer commentaires inutiles, dead code)
-- [ ] README complet avec instructions de déploiement
+- [ ] README complet avec instructions de déploiement ✅ (fait)
 - [ ] Schéma d'architecture (diagramme)
 - [ ] Préparer la démo avec données réalistes
 - [ ] Slides de présentation
@@ -134,18 +196,14 @@
 
 ## Résumé de l'état actuel
 
-| Composant | Avancement | Bloquant |
-|-----------|-----------|----------|
-| Infrastructure Docker | ✅ 100% | — |
+| Composant | Avancement | Notes |
+|-----------|-----------|-------|
+| Infrastructure Docker | ✅ 100% | 6 services |
 | Base de données OLTP + DW | ✅ 100% | — |
-| Backend Auth | ✅ 100% | — |
-| Backend CRUD + Logique métier | ✅ 100% | — |
-| ML Service | ✅ 100% | — |
-| Frontend Auth | ✅ 100% | — |
-| Frontend Dashboard | ⏳ 5% | Prêt à commencer |
-| Frontend Pages | ⏳ 0% | Dépend dashboard |
-| Tests & Intégration | ⏳ 0% | Dépend frontend |
-
----
-
-*Dernière mise à jour : 2026-04-25*
+| Backend Auth + CRUD + Logique | ✅ 100% | — |
+| Backend Copilot | ✅ 100% | SSE proxy + tool callbacks |
+| Service ML | ✅ 100% | predict/batch/retrain/metrics |
+| Frontend — 5 pages | ✅ 100% | Données réelles, pas de mocks |
+| Copilot agent-service | 🔄 95% | P1.A→P4 done (5 tools), frontend panel + audit (L8) restent |
+| Tests & Intégration | ⏳ 30% | Tests unitaires ok, E2E manquant |
+| Finalisation / Soutenance | ⏳ 0% | — |

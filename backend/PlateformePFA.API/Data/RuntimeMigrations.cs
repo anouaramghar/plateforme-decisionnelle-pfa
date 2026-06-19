@@ -78,6 +78,164 @@ namespace PlateformePFA.API.Data
                                      AND object_id = OBJECT_ID('dbo.AuditEntries'))
                     CREATE INDEX IX_AuditEntries_CreeLe ON AuditEntries(CreeLe DESC);
             ");
+
+            // 4. Copilot — AgentSessions: one conversation between a user and ENIAD Copilot.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessions', 'U') IS NULL
+                CREATE TABLE AgentSessions (
+                    Id              UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+                    UserId          INT           NOT NULL REFERENCES Utilisateurs(Id),
+                    StartedAt       DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    LastActivityAt  DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    IsArchived      BIT           NOT NULL DEFAULT 0
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessions', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AgentSessions_UserId_LastActivityAt'
+                                     AND object_id = OBJECT_ID('dbo.AgentSessions'))
+                    CREATE INDEX IX_AgentSessions_UserId_LastActivityAt
+                        ON AgentSessions(UserId, LastActivityAt DESC);
+            ");
+
+            // 5. Copilot — AgentSessionMessages: turns in a session.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessionMessages', 'U') IS NULL
+                CREATE TABLE AgentSessionMessages (
+                    Id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+                    SessionId    UNIQUEIDENTIFIER NOT NULL REFERENCES AgentSessions(Id),
+                    TurnIndex    INT           NOT NULL,
+                    Role         NVARCHAR(20)  NOT NULL,
+                    ContentJson  NVARCHAR(MAX) NOT NULL,
+                    TokensIn     INT NULL,
+                    TokensOut    INT NULL,
+                    CreatedAt    DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessionMessages', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AgentSessionMessages_SessionId_TurnIndex'
+                                     AND object_id = OBJECT_ID('dbo.AgentSessionMessages'))
+                    CREATE UNIQUE INDEX IX_AgentSessionMessages_SessionId_TurnIndex
+                        ON AgentSessionMessages(SessionId, TurnIndex);
+            ");
+
+            // 6. Copilot — AgentAuditLogs: PII-redacted record of every LLM/tool call.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NULL
+                CREATE TABLE AgentAuditLogs (
+                    Id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+                    CreatedAt   DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    UserId      INT           NOT NULL REFERENCES Utilisateurs(Id),
+                    SessionId   UNIQUEIDENTIFIER NULL REFERENCES AgentSessions(Id),
+                    Kind        NVARCHAR(20)  NOT NULL,
+                    Model       NVARCHAR(80)  NULL,
+                    ToolName    NVARCHAR(60)  NULL,
+                    TokensIn    INT NULL,
+                    TokensOut   INT NULL,
+                    LatencyMs   INT NULL,
+                    Payload     NVARCHAR(MAX) NULL,
+                    Outcome     NVARCHAR(20)  NOT NULL DEFAULT 'success'
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AgentAuditLogs_UserId_CreatedAt'
+                                     AND object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    CREATE INDEX IX_AgentAuditLogs_UserId_CreatedAt
+                        ON AgentAuditLogs(UserId, CreatedAt DESC);
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AgentAuditLogs_Kind'
+                                     AND object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    CREATE INDEX IX_AgentAuditLogs_Kind ON AgentAuditLogs(Kind);
+            ");
+
+            // 7. Copilot — AlertDrafts: alerts prepared by draft_alert; promoted on user confirm.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NULL
+                CREATE TABLE AlertDrafts (
+                    Id         INT IDENTITY(1,1) PRIMARY KEY,
+                    StudentId  INT           NOT NULL REFERENCES Etudiants(Id),
+                    Severity   NVARCHAR(10)  NOT NULL DEFAULT 'medium',
+                    MessageFr  NVARCHAR(1000) NOT NULL,
+                    CreatedBy  INT           NOT NULL REFERENCES Utilisateurs(Id),
+                    CreatedAt  DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    ExpiresAt  DATETIME2     NOT NULL,
+                    Status     NVARCHAR(30)  NOT NULL DEFAULT 'pending_user_confirm',
+                    SentAt     DATETIME2     NULL
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_AlertDrafts_CreatedBy_Status'
+                                     AND object_id = OBJECT_ID('dbo.AlertDrafts'))
+                    CREATE INDEX IX_AlertDrafts_CreatedBy_Status
+                        ON AlertDrafts(CreatedBy, Status);
+            ");
+
+            // L4: defense-in-depth CHECK constraints on Copilot enums.
+            // If the agent (or any future client) bypasses pydantic validation
+            // and tries to insert an invalid Severity/Status/Role, SQL refuses.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AlertDrafts_Severity'
+                                     AND parent_object_id = OBJECT_ID('dbo.AlertDrafts'))
+                    ALTER TABLE AlertDrafts
+                        ADD CONSTRAINT CK_AlertDrafts_Severity
+                        CHECK (Severity IN ('low', 'medium', 'high'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AlertDrafts', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AlertDrafts_Status'
+                                     AND parent_object_id = OBJECT_ID('dbo.AlertDrafts'))
+                    ALTER TABLE AlertDrafts
+                        ADD CONSTRAINT CK_AlertDrafts_Status
+                        CHECK (Status IN ('pending_user_confirm', 'sent', 'expired', 'cancelled'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentSessionMessages', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentSessionMessages_Role'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentSessionMessages'))
+                    ALTER TABLE AgentSessionMessages
+                        ADD CONSTRAINT CK_AgentSessionMessages_Role
+                        CHECK (Role IN ('system', 'user', 'assistant', 'tool'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentAuditLogs_Kind'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    ALTER TABLE AgentAuditLogs
+                        ADD CONSTRAINT CK_AgentAuditLogs_Kind
+                        CHECK (Kind IN ('llm_call', 'tool_call', 'confirm', 'reject', 'safety_block'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.AgentAuditLogs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_AgentAuditLogs_Outcome'
+                                     AND parent_object_id = OBJECT_ID('dbo.AgentAuditLogs'))
+                    ALTER TABLE AgentAuditLogs
+                        ADD CONSTRAINT CK_AgentAuditLogs_Outcome
+                        CHECK (Outcome IN ('success', 'error', 'denied'));
+            ");
+
+            // 8. Etudiants: Add DesinscritLe column
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Etudiants', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Etudiants') AND name = 'DesinscritLe')
+                    ALTER TABLE Etudiants ADD DesinscritLe DATETIME2 NULL;
+            ");
         }
     }
 }

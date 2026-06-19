@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
+import { useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
-import { ChartRadial } from '../components/charts'
+import { ChartRadial, ChartShap } from '../components/charts'
+import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
+import { ConfirmCard } from '../components/copilot/ConfirmCard'
+import type { ConfirmData } from '../components/copilot/ConfirmCard'
 
 // Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
 const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
@@ -40,6 +45,7 @@ interface NoteRow {
   code: string
   nom: string
   semestre: string
+  annee: string
   coef: number
   cc: number | null
   tp: number | null
@@ -58,6 +64,11 @@ async function fetchStudentNotes(id: number): Promise<NoteRow[]> {
   return res.data
 }
 
+async function fetchShap(id: number): Promise<ShapExplainData> {
+  const res = await api.get<ShapExplainData>(`/predictions/explain/${id}`)
+  return res.data
+}
+
 export default function Students() {
   const { data: all = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['etudiants-with-stats'],
@@ -71,6 +82,9 @@ export default function Students() {
   const [filiere, setFiliere] = useState('Tous')
   const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
+  const [pendingAlert, setPendingAlert] = useState<{
+    student: EtudiantRow; severite: string; message: string
+  } | null>(null)
   const PAGE = 14
 
   const filtered = useMemo(
@@ -93,8 +107,145 @@ export default function Students() {
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
 
+  const [searchParams] = useSearchParams()
+
+  // Pre-fill search from URL ?q= param (used by navigate_to_student copilot action)
+  useEffect(() => {
+    const qParam = searchParams.get('q')
+    if (qParam) setQ(qParam)
+  }, [searchParams])
+
+  useCopilotReadable({
+    description: 'Currently visible students after filters — name, matricule, filière, niveau, risk score',
+    value: slice.map(s => ({
+      matricule: s.matricule,
+      name: s.nomComplet,
+      filiere: s.filiereCode,
+      niveau: s.niveau,
+      averageScore: s.moyenne,
+      absences: s.absences,
+      riskScore: s.scoreRisque,
+      riskLevel: s.risque,
+    })),
+  })
+
+  useCopilotAction({
+    name: 'filter_students',
+    description: 'Filter the student table by filière, niveau, risk level, or search text.',
+    parameters: [
+      { name: 'filiere', type: 'string', description: 'Filière code: TCP, GI, IA, ROC, IRSI, or Tous to clear.', required: false },
+      { name: 'niveau', type: 'string', description: 'Academic level: CP1, CP2, CI1, CI2, CI3, or Tous.', required: false },
+      { name: 'risque', type: 'string', description: 'Risk level: faible, modere, eleve, or Tous.', required: false },
+      { name: 'search', type: 'string', description: 'Free text search on name or matricule.', required: false },
+    ],
+    handler: async ({ filiere: f, niveau: n, risque: r, search: s }: { filiere?: string; niveau?: string; risque?: string; search?: string }) => {
+      if (f !== undefined) setFiliere(f)
+      if (n !== undefined) setNiveau(n)
+      if (r !== undefined) setRisque(r)
+      if (s !== undefined) setQ(s)
+      return 'Filtres appliqués'
+    },
+  })
+
+  useCopilotAction({
+    name: 'open_student',
+    description: 'Open the detail panel for a specific student by matricule.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule to open.', required: true },
+    ],
+    handler: async ({ matricule }: { matricule: string }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
+      if (!student) return `Étudiant ${matricule} introuvable`
+      setSelected(student)
+      return `Profil de ${student.nomComplet} ouvert`
+    },
+  })
+
+  useCopilotAction({
+    name: 'draft_alert',
+    description:
+      'Propose creating an alert for a student at risk. This only drafts the alert — ' +
+      'the user must click "Confirmer" in the UI before anything is saved. ' +
+      'Severity values: high, medium, low.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
+      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
+      { name: 'message', type: 'string', description: 'Alert message content', required: true },
+    ],
+    renderAndWaitForResponse: ({ args, status, respond }: { args: { matricule?: string; severity?: string; message?: string }; status: string; respond?: (r: unknown) => void }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === (args.matricule ?? '').toLowerCase())
+      
+      const confirmData: ConfirmData = {
+        draftId: 0,
+        preview: {
+          student_name: student?.nomComplet ?? args.matricule ?? '',
+          matricule: args.matricule ?? '',
+          severity: args.severity ?? 'medium',
+          message: args.message ?? '',
+        },
+        tool: 'draft_alert',
+        state: status === 'complete' ? 'confirmed' : 'pending',
+      }
+
+      const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
+      const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
+
+      return (
+        <ConfirmCard
+          data={confirmData}
+          onConfirm={async () => {
+            const severite = VALID_SEVERITES[args.severity ?? 'medium']
+            if (!severite || !student) {
+              respond?.({ confirmed: false })
+              return
+            }
+            await api.post('/alertes', {
+              etudiantId: student.id,
+              type: 'RisqueEchec',
+              niveau: NIVEAU_MAP[severite] ?? 'Moyen',
+              message: args.message ?? '',
+            })
+            respond?.({ confirmed: true })
+          }}
+          onDismiss={() => respond?.({ confirmed: false })}
+        />
+      )
+    },
+  })
+
+  async function confirmAlert() {
+    if (!pendingAlert) return
+    const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
+    await api.post('/alertes', {
+      etudiantId: pendingAlert.student.id,
+      type: 'RisqueEchec',
+      niveau: NIVEAU_MAP[pendingAlert.severite] ?? 'Moyen',
+      message: pendingAlert.message,
+    })
+    setPendingAlert(null)
+  }
+
   return (
     <div className="space-y-4">
+      {pendingAlert && (
+        <div
+          className="card p-4 flex items-start gap-4"
+          style={{ borderColor: 'var(--warn)', background: 'color-mix(in oklch, var(--warn) 8%, transparent)' }}
+        >
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold mb-0.5">Brouillon d'alerte — confirmation requise</div>
+            <div className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
+              <span className="font-medium">{pendingAlert.student.nomComplet}</span>
+              {' · '}sévérité <span className="font-medium">{pendingAlert.severite}</span>
+            </div>
+            <div className="text-[12px] mt-1" style={{ color: 'var(--text-3)' }}>{pendingAlert.message}</div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button className="btn btn-sm" onClick={() => setPendingAlert(null)}>Annuler</button>
+            <button className="btn btn-sm btn-primary" onClick={confirmAlert}>Confirmer l'envoi</button>
+          </div>
+        </div>
+      )}
       <div className="flex items-end justify-between">
         <div>
           <div className="cap mb-1">
@@ -273,9 +424,47 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
     queryFn: () => fetchStudentNotes(student.id),
   })
 
+  const { data: shap, isLoading: shapLoading } = useQuery({
+    queryKey: ['etudiant-shap', student.id],
+    queryFn: () => fetchShap(student.id),
+    retry: false,
+  })
+
   const moyenne = student.moyenne
   const riskColor =
     student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
+
+  const trend = useMemo(() => {
+    if (!notes || notes.length === 0) return null;
+    const notesWithFinal = notes.filter(n => n.finale !== null);
+    if (notesWithFinal.length === 0) return null;
+
+    const getSemSortKey = (annee: string, semestre: string) => {
+      const startYear = parseInt(annee.split('/')[0]) || 0;
+      const semNum = semestre === 'S2' ? 2 : 1;
+      return startYear * 2 + semNum;
+    };
+
+    const semData: { [key: number]: { sum: number; count: number } } = {};
+    notesWithFinal.forEach(n => {
+      const key = getSemSortKey(n.annee, n.semestre);
+      if (!semData[key]) {
+        semData[key] = { sum: 0, count: 0 };
+      }
+      semData[key].sum += n.finale!;
+      semData[key].count += 1;
+    });
+
+    const sortedKeys = Object.keys(semData)
+      .map(Number)
+      .sort((a, b) => b - a);
+
+    if (sortedKeys.length < 2) return null;
+
+    const avgRecent = semData[sortedKeys[0]].sum / semData[sortedKeys[0]].count;
+    const avgPrev = semData[sortedKeys[1]].sum / semData[sortedKeys[1]].count;
+    return avgRecent - avgPrev;
+  }, [notes]);
 
   // Accessibility for a modal drawer: ESC closes it, focus jumps inside on
   // open (so a screen reader announces the dialog), focus returns to the
@@ -469,8 +658,8 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
 
           <div className="card p-4">
             <SectionHeader
-              title="Analyse prédictive"
-              subtitle="Facteurs de risque détectés par le modèle"
+              title="Analyse prédictive (SHAP)"
+              subtitle="Contribution réelle de chaque facteur — calculée par le modèle XGBoost"
             />
             <div className="flex items-center gap-5">
               <div style={{ width: 130, flexShrink: 0 }}>
@@ -481,37 +670,32 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                   height={140}
                 />
               </div>
-              <div className="flex-1 space-y-2">
-                {[
-                  {
-                    f: 'Moyenne basse',
-                    w: student.moyenne < 10 ? 0.82 : student.moyenne < 12 ? 0.42 : 0.12,
-                    neg: student.moyenne < 12,
-                  },
-                  {
-                    f: 'Absences élevées',
-                    w: Math.min(0.95, student.absences / 30),
-                    neg: student.absences > 15,
-                  },
-                  {
-                    f: 'Modules non validés',
-                    w: student.modulesTotal > 0
-                      ? 1 - student.modulesValides / student.modulesTotal
-                      : 0,
-                    neg: student.modulesTotal > 0
-                      && student.modulesValides < Math.ceil(student.modulesTotal / 2),
-                  },
-                  { f: 'Tendance trimestrielle', w: 0.34, neg: false },
-                ].map(row => (
-                  <div key={row.f} className="flex items-center gap-3">
-                    <span className="text-[12px]" style={{ minWidth: 160 }}>
-                      {row.f}
-                    </span>
-                    <div
-                      className="flex-1 h-1.5 rounded-full"
-                      style={{ background: 'var(--surface-3)' }}
-                    >
-                      <div
+              <div className="flex-1">
+                {shapLoading && (
+                  <div className="text-[12px]" style={{ color: 'var(--text-4)' }}>
+                    Calcul SHAP en cours…
+                  </div>
+                )}
+                {shap && <ChartShap data={shap} />}
+                {!shapLoading && !shap && (
+                  <div className="space-y-2">
+                    {[
+                      {
+                        f: 'Tendance trimestrielle',
+                        w: trend !== null ? Math.min(Math.abs(trend) / 5.0, 1.0) : 0,
+                        neg: trend !== null && trend < 0,
+                        display: trend !== null ? (trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1)) : '—',
+                      },
+                    ].map(row => (
+                      <div key={row.f} className="flex items-center gap-3">
+                        <span className="text-[12px]" style={{ minWidth: 160 }}>
+                          {row.f}
+                        </span>
+                        <div
+                          className="flex-1 h-1.5 rounded-full"
+                          style={{ background: 'var(--surface-3)' }}
+                        >
+                          <div
                         style={{
                           width: `${row.w * 100}%`,
                           height: '100%',
@@ -524,10 +708,12 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                       className="num text-[11.5px] w-10 text-right"
                       style={{ color: 'var(--text-3)' }}
                     >
-                      {Math.round(row.w * 100)}%
+                      {row.display}
                     </span>
                   </div>
                 ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

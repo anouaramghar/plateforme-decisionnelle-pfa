@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
+import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
+import { useNavigate } from 'react-router-dom'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
@@ -155,6 +157,43 @@ export default function Dashboard() {
         bar: Math.round(m.raw * 100),
       }))
     : []
+
+  const navigate = useNavigate()
+
+  useCopilotReadable({
+    description: 'Live dashboard KPIs — total students, at-risk count, average score, active alerts',
+    value: data?.kpis
+      ? {
+          totalStudents: data.kpis.nbEtudiants,
+          activeAlerts: data.kpis.alertesActives,
+          averageScore: data.kpis.moyGlobale,
+          successRate: data.kpis.tauxReussite,
+          topAtRisk: data.topARisque.slice(0, 5).map(s => ({
+            matricule: s.matricule,
+            name: s.nomComplet,
+            filiere: s.filiere,
+            score: s.scoreRisque,
+          })),
+        }
+      : null,
+  })
+
+  useCopilotAction({
+    name: 'navigate_to_student',
+    description: 'Navigate to the Students page and pre-filter to a specific student by matricule.',
+    parameters: [
+      {
+        name: 'matricule',
+        type: 'string',
+        description: 'Student matricule, e.g. E10001',
+        required: true,
+      },
+    ],
+    handler: async ({ matricule }: { matricule: string }) => {
+      navigate(`/students?q=${encodeURIComponent(matricule)}`)
+      return `Navigation vers l'étudiant ${matricule}`
+    },
+  })
 
   const filiereCtx = 'GI'
   const today = new Date().toLocaleDateString('fr-FR', {

@@ -118,6 +118,42 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
+        // PATCH: api/alertes/batch-resolve
+        [HttpPatch("batch-resolve")]
+        public async Task<IActionResult> BatchResolve([FromBody] BatchResolveRequest request)
+        {
+            if (request?.Ids == null || request.Ids.Length == 0)
+                return BadRequest(new { message = "Aucun ID fourni." });
+
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            int? resolueeParId = int.TryParse(userIdClaim, out var uid) ? uid : null;
+            var now = DateTime.UtcNow;
+
+            var alertes = await _context.Alertes
+                .Where(a => request.Ids.Contains(a.Id) && !a.Resolue)
+                .ToListAsync();
+
+            foreach (var alerte in alertes)
+            {
+                alerte.Resolue       = true;
+                alerte.ResolueeLe    = now;
+                alerte.ResolueeParId = resolueeParId;
+            }
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Batch resolve: {Count} alertes résolues par userId={UserId}",
+                alertes.Count, resolueeParId);
+
+            return Ok(new { resolved = alertes.Count });
+        }
+
+        public class BatchResolveRequest
+        {
+            public int[] Ids { get; set; } = Array.Empty<int>();
+        }
+
         // DELETE: api/alertes/5
         [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]

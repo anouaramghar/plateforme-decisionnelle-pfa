@@ -19,6 +19,9 @@ namespace PlateformePFA.API.Data
         public DbSet<Rapport>      Rapports      { get; set; }
         public DbSet<AuditEntry>   AuditEntries  { get; set; }
 
+        // ── Copilot ──────────────────────────────────────────────────────────
+        public DbSet<AlertDraft>          AlertDrafts          { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -80,6 +83,10 @@ namespace PlateformePFA.API.Data
                 e.Property(p => p.NotePredite).HasPrecision(5, 2);
                 e.Property(p => p.Confiance).HasPrecision(5, 4);
             });
+
+            // ── Copilot ──────────────────────────────────────────────────────
+            modelBuilder.Entity<AlertDraft>()
+                .HasIndex(d => new { d.CreatedBy, d.Status });
         }
     }
 }
