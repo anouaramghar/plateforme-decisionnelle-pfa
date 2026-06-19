@@ -228,6 +228,14 @@ namespace PlateformePFA.API.Data
                         ADD CONSTRAINT CK_AgentAuditLogs_Outcome
                         CHECK (Outcome IN ('success', 'error', 'denied'));
             ");
+
+            // 8. Etudiants: Add DesinscritLe column
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Etudiants', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Etudiants') AND name = 'DesinscritLe')
+                    ALTER TABLE Etudiants ADD DesinscritLe DATETIME2 NULL;
+            ");
         }
     }
 }

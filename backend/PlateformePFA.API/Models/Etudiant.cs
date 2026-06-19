@@ -34,6 +34,8 @@ namespace PlateformePFA.API.Models
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 
+        public DateTime? DesinscritLe { get; set; }
+
         [JsonIgnore] public Filiere?                  Filiere       { get; set; }
         [JsonIgnore] public ICollection<Note>?         Notes         { get; set; }
         [JsonIgnore] public ICollection<Absence>?      Absences      { get; set; }

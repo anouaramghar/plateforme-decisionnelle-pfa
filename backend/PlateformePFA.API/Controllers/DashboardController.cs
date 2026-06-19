@@ -251,9 +251,19 @@ namespace PlateformePFA.API.Controllers
                 sparkPoints.Add(lo);
             }
             var nouveaux = await _context.Etudiants.CountAsync(e => e.CreeLe >= weekAgo);
-            // No soft-delete column on Etudiant yet — retraits stays at 0 until
-            // a DesinscritLe field is added. Kept in the DTO so the UI binds.
-            var retraits = 0;
+            
+            var nowUtc = DateTime.UtcNow;
+            var startYearVal = nowUtc.Month >= 9 ? nowUtc.Year : nowUtc.Year - 1;
+            var curSem = nowUtc.Month >= 2 && nowUtc.Month <= 8 ? "S2" : "S1";
+            var semStart = curSem == "S1"
+                ? new DateTime(startYearVal, 9, 1, 0, 0, 0, DateTimeKind.Utc)
+                : new DateTime(startYearVal + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+            var semEnd = curSem == "S1"
+                ? new DateTime(startYearVal + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc)
+                : new DateTime(startYearVal + 1, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            var retraits = await _context.Etudiants
+                .CountAsync(e => e.DesinscritLe >= semStart && e.DesinscritLe < semEnd);
 
             return new DashboardSummaryDto
             {
