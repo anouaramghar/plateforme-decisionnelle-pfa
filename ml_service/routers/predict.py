@@ -1,12 +1,16 @@
 import logging
 import threading
 
+import shap
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
 
 from dependencies import verify_internal_token
-from schemas.prediction_schema import PredictionRequest, PredictionResponse
+from schemas.prediction_schema import (
+    PredictionRequest, PredictionResponse,
+    ShapContribution, ExplainResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +87,71 @@ def predict_risk(
     return PredictionResponse(
         probabilite=round(probability, 4),
         niveau_risque=_score_to_label(probability),
+    )
+
+
+# ─── SHAP explanation ─────────────────────────────────────────────────────────
+
+_FEATURE_LABELS = {
+    "moyenne_generale": "Note moyenne",
+    "taux_absence":     "Taux d'absence",
+    "nb_modules":       "Modules",
+}
+_FEATURE_NAMES = list(_FEATURE_LABELS.keys())
+
+
+@router.post("/explain", response_model=ExplainResponse)
+def explain_risk(
+    payload: PredictionRequest,
+    request: Request,
+    _: None = Depends(verify_internal_token),
+) -> ExplainResponse:
+    """
+    Returns SHAP feature contributions for one student's risk prediction.
+
+    Extracts the XGBClassifier from the pipeline, scales the input through
+    the StandardScaler step, then runs TreeExplainer to get per-feature SHAP
+    values in log-odds space.  Positive value = pushes prediction toward risk.
+
+    POST /predict/explain
+    Body: { "moyenne_generale": 9.5, "taux_absence": 0.35, "nb_modules": 6 }
+    Returns: { contributions: [...], base_value: float, probability: float }
+    """
+    model: Pipeline = _get_risk_model(request)
+
+    features = pd.DataFrame([{
+        "moyenne_generale": payload.moyenne_generale,
+        "taux_absence":     payload.taux_absence,
+        "nb_modules":       payload.nb_modules,
+    }])
+
+    probability = float(model.predict_proba(features)[0][1])
+
+    # Scale through the pipeline's preprocessor, then run SHAP on the classifier.
+    scaler     = model.named_steps["scaler"]
+    classifier = model.named_steps["classifier"]
+    X_scaled   = pd.DataFrame(scaler.transform(features), columns=_FEATURE_NAMES)
+
+    explainer   = shap.TreeExplainer(classifier)
+    shap_values = explainer.shap_values(X_scaled)
+    sv          = shap_values[0]          # shape (3,) — one value per feature
+
+    total = sum(abs(v) for v in sv) or 1.0
+
+    contributions = [
+        ShapContribution(
+            feature=name,
+            label=_FEATURE_LABELS[name],
+            value=round(float(sv[i]), 4),
+            pct=round(float(abs(sv[i]) / total), 4),
+        )
+        for i, name in enumerate(_FEATURE_NAMES)
+    ]
+
+    return ExplainResponse(
+        contributions=contributions,
+        base_value=round(float(explainer.expected_value), 4),
+        probability=round(probability, 4),
     )
 
 
@@ -165,7 +234,7 @@ def retrain_models(
 
     try:
         saved_dir   = auto_train.SAVED_MODELS_DIR
-        staging_dir = saved_dir.parent / "saved_models_staging"
+        staging_dir = saved_dir / "staging"
 
         if staging_dir.exists():
             shutil.rmtree(staging_dir)
