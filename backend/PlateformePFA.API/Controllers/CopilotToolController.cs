@@ -1,8 +1,10 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.Services;
@@ -27,12 +29,14 @@ namespace PlateformePFA.API.Controllers
         private readonly AppDbContext _db;
         private readonly string _internalToken;
         private readonly RiskScorer _riskScorer;
+        private readonly IConfiguration _config;
 
         public CopilotToolController(AppDbContext db, IConfiguration config, RiskScorer riskScorer)
         {
             _db = db;
             _internalToken = config["AGENT_INTERNAL_TOKEN"] ?? string.Empty;
             _riskScorer = riskScorer;
+            _config = config;
         }
 
         private int? GetUserId()
@@ -64,8 +68,127 @@ namespace PlateformePFA.API.Controllers
                 "list_at_risk"  => Ok(await ListAtRiskAsync(body.Args, ct)),
                 "explain_risk"  => Ok(await ExplainRiskAsync(body.Args, ct)),
                 "draft_alert"   => Ok(await DraftAlertAsync(body.Args, ct)),
+                "query_dw"      => Ok(await QueryDwAsync(body.Args, ct)),
                 _ => Ok(new { ok = false, error = $"unknown tool: {name}" }),
             };
+        }
+
+        private async Task<object> QueryDwAsync(JsonElement args, CancellationToken ct)
+        {
+            if (args.ValueKind != JsonValueKind.Object ||
+                !args.TryGetProperty("question", out var qEl) ||
+                qEl.ValueKind != JsonValueKind.String)
+            {
+                return new { ok = false, error = "missing required arg: question" };
+            }
+            var question = qEl.GetString()!;
+            var q = question.ToLowerInvariant();
+
+            try
+            {
+                var connStr = _config["COPILOT_DW_READONLY_CONN"];
+                if (string.IsNullOrEmpty(connStr))
+                    return new { ok = false, error = "no database connection (COPILOT_DW_READONLY_CONN is empty)" };
+
+                await using var conn = new SqlConnection(connStr);
+                await conn.OpenAsync(ct);
+
+                // Classify intent from keywords
+                if ((q.Contains("combien") || q.Contains("nombre")) &&
+                    (q.Contains("étudiant") || q.Contains("etudiant") || q.Contains("élève") || q.Contains("inscrit")))
+                {
+                    var count = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct);
+                    return new { ok = true, data = new { question, result = $"{count} étudiants inscrits" } };
+                }
+
+                if ((q.Contains("moyenne") && (q.Contains("filière") || q.Contains("filiere") || q.Contains("par"))) ||
+                    q.Contains("moyenne par filière"))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT e.Filiere, ROUND(AVG(f.NoteFinale), 2) AS Moyenne
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimEtudiant] e ON f.EtudiantKey = e.EtudiantKey
+                        WHERE f.NoteFinale IS NOT NULL
+                        GROUP BY e.Filiere
+                        ORDER BY Moyenne DESC", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                if ((q.Contains("module") && (q.Contains("échec") || q.Contains("echec") || q.Contains("taux") || q.Contains("non validé"))) ||
+                    (q.Contains("taux") && q.Contains("échec")) || q.Contains("failure"))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT m.Code, m.Nom AS NomModule, COUNT(f.Id) AS Total,
+                               SUM(CASE WHEN f.NoteFinale IS NULL OR f.NoteFinale < 10 THEN 1 ELSE 0 END) AS Echecs,
+                               ROUND(CAST(SUM(CASE WHEN f.NoteFinale IS NULL OR f.NoteFinale < 10 THEN 1 ELSE 0 END) AS FLOAT)
+                                 / NULLIF(COUNT(f.Id), 0) * 100, 1) AS TauxEchec
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimModule] m ON f.ModuleKey = m.ModuleKey
+                        GROUP BY m.Code, m.Nom
+                        ORDER BY TauxEchec DESC", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                if ((q.Contains("moyenne") && q.Contains("générale")) || q.Contains("note moyenne") || q.Contains("note generale"))
+                {
+                    var avg = await ExecScalarAsync<double>(conn,
+                        "SELECT ISNULL(AVG(CAST(NoteFinale AS FLOAT)), 0) FROM [PFA_DW].[dbo].[FaitNotes] WHERE NoteFinale IS NOT NULL", ct);
+                    return new { ok = true, data = new { question, result = $"Moyenne générale : {avg:F2}/20" } };
+                }
+
+                if (q.Contains("nombre") && (q.Contains("module") || q.Contains("matière")))
+                {
+                    var count = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct);
+                    return new { ok = true, data = new { question, result = $"{count} modules référencés" } };
+                }
+
+                if (q.Contains("absence") || q.Contains("absent"))
+                {
+                    var total = await ExecScalarAsync<long>(conn,
+                        "SELECT ISNULL(SUM(CAST(NbAbsences AS BIGINT)), 0) FROM [PFA_DW].[dbo].[FaitNotes]", ct);
+                    return new { ok = true, data = new { question, result = $"Total des absences : {total}h" } };
+                }
+
+                // Fallback: DW summary
+                var summary = new
+                {
+                    Etudiants = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct),
+                    Modules = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct),
+                    Enregistrements = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[FaitNotes]", ct),
+                    MoyenneGlobale = await ExecScalarAsync<double>(conn,
+                        "SELECT ISNULL(AVG(CAST(NoteFinale AS FLOAT)), 0) FROM [PFA_DW].[dbo].[FaitNotes] WHERE NoteFinale IS NOT NULL", ct),
+                };
+                return new { ok = true, data = new { question, hint = "Question non reconnue. Voici un résumé du DW.", result = summary } };
+            }
+            catch (Exception ex)
+            {
+                return new { ok = false, error = $"Erreur d'accès au DW : {ex.Message}", hint = "Vérifiez que la base PFA_DW est accessible." };
+            }
+        }
+
+        private static async Task<T> ExecScalarAsync<T>(SqlConnection conn, string sql, CancellationToken ct)
+        {
+            await using var cmd = new SqlCommand(sql, conn);
+            var result = await cmd.ExecuteScalarAsync(ct);
+            return (T)Convert.ChangeType(result, typeof(T));
+        }
+
+        private static async Task<List<Dictionary<string, object?>>> QueryAsync(SqlConnection conn, string sql, CancellationToken ct)
+        {
+            await using var cmd = new SqlCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            var rows = new List<Dictionary<string, object?>>();
+            while (await reader.ReadAsync(ct))
+            {
+                var row = new Dictionary<string, object?>();
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    var val = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    row[reader.GetName(i)] = val;
+                }
+                rows.Add(row);
+            }
+            return rows;
         }
 
         private async Task<object> GetStudentAsync(JsonElement args, CancellationToken ct)
@@ -83,6 +206,7 @@ namespace PlateformePFA.API.Controllers
                 .Where(e => e.Matricule == matricule)
                 .Select(e => new
                 {
+                    e.Id,
                     e.Matricule,
                     e.Nom,
                     e.Prenom,
@@ -105,8 +229,9 @@ namespace PlateformePFA.API.Controllers
                 };
             }
 
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
             var moy = s.Moyenne ?? 0m;
-            var risk = RiskScorer.HeuristicScore(moy, s.AbsencesH);
+            var risk = _riskScorer.Score(moy, s.AbsencesH, s.Id, latestPredictions);
             var bucket = RiskScorer.Bucket(risk);
 
             return new
@@ -183,6 +308,7 @@ namespace PlateformePFA.API.Controllers
                     (niveauFilter  == null || e.Niveau == niveauFilter))
                 .Select(e => new
             {
+                e.Id,
                 e.Matricule,
                 e.Nom,
                 e.Prenom,
@@ -195,12 +321,13 @@ namespace PlateformePFA.API.Controllers
             });
 
             var rows = await query.ToListAsync(ct);
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             var result = rows
                 .Select(s =>
                 {
                     var moy = s.Moyenne ?? 0m;
-                    var risk = RiskScorer.HeuristicScore(moy, s.AbsencesH);
+                    var risk = _riskScorer.Score(moy, s.AbsencesH, s.Id, latestPredictions);
                     var bucket = RiskScorer.Bucket(risk);
                     return new
                     {
@@ -276,10 +403,17 @@ namespace PlateformePFA.API.Controllers
 
             // Risk factor weights — use the same step-function values as the heuristic
             // score formula so that the displayed breakdown matches the headline score.
-            var wMoy  = moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
+            var wMoy  = moy == 0m ? 0.4m : moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
             var wAbs  = abs > 30  ? 0.22m : abs > 18  ? 0.12m : 0m;
             var wMod  = modTotal > 0 ? 1.0m - (modVal / (decimal)modTotal) : 0m;
-            const decimal wTend = 0.34m;
+
+            var wSum = wMoy + wAbs + wMod;
+            if (wSum > 0m)
+            {
+                wMoy /= wSum;
+                wAbs /= wSum;
+                wMod /= wSum;
+            }
 
             // Score: use ML if available, else heuristic
             var score = s.MlScore ?? RiskScorer.HeuristicScore(moy, abs);
@@ -300,10 +434,9 @@ namespace PlateformePFA.API.Controllers
                     risque,
                     risk_factors  = new[]
                     {
-                        new { factor = "Moyenne basse",         weight = Math.Round(wMoy, 3),  negative = moy < 12m  },
-                        new { factor = "Absences élevées",       weight = Math.Round(wAbs, 3),  negative = abs > 18   },
-                        new { factor = "Modules non validés",    weight = Math.Round(wMod, 3),  negative = modTotal > 0 && modVal < Math.Ceiling(modTotal / 2.0) },
-                        new { factor = "Tendance trimestrielle", weight = Math.Round(wTend, 3), negative = false },
+                        new { factor = "Moyenne basse",      weight = Math.Round(wMoy, 3),  negative = moy < 12m  },
+                        new { factor = "Absences élevées",    weight = Math.Round(wAbs, 3),  negative = abs > 18   },
+                        new { factor = "Modules non validés", weight = Math.Round(wMod, 3),  negative = modTotal > 0 && modVal < Math.Ceiling(modTotal / 2.0) },
                     },
                     details = new
                     {

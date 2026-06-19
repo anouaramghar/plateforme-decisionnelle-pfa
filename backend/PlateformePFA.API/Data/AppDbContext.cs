@@ -99,7 +99,8 @@ namespace PlateformePFA.API.Data
             modelBuilder.Entity<AgentSessionMessage>()
                 .HasOne(m => m.Session)
                 .WithMany(s => s.Messages)
-                .HasForeignKey(m => m.SessionId);
+                .HasForeignKey(m => m.SessionId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<AgentAuditLog>()
                 .HasIndex(a => new { a.UserId, a.CreatedAt });

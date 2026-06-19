@@ -131,22 +131,6 @@ builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 
 builder.Services.AddHttpClient("MLService");
 
-// ── Copilot ──────────────────────────────────────────────────────────────────
-var agentServiceUrl = builder.Configuration["AGENT_SERVICE_URL"]
-    ?? "http://agent-service:8001";
-
-builder.Services.AddHttpClient<
-    PlateformePFA.API.Services.Copilot.IAgentServiceClient,
-    PlateformePFA.API.Services.Copilot.AgentServiceClient>(c =>
-{
-    c.BaseAddress = new Uri(agentServiceUrl);
-    // SSE streams can be arbitrarily long (multi-step agent turns + slow NIM).
-    // HttpClient.Timeout covers the entire request lifecycle including the
-    // streaming body read, so any finite value would cut long conversations.
-    // Cancellation comes from the CancellationToken on the request instead.
-    c.Timeout = Timeout.InfiniteTimeSpan;
-});
-
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
