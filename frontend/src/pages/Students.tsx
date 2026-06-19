@@ -44,6 +44,7 @@ interface NoteRow {
   code: string
   nom: string
   semestre: string
+  annee: string
   coef: number
   cc: number | null
   tp: number | null
@@ -421,6 +422,38 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
   const riskColor =
     student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
 
+  const trend = useMemo(() => {
+    if (!notes || notes.length === 0) return null;
+    const notesWithFinal = notes.filter(n => n.finale !== null);
+    if (notesWithFinal.length === 0) return null;
+
+    const getSemSortKey = (annee: string, semestre: string) => {
+      const startYear = parseInt(annee.split('/')[0]) || 0;
+      const semNum = semestre === 'S2' ? 2 : 1;
+      return startYear * 2 + semNum;
+    };
+
+    const semData: { [key: number]: { sum: number; count: number } } = {};
+    notesWithFinal.forEach(n => {
+      const key = getSemSortKey(n.annee, n.semestre);
+      if (!semData[key]) {
+        semData[key] = { sum: 0, count: 0 };
+      }
+      semData[key].sum += n.finale!;
+      semData[key].count += 1;
+    });
+
+    const sortedKeys = Object.keys(semData)
+      .map(Number)
+      .sort((a, b) => b - a);
+
+    if (sortedKeys.length < 2) return null;
+
+    const avgRecent = semData[sortedKeys[0]].sum / semData[sortedKeys[0]].count;
+    const avgPrev = semData[sortedKeys[1]].sum / semData[sortedKeys[1]].count;
+    return avgRecent - avgPrev;
+  }, [notes]);
+
   // Accessibility for a modal drawer: ESC closes it, focus jumps inside on
   // open (so a screen reader announces the dialog), focus returns to the
   // trigger row on close, and Tab is trapped within the panel so users can't
@@ -631,11 +664,13 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                     f: 'Moyenne basse',
                     w: student.moyenne < 10 ? 0.82 : student.moyenne < 12 ? 0.42 : 0.12,
                     neg: student.moyenne < 12,
+                    display: `${Math.round((student.moyenne < 10 ? 0.82 : student.moyenne < 12 ? 0.42 : 0.12) * 100)}%`,
                   },
                   {
                     f: 'Absences élevées',
                     w: Math.min(0.95, student.absences / 30),
                     neg: student.absences > 15,
+                    display: `${Math.round(Math.min(0.95, student.absences / 30) * 100)}%`,
                   },
                   {
                     f: 'Modules non validés',
@@ -644,8 +679,14 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                       : 0,
                     neg: student.modulesTotal > 0
                       && student.modulesValides < Math.ceil(student.modulesTotal / 2),
+                    display: `${Math.round((student.modulesTotal > 0 ? 1 - student.modulesValides / student.modulesTotal : 0) * 100)}%`,
                   },
-                  { f: 'Tendance trimestrielle', w: 0.34, neg: false },
+                  {
+                    f: 'Tendance trimestrielle',
+                    w: trend !== null ? Math.min(Math.abs(trend) / 5.0, 1.0) : 0,
+                    neg: trend !== null && trend < 0,
+                    display: trend !== null ? (trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1)) : '—',
+                  },
                 ].map(row => (
                   <div key={row.f} className="flex items-center gap-3">
                     <span className="text-[12px]" style={{ minWidth: 160 }}>
@@ -668,7 +709,7 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                       className="num text-[11.5px] w-10 text-right"
                       style={{ color: 'var(--text-3)' }}
                     >
-                      {Math.round(row.w * 100)}%
+                      {row.display}
                     </span>
                   </div>
                 ))}

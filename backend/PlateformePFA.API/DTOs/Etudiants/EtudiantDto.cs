@@ -51,6 +51,7 @@ namespace PlateformePFA.API.DTOs.Etudiants
         public string  Code      { get; set; } = string.Empty;
         public string  Nom       { get; set; } = string.Empty;
         public string  Semestre  { get; set; } = string.Empty;
+        public string  Annee     { get; set; } = string.Empty;
         public decimal Coef      { get; set; }
         public decimal? Cc       { get; set; }
         public decimal? Tp       { get; set; }

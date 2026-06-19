@@ -130,6 +130,7 @@ namespace PlateformePFA.API.Controllers
                     Code     = n.Module.Code,
                     Nom      = n.Module.Nom,
                     Semestre = n.Semestre,
+                    Annee    = n.Annee,
                     Coef     = n.Module.Coefficient,
                     Cc       = n.NoteTD,
                     Tp       = n.NoteTP,
