@@ -8,7 +8,8 @@ import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
-import { ChartRadial } from '../components/charts'
+import { ChartRadial, ChartShap } from '../components/charts'
+import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
 import { ConfirmCard } from '../components/copilot/ConfirmCard'
 import type { ConfirmData } from '../components/copilot/ConfirmCard'
@@ -60,6 +61,11 @@ async function fetchStudents(): Promise<EtudiantRow[]> {
 
 async function fetchStudentNotes(id: number): Promise<NoteRow[]> {
   const res = await api.get<NoteRow[]>(`/etudiants/${id}/notes`)
+  return res.data
+}
+
+async function fetchShap(id: number): Promise<ShapExplainData> {
+  const res = await api.get<ShapExplainData>(`/predictions/explain/${id}`)
   return res.data
 }
 
@@ -418,6 +424,12 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
     queryFn: () => fetchStudentNotes(student.id),
   })
 
+  const { data: shap, isLoading: shapLoading } = useQuery({
+    queryKey: ['etudiant-shap', student.id],
+    queryFn: () => fetchShap(student.id),
+    retry: false,
+  })
+
   const moyenne = student.moyenne
   const riskColor =
     student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
@@ -646,8 +658,8 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
 
           <div className="card p-4">
             <SectionHeader
-              title="Analyse prédictive"
-              subtitle="Facteurs de risque détectés par le modèle"
+              title="Analyse prédictive (SHAP)"
+              subtitle="Contribution réelle de chaque facteur — calculée par le modèle XGBoost"
             />
             <div className="flex items-center gap-5">
               <div style={{ width: 130, flexShrink: 0 }}>
@@ -658,45 +670,32 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                   height={140}
                 />
               </div>
-              <div className="flex-1 space-y-2">
-                {[
-                  {
-                    f: 'Moyenne basse',
-                    w: student.moyenne < 10 ? 0.82 : student.moyenne < 12 ? 0.42 : 0.12,
-                    neg: student.moyenne < 12,
-                    display: `${Math.round((student.moyenne < 10 ? 0.82 : student.moyenne < 12 ? 0.42 : 0.12) * 100)}%`,
-                  },
-                  {
-                    f: 'Absences élevées',
-                    w: Math.min(0.95, student.absences / 30),
-                    neg: student.absences > 15,
-                    display: `${Math.round(Math.min(0.95, student.absences / 30) * 100)}%`,
-                  },
-                  {
-                    f: 'Modules non validés',
-                    w: student.modulesTotal > 0
-                      ? 1 - student.modulesValides / student.modulesTotal
-                      : 0,
-                    neg: student.modulesTotal > 0
-                      && student.modulesValides < Math.ceil(student.modulesTotal / 2),
-                    display: `${Math.round((student.modulesTotal > 0 ? 1 - student.modulesValides / student.modulesTotal : 0) * 100)}%`,
-                  },
-                  {
-                    f: 'Tendance trimestrielle',
-                    w: trend !== null ? Math.min(Math.abs(trend) / 5.0, 1.0) : 0,
-                    neg: trend !== null && trend < 0,
-                    display: trend !== null ? (trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1)) : '—',
-                  },
-                ].map(row => (
-                  <div key={row.f} className="flex items-center gap-3">
-                    <span className="text-[12px]" style={{ minWidth: 160 }}>
-                      {row.f}
-                    </span>
-                    <div
-                      className="flex-1 h-1.5 rounded-full"
-                      style={{ background: 'var(--surface-3)' }}
-                    >
-                      <div
+              <div className="flex-1">
+                {shapLoading && (
+                  <div className="text-[12px]" style={{ color: 'var(--text-4)' }}>
+                    Calcul SHAP en cours…
+                  </div>
+                )}
+                {shap && <ChartShap data={shap} />}
+                {!shapLoading && !shap && (
+                  <div className="space-y-2">
+                    {[
+                      {
+                        f: 'Tendance trimestrielle',
+                        w: trend !== null ? Math.min(Math.abs(trend) / 5.0, 1.0) : 0,
+                        neg: trend !== null && trend < 0,
+                        display: trend !== null ? (trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1)) : '—',
+                      },
+                    ].map(row => (
+                      <div key={row.f} className="flex items-center gap-3">
+                        <span className="text-[12px]" style={{ minWidth: 160 }}>
+                          {row.f}
+                        </span>
+                        <div
+                          className="flex-1 h-1.5 rounded-full"
+                          style={{ background: 'var(--surface-3)' }}
+                        >
+                          <div
                         style={{
                           width: `${row.w * 100}%`,
                           height: '100%',
@@ -713,6 +712,8 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
                     </span>
                   </div>
                 ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
