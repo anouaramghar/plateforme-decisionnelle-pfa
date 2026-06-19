@@ -73,13 +73,9 @@ export default function Alerts() {
   })
 
   // "Tout marquer lu" — resolves every currently-visible unresolved alert.
-  // The backend has no bulk endpoint, so fan out PATCH calls and invalidate
-  // once at the end. Scoped to the filtered view so the action matches what
-  // the user is looking at (not every alert in the system).
+  // Scoped to the filtered view so the action matches what the user is looking at.
   const resolveAllMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      await Promise.all(ids.map(id => api.patch(`/alertes/${id}/resoudre`)))
-    },
+    mutationFn: (ids: number[]) => api.patch('/alertes/batch-resolve', { ids }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
   })
 
