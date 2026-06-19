@@ -46,7 +46,7 @@ services:
       - ML_API_URL=${ML_API_URL}
       - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
       - AGENT_INTERNAL_TOKEN=${AGENT_INTERNAL_TOKEN}
-      - AGENT_SERVICE_URL=${AGENT_SERVICE_URL:-http://agent-service:8001}
+      - COPILOT_DW_READONLY_CONN=Server=db;Database=PFA_DW;User Id=pfa_app_readonly;Password=${READONLY_DB_PASSWORD};TrustServerCertificate=True;
       - ASPNETCORE_URLS=http://+:8080
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ISSUER=${JWT_ISSUER}
@@ -112,51 +112,44 @@ services:
       - pfa_internal_ml
       - pfa_internal_db
 
-  # 6. Copilot agent-service (Python 3.11 / FastAPI)
-  # Orchestrates the agentic AI loop against NVIDIA NIM. Reachable only from
-  # the backend over pfa_internal_ml (no host port, no nginx route).
-  agent-service:
+  # 6. CopilotKit runtime (Node 20 / Express + @copilotkit/runtime v2)
+  # Serves the CopilotKit sidebar's runtime endpoint. nginx proxies
+  # /api/copilotkit here; the frontend's <CopilotKit> provider talks to it.
+  # Optional add-on — like agent-service, it is NOT a startup gate for nginx,
+  # so the BI platform stays up even if this sidecar is down.
+  copilot-runtime:
     build:
-      context: ./agent-service
+      context: ./copilot-runtime
     environment:
-      - AGENT_INTERNAL_TOKEN=${AGENT_INTERNAL_TOKEN}
+      - PORT=4000
+      # Must match the backend's JWT_SECRET — the runtime verifies the JWT
+      # signature before forwarding tool calls to the backend.
+      - JWT_SECRET=${JWT_SECRET}
       - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
+      - NVIDIA_NIM_BASE_URL=${NVIDIA_NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
       - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-meta/llama-3.3-70b-instruct}
-      - COPILOT_MODEL_SQL=${COPILOT_MODEL_SQL:-minimaxai/minimax-m2.7}
-      - COPILOT_MODEL_REASON=${COPILOT_MODEL_REASON:-nvidia/llama-3.3-nemotron-super-49b-v1.5}
-      - COPILOT_MODEL_SAFETY=${COPILOT_MODEL_SAFETY:-nvidia/llama-3.1-nemotron-safety-guard-8b-v3}
-      - COPILOT_EMBED_MODEL=${COPILOT_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
-      - COPILOT_MAX_TOOL_ITERATIONS=${COPILOT_MAX_TOOL_ITERATIONS:-8}
-      - COPILOT_TURN_TOKEN_BUDGET_IN=${COPILOT_TURN_TOKEN_BUDGET_IN:-20000}
-      - COPILOT_TURN_TOKEN_BUDGET_OUT=${COPILOT_TURN_TOKEN_BUDGET_OUT:-4000}
-      - COPILOT_DAILY_TOKEN_CAP_PER_USER=${COPILOT_DAILY_TOKEN_CAP_PER_USER:-200000}
-      # Read-only DW connection for the query_dw tool (P4).
-      # pyodbc ODBC format — distinct from the ADO.NET format used by the backend.
-      # pfa_app_readonly has db_datareader-only on PFA_DW; zero PFA_DB access.
-      - COPILOT_DW_READONLY_CONN=DRIVER={ODBC Driver 18 for SQL Server};SERVER=db;DATABASE=PFA_DW;UID=pfa_app_readonly;PWD=${READONLY_DB_PASSWORD};TrustServerCertificate=yes;
-      # How agent-service reaches the backend to execute tools (L2 callback).
-      # Resolves over pfa_internal_ml — both services share that network.
-      - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8080}
+      - AGENT_INTERNAL_TOKEN=${AGENT_INTERNAL_TOKEN}
+      # Internal service URL — hardcoded (NOT ${BACKEND_URL}) so a local-dev
+      # BACKEND_URL=http://localhost:5135 in .env can't leak into the container.
+      - BACKEND_URL=http://backend:8080
+      # Same-origin in the nginx-proxied setup, so CORS is moot; set anyway.
+      - FRONTEND_URL=${COPILOT_RUNTIME_FRONTEND_URL:-http://localhost}
+    depends_on:
+      backend:
+        condition: service_healthy
     expose:
-      - "8001"
+      - "4000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 20s
     restart: unless-stopped
     networks:
-      # pfa_internal_ml: reachable from backend (the only thing that calls us).
-      - pfa_internal_ml
-      # pfa_public: required for outbound internet (NIM API). pfa_internal_ml
-      # is internal:true which blocks egress. No host port + no nginx route is
-      # added, so this does NOT expose agent-service externally.
+      # pfa_public: reachable by nginx, reaches backend (also on pfa_public),
+      # and gets outbound internet for the NVIDIA NIM API.
       - pfa_public
-      # pfa_internal_db: required for the query_dw tool (P4) to reach db:1433.
-      # Risk: agent-service has internet access (NIM) AND db access here.
-      # Mitigation: pfa_app_readonly is db_datareader-only on PFA_DW only.
-      - pfa_internal_db
 
   # 4. Frontend React.js (nginx-unprivileged serves on 8080)
   frontend:
@@ -177,6 +170,7 @@ services:
     image: nginx:1.27-alpine
     ports:
       - "80:80"
+      - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
