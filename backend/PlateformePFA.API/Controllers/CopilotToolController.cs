@@ -93,16 +93,19 @@ namespace PlateformePFA.API.Controllers
                 await using var conn = new SqlConnection(connStr);
                 await conn.OpenAsync(ct);
 
-                // Classify intent from keywords
-                if ((q.Contains("combien") || q.Contains("nombre")) &&
+                // ── Classify intent ───────────────────────────────────────────
+                // 1. Count students
+                if ((q.Contains("combien") || q.Contains("nombre") || q.Contains("total")) &&
                     (q.Contains("étudiant") || q.Contains("etudiant") || q.Contains("élève") || q.Contains("inscrit")))
                 {
-                    var count = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct);
+                    var count = await ExecScalarAsync<long>(conn,
+                        "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct);
                     return new { ok = true, data = new { question, result = $"{count} étudiants inscrits" } };
                 }
 
-                if ((q.Contains("moyenne") && (q.Contains("filière") || q.Contains("filiere") || q.Contains("par"))) ||
-                    q.Contains("moyenne par filière"))
+                // 2. Average by filière
+                if ((q.Contains("moyenne") && (q.Contains("filière") || q.Contains("filiere") || q.Contains("par filière"))) ||
+                    q.Contains("par programme"))
                 {
                     var rows = await QueryAsync(conn, @"
                         SELECT e.Filiere, ROUND(AVG(f.NoteFinale), 2) AS Moyenne
@@ -114,8 +117,23 @@ namespace PlateformePFA.API.Controllers
                     return new { ok = true, data = new { question, result = rows } };
                 }
 
-                if ((q.Contains("module") && (q.Contains("échec") || q.Contains("echec") || q.Contains("taux") || q.Contains("non validé"))) ||
-                    (q.Contains("taux") && q.Contains("échec")) || q.Contains("failure"))
+                // 3. Average by niveau (1A, 2A, 3A, …)
+                if (q.Contains("moyenne") && (q.Contains("niveau") || q.Contains("année") || q.Contains("annee") || q.Contains("promo")))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT e.Niveau, ROUND(AVG(f.NoteFinale), 2) AS Moyenne,
+                               COUNT(DISTINCT e.EtudiantKey) AS NbEtudiants
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimEtudiant] e ON f.EtudiantKey = e.EtudiantKey
+                        WHERE f.NoteFinale IS NOT NULL
+                        GROUP BY e.Niveau
+                        ORDER BY e.Niveau", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                // 4. Module failure rates
+                if ((q.Contains("module") && (q.Contains("échec") || q.Contains("echec") || q.Contains("taux") || q.Contains("non validé") || q.Contains("difficile"))) ||
+                    (q.Contains("taux") && q.Contains("échec")))
                 {
                     var rows = await QueryAsync(conn, @"
                         SELECT m.Code, m.Nom AS NomModule, COUNT(f.Id) AS Total,
@@ -129,32 +147,94 @@ namespace PlateformePFA.API.Controllers
                     return new { ok = true, data = new { question, result = rows } };
                 }
 
-                if ((q.Contains("moyenne") && q.Contains("générale")) || q.Contains("note moyenne") || q.Contains("note generale"))
+                // 5. Overall average
+                if ((q.Contains("moyenne") && (q.Contains("générale") || q.Contains("generale") || q.Contains("globale") || q.Contains("global"))) ||
+                    q.Contains("note moyenne") || q.Contains("note générale"))
                 {
                     var avg = await ExecScalarAsync<double>(conn,
                         "SELECT ISNULL(AVG(CAST(NoteFinale AS FLOAT)), 0) FROM [PFA_DW].[dbo].[FaitNotes] WHERE NoteFinale IS NOT NULL", ct);
                     return new { ok = true, data = new { question, result = $"Moyenne générale : {avg:F2}/20" } };
                 }
 
-                if (q.Contains("nombre") && (q.Contains("module") || q.Contains("matière")))
+                // 6. Count modules
+                if (q.Contains("nombre") && (q.Contains("module") || q.Contains("matière") || q.Contains("matiere")))
                 {
-                    var count = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct);
+                    var count = await ExecScalarAsync<long>(conn,
+                        "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct);
                     return new { ok = true, data = new { question, result = $"{count} modules référencés" } };
                 }
 
-                if (q.Contains("absence") || q.Contains("absent"))
+                // 7. Absences
+                if (q.Contains("absence") || q.Contains("absent") || q.Contains("présence") || q.Contains("presences"))
                 {
                     var total = await ExecScalarAsync<long>(conn,
                         "SELECT ISNULL(SUM(CAST(NbAbsences AS BIGINT)), 0) FROM [PFA_DW].[dbo].[FaitNotes]", ct);
-                    return new { ok = true, data = new { question, result = $"Total des absences : {total}h" } };
+                    return new { ok = true, data = new { question, result = $"Total des absences enregistrées : {total}h" } };
                 }
 
-                // Fallback: DW summary
+                // 8. Top students (best average)
+                if ((q.Contains("meilleur") || q.Contains("top") || q.Contains("premier") || q.Contains("classement") || q.Contains("podium")) &&
+                    (q.Contains("étudiant") || q.Contains("elève") || q.Contains("note") || q.Contains("moyenne")))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT TOP 10 e.Matricule, e.Nom, e.Prenom, e.Filiere,
+                               ROUND(AVG(f.NoteFinale), 2) AS MoyenneGenerale
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimEtudiant] e ON f.EtudiantKey = e.EtudiantKey
+                        WHERE f.NoteFinale IS NOT NULL
+                        GROUP BY e.Matricule, e.Nom, e.Prenom, e.Filiere
+                        ORDER BY MoyenneGenerale DESC", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                // 9. Students most at risk (lowest average)
+                if ((q.Contains("risque") || q.Contains("en difficulté") || q.Contains("bas") || q.Contains("faible")) &&
+                    (q.Contains("étudiant") || q.Contains("elève") || q.Contains("moyenne")))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT TOP 10 e.Matricule, e.Nom, e.Prenom, e.Filiere, e.Niveau,
+                               ROUND(AVG(f.NoteFinale), 2) AS MoyenneGenerale,
+                               ISNULL(SUM(f.NbAbsences), 0) AS TotalAbsences
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimEtudiant] e ON f.EtudiantKey = e.EtudiantKey
+                        WHERE f.NoteFinale IS NOT NULL
+                        GROUP BY e.Matricule, e.Nom, e.Prenom, e.Filiere, e.Niveau
+                        ORDER BY MoyenneGenerale ASC", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                // 10. Module list
+                if ((q.Contains("liste") || q.Contains("quels")) && (q.Contains("module") || q.Contains("matière") || q.Contains("matiere")))
+                {
+                    var rows = await QueryAsync(conn,
+                        "SELECT Code, Nom FROM [PFA_DW].[dbo].[DimModule] ORDER BY Nom", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                // 11. Semester / period analysis
+                if (q.Contains("semestre") || q.Contains("s1") || q.Contains("s2"))
+                {
+                    var rows = await QueryAsync(conn, @"
+                        SELECT t.Semestre, t.Annee,
+                               COUNT(DISTINCT f.EtudiantKey) AS NbEtudiants,
+                               ROUND(AVG(f.NoteFinale), 2) AS MoyenneGenerale
+                        FROM [PFA_DW].[dbo].[FaitNotes] f
+                        JOIN [PFA_DW].[dbo].[DimTemps] t ON f.TempsKey = t.TempsKey
+                        WHERE f.NoteFinale IS NOT NULL
+                        GROUP BY t.Semestre, t.Annee
+                        ORDER BY t.Annee DESC, t.Semestre", ct);
+                    return new { ok = true, data = new { question, result = rows } };
+                }
+
+                // 12. Fallback: DW summary
                 var summary = new
                 {
-                    Etudiants = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct),
-                    Modules = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct),
-                    Enregistrements = await ExecScalarAsync<long>(conn, "SELECT COUNT(*) FROM [PFA_DW].[dbo].[FaitNotes]", ct),
+                    Etudiants = await ExecScalarAsync<long>(conn,
+                        "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimEtudiant]", ct),
+                    Modules = await ExecScalarAsync<long>(conn,
+                        "SELECT COUNT(*) FROM [PFA_DW].[dbo].[DimModule]", ct),
+                    Enregistrements = await ExecScalarAsync<long>(conn,
+                        "SELECT COUNT(*) FROM [PFA_DW].[dbo].[FaitNotes]", ct),
                     MoyenneGlobale = await ExecScalarAsync<double>(conn,
                         "SELECT ISNULL(AVG(CAST(NoteFinale AS FLOAT)), 0) FROM [PFA_DW].[dbo].[FaitNotes] WHERE NoteFinale IS NOT NULL", ct),
                 };
