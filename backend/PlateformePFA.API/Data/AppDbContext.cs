@@ -20,9 +20,6 @@ namespace PlateformePFA.API.Data
         public DbSet<AuditEntry>   AuditEntries  { get; set; }
 
         // ── Copilot ──────────────────────────────────────────────────────────
-        public DbSet<AgentSession>        AgentSessions        { get; set; }
-        public DbSet<AgentSessionMessage> AgentSessionMessages { get; set; }
-        public DbSet<AgentAuditLog>       AgentAuditLogs       { get; set; }
         public DbSet<AlertDraft>          AlertDrafts          { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -87,27 +84,7 @@ namespace PlateformePFA.API.Data
                 e.Property(p => p.Confiance).HasPrecision(5, 4);
             });
 
-            // ── Copilot indexes & relationships ──────────────────────────────
-
-            modelBuilder.Entity<AgentSession>()
-                .HasIndex(s => new { s.UserId, s.LastActivityAt });
-
-            modelBuilder.Entity<AgentSessionMessage>()
-                .HasIndex(m => new { m.SessionId, m.TurnIndex })
-                .IsUnique();
-
-            modelBuilder.Entity<AgentSessionMessage>()
-                .HasOne(m => m.Session)
-                .WithMany(s => s.Messages)
-                .HasForeignKey(m => m.SessionId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<AgentAuditLog>()
-                .HasIndex(a => new { a.UserId, a.CreatedAt });
-
-            modelBuilder.Entity<AgentAuditLog>()
-                .HasIndex(a => a.Kind);
-
+            // ── Copilot ──────────────────────────────────────────────────────
             modelBuilder.Entity<AlertDraft>()
                 .HasIndex(d => new { d.CreatedBy, d.Status });
         }
