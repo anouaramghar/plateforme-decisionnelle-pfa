@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
@@ -156,8 +155,6 @@ export default function Dashboard() {
         bar: Math.round(m.raw * 100),
       }))
     : []
-
-  const navigate = useNavigate()
 
   const filiereCtx = 'GI'
   const today = new Date().toLocaleDateString('fr-FR', {

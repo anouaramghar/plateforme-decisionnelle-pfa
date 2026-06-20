@@ -77,7 +77,7 @@ async function runBatch(input: { filiereCode?: string; niveau?: string }): Promi
 export default function Predictions() {
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
-  const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
+  const [highlightedMatricule] = useState<string | null>(null)
   const [pendingAlert, setPendingAlert] = useState<{
     student: { id: number; nomComplet: string; matricule: string }; severite: string; message: string
   } | null>(null)
