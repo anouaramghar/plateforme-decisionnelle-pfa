@@ -15,6 +15,7 @@ const ICONS: Record<string, ReactElement> = {
   x:         <path d="M6 6l12 12M18 6L6 18" />,
   arrowRight:<path d="M5 12h14M13 5l7 7-7 7" />,
   chevDown:  <path d="M6 9l6 6 6-6" />,
+  chevUp:    <path d="M18 15l-6-6-6 6" />,
   chevRight: <path d="M9 18l6-6-6-6" />,
   chevLeft:  <path d="M15 18l-6-6 6-6" />,
   more:      <path d="M5 12h.01M12 12h.01M19 12h.01" />,

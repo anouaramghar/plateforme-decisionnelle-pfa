@@ -1,3 +1,4 @@
+import { useRef, useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
@@ -5,6 +6,8 @@ import { Avatar } from '../components/ui/Avatar'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { api } from '../services/api'
+
+const FILIERES = ['TCP', 'GI', 'IA', 'ROC', 'IRSI']
 
 interface NavEntry {
   to: string
@@ -27,6 +30,26 @@ export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useTheme()
   const { user, token } = useAuth()
   const W = sidebarCollapsed ? 64 : 232
+
+  const [filiere, setFiliere] = useState<string>(
+    () => localStorage.getItem('pfa_filiere') ?? 'GI'
+  )
+  const [dropOpen, setDropOpen] = useState(false)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    localStorage.setItem('pfa_filiere', filiere)
+  }, [filiere])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
+        setDropOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   // Live badge counts. Gated on `token` so we don't fire unauthenticated calls
   // before login. Cheap polling — same cadence the Alerts page already uses.
@@ -63,8 +86,6 @@ export function Sidebar() {
   // backend hasn't returned a NomComplet (e.g. legacy seed accounts).
   const displayName = user?.nom?.trim() || user?.email?.split('@')[0] || 'Utilisateur'
   const role = user?.role ? `Responsable · ${user.role}` : 'Plateforme PFA'
-  const filiereCtx = 'GI'
-
   return (
     <aside
       style={{
@@ -119,7 +140,7 @@ export function Sidebar() {
 
       {/* filiere context */}
       {!sidebarCollapsed && (
-        <div className="px-3 py-3" style={{ borderBottom: '1px solid var(--side-border)' }}>
+        <div className="px-3 py-3" style={{ borderBottom: '1px solid var(--side-border)', position: 'relative' }} ref={dropRef}>
           <div
             className="text-[10px] uppercase tracking-wider mb-1.5"
             style={{ color: 'var(--side-text-3)', fontWeight: 500, letterSpacing: '0.08em' }}
@@ -127,6 +148,7 @@ export function Sidebar() {
             Périmètre
           </div>
           <button
+            onClick={() => setDropOpen(o => !o)}
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[12.5px] transition"
             style={{
               background: 'rgba(255,255,255,0.04)',
@@ -146,13 +168,67 @@ export function Sidebar() {
                 fontSize: 9.5,
                 fontWeight: 700,
                 color: '#fff',
+                flexShrink: 0,
               }}
             >
-              {filiereCtx}
+              {filiere}
             </span>
-            <span className="flex-1 truncate">Filière {filiereCtx}</span>
-            <Icon name="chevDown" size={13} className="opacity-60" />
+            <span className="flex-1 truncate">Filière {filiere}</span>
+            <Icon name={dropOpen ? 'chevUp' : 'chevDown'} size={13} className="opacity-60" />
           </button>
+
+          {dropOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 12,
+                right: 12,
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                boxShadow: '0 8px 24px rgba(0,0,0,.25)',
+                zIndex: 50,
+                overflow: 'hidden',
+                marginTop: 4,
+              }}
+            >
+              {FILIERES.map(f => (
+                <button
+                  key={f}
+                  onClick={() => { setFiliere(f); setDropOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12.5px] text-left transition"
+                  style={{
+                    background: f === filiere ? 'color-mix(in oklch, var(--accent-500) 10%, transparent)' : 'transparent',
+                    color: f === filiere ? 'var(--accent-600)' : 'var(--text)',
+                    fontWeight: f === filiere ? 500 : 400,
+                  }}
+                  onMouseEnter={e => { if (f !== filiere) e.currentTarget.style.background = 'var(--surface-2)' }}
+                  onMouseLeave={e => { if (f !== filiere) e.currentTarget.style.background = 'transparent' }}
+                >
+                  <span
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      background: f === filiere ? 'var(--accent-500)' : 'var(--surface-2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 9,
+                      fontWeight: 700,
+                      color: f === filiere ? '#fff' : 'var(--text-3)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {f}
+                  </span>
+                  Filière {f}
+                  {f === filiere && <Icon name="check" size={12} style={{ marginLeft: 'auto', color: 'var(--accent-500)' }} />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
