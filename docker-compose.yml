@@ -28,9 +28,13 @@ services:
     restart: unless-stopped
     networks:
       - pfa_internal_db
-      # pfa_public intentionally omitted: Docker host-port binding (127.0.0.1:1433)
-      # works at the host level and does NOT require a shared Docker network.
-      # Keeping db off pfa_public means nginx and frontend cannot reach SQL Server.
+      # Dedicated NON-internal bridge so SQL Server's published port
+      # (127.0.0.1:1433) is actually reachable from the host for SSMS /
+      # Azure Data Studio. A container attached ONLY to internal networks
+      # cannot publish host ports — Docker silently drops the binding.
+      # This network has no other members, so frontend/nginx still cannot
+      # reach the DB; only backend (on pfa_internal_db) and the host can.
+      - pfa_db_host
 
   # 2. Backend ASP.NET Core 8
   backend:
@@ -150,6 +154,10 @@ networks:
   pfa_internal_db:
     driver: bridge
     internal: true
+  # Host-access plane for the DB only — NOT internal, so the published
+  # 127.0.0.1:1433 port works for SSMS. db is its sole member.
+  pfa_db_host:
+    driver: bridge
   # ML plane: only backend ↔ ml-service.
   pfa_internal_ml:
     driver: bridge
