@@ -179,17 +179,16 @@ export function Sidebar() {
         ))}
 
         {!sidebarCollapsed && <div className="nav-section-title">Système</div>}
-        {SECONDARY.map(it => (
-          <div
+        {SECONDARY.filter(it => it.to !== '/admin' || user?.role === 'Admin').map(it => (
+          <NavLink
             key={it.to}
-            className="nav-item"
-            title={sidebarCollapsed ? it.label : 'Bientôt disponible'}
-            aria-disabled="true"
-            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+            to={it.to}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title={sidebarCollapsed ? it.label : undefined}
           >
             <Icon name={it.icon} size={15} />
             {!sidebarCollapsed && <span className="flex-1 truncate">{it.label}</span>}
-          </div>
+          </NavLink>
         ))}
       </nav>
 

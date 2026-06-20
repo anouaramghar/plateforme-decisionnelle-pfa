@@ -7,6 +7,8 @@ import Students from './pages/Students'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import Predictions from './pages/Predictions'
+import Admin from './pages/Admin'
+import Settings from './pages/Settings'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
@@ -32,6 +34,8 @@ export default function App() {
           <Route path="alerts" element={<Alerts />} />
           <Route path="predictions" element={<Predictions />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="admin" element={<Admin />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

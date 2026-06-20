@@ -8,6 +8,8 @@ const BREADCRUMBS: Record<string, [string, string]> = {
   '/alerts':      ['Pilotage', 'Alertes'],
   '/predictions': ['Pilotage', 'Prédictions ML'],
   '/reports':     ['Pilotage', 'Rapports'],
+  '/admin':       ['Système', 'Administration'],
+  '/settings':    ['Système', 'Paramètres'],
 }
 
 interface TopbarProps {
