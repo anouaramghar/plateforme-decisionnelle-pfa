@@ -824,7 +824,7 @@ function StudentDrawer({
         >
           <button
             className="btn btn-sm"
-            onClick={() => { navigate('/admin', { state: { tab: 'etudiants' } }); onClose() }}
+            onClick={() => { navigate(`/students/${student.id}`); onClose() }}
           >
             <Icon name="ext" size={12} />
             Ouvrir la fiche complète

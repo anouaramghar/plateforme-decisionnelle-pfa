@@ -4,6 +4,7 @@ import { AppShell } from './layout/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Students from './pages/Students'
+import StudentProfile from './pages/StudentProfile'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import Predictions from './pages/Predictions'
@@ -31,6 +32,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="students" element={<Students />} />
+          <Route path="students/:id" element={<StudentProfile />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="predictions" element={<Predictions />} />
           <Route path="reports" element={<Reports />} />
