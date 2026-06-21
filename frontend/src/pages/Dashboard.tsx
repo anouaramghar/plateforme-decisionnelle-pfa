@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
@@ -144,6 +145,7 @@ const PERIOD_LABELS: Record<Period, string> = {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const { filiere } = useFiliere()
   const [absTrendMode, setAbsTrendMode] = useState<AbsTrendMode>('heures')
   const [period, setPeriod] = useState<Period>('S2')
@@ -477,7 +479,7 @@ export default function Dashboard() {
                 Score de risque ML le plus élevé · mis à jour il y a 2h
               </div>
             </div>
-            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--accent-700)' }}>
+            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--accent-700)' }} onClick={() => navigate('/students')}>
               Voir tous <Icon name="arrowRight" size={12} />
             </button>
           </div>
@@ -495,7 +497,7 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {top.map(e => (
-                <tr key={e.id}>
+                <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/students?q=${encodeURIComponent(e.matricule)}`)}>
                   <td>
                     <div className="flex items-center gap-2.5">
                       <Avatar name={e.nomComplet} size={28} />
@@ -515,7 +517,7 @@ export default function Dashboard() {
                     <RiskBar score={e.scoreRisque} />
                   </td>
                   <td>
-                    <button className="btn btn-sm btn-ghost">
+                    <button className="btn btn-sm btn-ghost" onClick={ev => { ev.stopPropagation(); navigate(`/students?q=${encodeURIComponent(e.matricule)}`) }}>
                       <Icon name="chevRight" size={13} />
                     </button>
                   </td>
