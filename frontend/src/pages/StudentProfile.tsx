@@ -8,10 +8,12 @@ import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { ChartRadial, ChartShap } from '../components/charts'
 import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
+import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
+import type { AxiosError } from 'axios'
 
 interface EtudiantRow {
   id: number; matricule: string; nom: string; prenom: string; nomComplet: string
-  filiereCode: string; filiereIntitule: string; niveau: string
+  filiereId: number; filiereCode: string; filiereIntitule: string; niveau: string
   moyenne: number; absences: number; modulesValides: number; modulesTotal: number
   scoreRisque: number; risque: 'faible' | 'modere' | 'eleve'; statut: string
 }
@@ -54,6 +56,7 @@ export default function StudentProfile() {
     queryFn: () => fetchNotes(studentId),
     enabled: !!studentId,
   })
+  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules })
 
   const { data: shap, isLoading: shapLoading } = useQuery({
     queryKey: ['etudiant-shap', studentId],
@@ -69,12 +72,13 @@ export default function StudentProfile() {
   })
   const [savingNote, setSavingNote]   = useState(false)
   const [noteSuccess, setNoteSuccess] = useState(false)
+  const [noteError, setNoteError]     = useState<string | null>(null)
 
   const submitNote = async () => {
     if (!noteForm.moduleId || !student) return
     setSavingNote(true)
     try {
-      await api.post('/notes', {
+      await upsertNote({
         etudiantId:  student.id,
         moduleId:    noteForm.moduleId,
         noteTD:      noteForm.noteTD     ? parseFloat(noteForm.noteTD)     : null,
@@ -87,8 +91,12 @@ export default function StudentProfile() {
       queryClient.invalidateQueries({ queryKey: ['etudiant-notes', studentId] })
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       setShowNoteForm(false)
+      setNoteError(null)
       setNoteSuccess(true)
       setTimeout(() => setNoteSuccess(false), 3000)
+    } catch (error) {
+      const message = (error as AxiosError<{ message?: string }>).response?.data?.message
+      setNoteError(message ?? 'Impossible d’enregistrer la note.')
     } finally {
       setSavingNote(false)
     }
@@ -153,6 +161,7 @@ export default function StudentProfile() {
   }
 
   const riskColor = student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
+  const availableModules = modulesForStudent(modules, student.filiereId, student.niveau)
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
@@ -235,23 +244,26 @@ export default function StudentProfile() {
             Note enregistrée avec succès.
           </div>
         )}
+        {noteError && (
+          <div className="mx-5 mb-3 px-3 py-2 rounded-lg text-[12.5px]" style={{ color: 'var(--bad)', background: 'color-mix(in oklch, var(--bad) 8%, transparent)' }}>
+            {noteError}
+          </div>
+        )}
 
         {showNoteForm && (
           <div className="mx-5 mb-4 p-4 rounded-xl border space-y-3" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="cap mb-1">Module</div>
-                {notes.length > 0 ? (
+                {availableModules.length > 0 ? (
                   <select className="input" value={noteForm.moduleId}
                     onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) }))}
                   >
                     <option value={0}>Choisir un module…</option>
-                    {notes.map(n => <option key={n.moduleId} value={n.moduleId}>{n.code} — {n.nom}</option>)}
+                    {availableModules.map(module => <option key={module.id} value={module.id}>{module.code} — {module.nom}</option>)}
                   </select>
                 ) : (
-                  <input className="input" type="number" placeholder="ID du module"
-                    value={noteForm.moduleId || ''}
-                    onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) || 0 }))} />
+                  <div className="cap py-2">Aucun module configuré pour cette filière et ce niveau.</div>
                 )}
               </div>
               <div>

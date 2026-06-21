@@ -7,10 +7,12 @@ import { Pill } from '../components/ui/Pill'
 import { RiskBar } from '../components/ui/RiskBar'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
+import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
+import type { AxiosError } from 'axios'
 
 interface EtudiantRow {
   id: number; matricule: string; nomComplet: string; nom: string; prenom: string
-  filiereCode: string; filiereIntitule: string; niveau: string
+  filiereId: number; filiereCode: string; filiereIntitule: string; niveau: string
   moyenne: number; absences: number; modulesValides: number; modulesTotal: number
   scoreRisque: number; risque: 'faible' | 'modere' | 'eleve'; statut: string
 }
@@ -41,6 +43,7 @@ export default function Enseignant() {
   const [noteForm, setNoteForm] = useState({ moduleId: 0, noteTD: '', noteTP: '', noteExamen: '', noteFinal: '', semestre: 'S1', annee: '2025/2026' })
   const [saving, setSaving]     = useState(false)
   const [success, setSuccess]   = useState(false)
+  const [noteError, setNoteError] = useState<string | null>(null)
 
   const { data: students = [], isLoading } = useQuery({ queryKey: ['etudiants-with-stats'], queryFn: fetchStudents, refetchInterval: 60_000 })
   const { data: notes = [] } = useQuery({
@@ -48,6 +51,7 @@ export default function Enseignant() {
     queryFn: () => fetchNotes(activeStudent!.id),
     enabled: !!activeStudent,
   })
+  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules })
 
   const filtered = useMemo(() => {
     if (!q) return students
@@ -56,12 +60,15 @@ export default function Enseignant() {
   }, [students, q])
 
   const atRisk = useMemo(() => students.filter(e => e.risque === 'eleve').length, [students])
+  const availableModules = activeStudent
+    ? modulesForStudent(modules, activeStudent.filiereId, activeStudent.niveau)
+    : []
 
   const submitNote = async () => {
     if (!noteForm.moduleId || !activeStudent) return
     setSaving(true)
     try {
-      await api.post('/notes', {
+      await upsertNote({
         etudiantId:  activeStudent.id,
         moduleId:    noteForm.moduleId,
         noteTD:      noteForm.noteTD     ? parseFloat(noteForm.noteTD)     : null,
@@ -74,8 +81,12 @@ export default function Enseignant() {
       queryClient.invalidateQueries({ queryKey: ['etudiant-notes', activeStudent.id] })
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       setNoteForm(f => ({ ...f, noteTD: '', noteTP: '', noteExamen: '', noteFinal: '', moduleId: 0 }))
+      setNoteError(null)
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
+    } catch (error) {
+      const message = (error as AxiosError<{ message?: string }>).response?.data?.message
+      setNoteError(message ?? 'Impossible d’enregistrer la note.')
     } finally {
       setSaving(false)
     }
@@ -189,13 +200,18 @@ export default function Enseignant() {
                     Note enregistrée avec succès.
                   </div>
                 )}
+                {noteError && (
+                  <div className="px-3 py-2 rounded-lg text-[12.5px]" style={{ color: 'var(--bad)', background: 'color-mix(in oklch, var(--bad) 8%, transparent)' }}>
+                    {noteError}
+                  </div>
+                )}
 
                 <div>
                   <div className="cap mb-1">Module</div>
                   <select className="input" value={noteForm.moduleId}
                     onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) }))}>
                     <option value={0}>Choisir un module…</option>
-                    {notes.map(n => <option key={n.moduleId} value={n.moduleId}>{n.code} — {n.nom}</option>)}
+                    {availableModules.map(module => <option key={module.id} value={module.id}>{module.code} — {module.nom}</option>)}
                   </select>
                 </div>
 
