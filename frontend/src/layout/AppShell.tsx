@@ -55,7 +55,8 @@ export function AppShell() {
       </div>
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       <CopilotSidebar
-        defaultOpen={false}
+        agentId="default"
+        defaultOpen={true}
         labels={{
           modalHeaderTitle: 'ENIAD Copilot',
           welcomeMessageText: 'Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.',

@@ -10,6 +10,10 @@
       href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap"
       rel="stylesheet"
     />
+    <!-- CopilotKit v2 styles (Tailwind v4 build). Loaded as a static asset so it
+         bypasses the project's Tailwind v3 PostCSS, which can't parse its @layer
+         rules. Source: @copilotkit/react-core/dist/v2/index.css -->
+    <link rel="stylesheet" href="/copilotkit-v2.css" />
   </head>
   <body>
     <div id="root"></div>

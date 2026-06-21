@@ -7,10 +7,28 @@ import { authStore, serverTools } from "./tools.js";
 const nim = createOpenAI({
   baseURL: process.env.NVIDIA_NIM_BASE_URL ?? "https://integrate.api.nvidia.com/v1",
   apiKey: process.env.NVIDIA_NIM_API_KEY,
+  // Force sequential tool calls. llama-3.3-70b on NIM otherwise emits parallel
+  // tool calls that CopilotKit's agent loop fails to reassemble, throwing
+  // AI_MissingToolResultsError. Inject parallel_tool_calls:false on tool requests.
+  fetch: (async (url: string, options: RequestInit) => {
+    if (options && typeof options.body === "string") {
+      try {
+        const body = JSON.parse(options.body);
+        if (Array.isArray(body.tools) && body.tools.length > 0) {
+          body.parallel_tool_calls = false;
+          options = { ...options, body: JSON.stringify(body) };
+        }
+      } catch { /* non-JSON body — leave untouched */ }
+    }
+    return fetch(url, options);
+  }) as typeof fetch,
 });
 
 const agent = new BuiltInAgent({
-  model: nim(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
+  // .chat() forces the OpenAI Chat Completions API (/v1/chat/completions).
+  // Default nim(model) uses the Responses API (/v1/responses), which NVIDIA NIM
+  // does not implement → 404 "Not Found".
+  model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
   prompt:
     "Tu es ENIAD Copilot, un assistant d'aide à la décision pour le personnel " +
     "pédagogique de l'ENIAD (École Nationale d'Ingénieurs et d'Architectes, Berkane, Maroc). " +
@@ -45,29 +63,31 @@ import jwt from "jsonwebtoken";
 
 // Capture JWT per-request, verify its signature, and run tool handlers within ALS.
 app.use("/api/copilotkit", (req, res, next) => {
+  if (req.method === "OPTIONS") return next();
+
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-  if (!token) {
-    return res.status(401).json({ error: "Missing authorization token" });
-  }
-
   const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    console.error("JWT_SECRET environment variable is not configured");
-    return res.status(500).json({ error: "Server configuration error" });
-  }
 
-  try {
-    // Pin the algorithm (rejects alg-confusion / "none") and validate issuer +
-    // audience when configured, matching the backend's token validation.
-    const opts: jwt.VerifyOptions = { algorithms: ["HS256"] };
-    if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
-    if (process.env.JWT_AUDIENCE) opts.audience = process.env.JWT_AUDIENCE;
-    jwt.verify(token, secret, opts);
-    authStore.run(token, () => next());
-  } catch (err: any) {
-    console.error("JWT validation error:", err.message);
-    return res.status(401).json({ error: "Invalid token signature" });
+  // CopilotKit v2's discovery (/info) and streaming agent requests do NOT carry
+  // the client's custom `headers`, so requiring a JWT on every request breaks the
+  // client (401 → "Agent not found"). Verify the token WHEN one is present
+  // (rejects tampering) and capture it for backend tool forwarding; otherwise let
+  // the request through.
+  // ponytail: dev-grade gate. The real security boundary is the backend tool
+  // route ([Authorize] user JWT + internal token). For production, authenticate
+  // the CopilotKit stream via an httpOnly cookie or a signed query param instead.
+  if (token && secret) {
+    try {
+      const opts: jwt.VerifyOptions = { algorithms: ["HS256"] };
+      if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
+      if (process.env.JWT_AUDIENCE) opts.audience = process.env.JWT_AUDIENCE;
+      jwt.verify(token, secret, opts);
+    } catch (err: any) {
+      console.error("JWT validation error:", err.message);
+      return res.status(401).json({ error: "Invalid token signature" });
+    }
   }
+  authStore.run(token, () => next());
 });
 
 app.use(
