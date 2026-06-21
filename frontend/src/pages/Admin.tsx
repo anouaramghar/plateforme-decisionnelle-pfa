@@ -435,7 +435,13 @@ function EtudiantsTab() {
 
   const updateMutation = useMutation({
     mutationFn: updateEtudiant,
-    onSuccess: () => { invalidate(); setEditingStudent(null) },
+    onSuccess: (_result, vars) => {
+      invalidate()
+      setEditingStudent(null)
+      const filCode = filieres.find(f => f.id === vars.data.filiereId)?.code ?? vars.data.filiereId
+      setSuccessMsg(`Les informations de ${vars.data.prenom} ${vars.data.nom} ont été mises à jour (${filCode} — ${vars.data.niveau}).`)
+      setTimeout(() => setSuccessMsg(null), 5000)
+    },
   })
 
   const deleteMutation = useMutation({
