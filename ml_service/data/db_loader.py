@@ -87,16 +87,23 @@ def load_risk_data() -> pd.DataFrame | None:
         # Clip taux_absence to [0, 1]
         df["taux_absence"] = df["taux_absence"].clip(0, 1)
 
-        # Multi-factor at_risk label — closer to real academic risk than a single cutoff:
-        #   1. Clearly failing:  moyenne < 10          (fails outright)
-        #   2. Borderline + absence: 10 ≤ moyenne < 12.5 AND taux > 0.12
-        #      (fragile passers who also miss many classes stay at risk)
-        # This 2D boundary forces XGBoost to learn from BOTH features and output
-        # intermediate probabilities (20–80%) in the grey zone, not binary 1%/98%.
+        # Multi-factor at_risk label:
+        #   1. Clearly failing:  moyenne < 10
+        #   2. Borderline + absence: moyenne 10-12.5 AND taux > 8%
         df["at_risk"] = (
             (df["moyenne_generale"] < 10) |
-            ((df["moyenne_generale"] < 12.5) & (df["taux_absence"] > 0.12))
+            ((df["moyenne_generale"] < 12.5) & (df["taux_absence"] > 0.08))
         ).astype(int)
+
+        # Label noise (7 %, deterministic seed): simulates real-world uncertainty —
+        # some barely-passing students are still at risk; some who failed recovered.
+        # Without noise XGBoost can perfectly memorise the deterministic boundary
+        # and output binary 1 %/98 % probabilities.  Noise forces the model to
+        # hedge its predictions and output values like 25 %, 55 %, 80 %.
+        import numpy as _np
+        _rng = _np.random.default_rng(42)
+        _flip = _rng.random(len(df)) < 0.07
+        df["at_risk"] = (df["at_risk"].astype(bool) ^ _flip).astype(int)
 
         # Drop Matricule (not a feature)
         df = df.drop(columns=["Matricule"])

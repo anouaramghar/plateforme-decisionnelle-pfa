@@ -29,7 +29,7 @@ import joblib
 
 RANDOM_SEED = 42
 N_SAMPLES = 1000
-MODEL_VERSION = "1.6.0"
+MODEL_VERSION = "1.7.0"
 
 ML_MODELS_DIR = Path(__file__).parent.parent / "saved_models"
 MODEL_PATH = ML_MODELS_DIR / "risk_model.joblib"
@@ -106,9 +106,14 @@ def train(df: pd.DataFrame) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
     pipeline = Pipeline([
         ("scaler", StandardScaler()),
         ("classifier", xgb.XGBClassifier(
-            n_estimators=100,       # 100 decision trees
-            max_depth=4,            # each tree can be 4 levels deep
-            learning_rate=0.1,      # how much each tree corrects the previous
+            n_estimators=60,          # fewer trees → less overfitting
+            max_depth=3,              # shallower → can't memorise sharp boundaries
+            learning_rate=0.1,
+            min_child_weight=8,       # each leaf needs ≥ 8 samples → smoother splits
+            subsample=0.8,            # row subsampling adds variance/regularisation
+            colsample_bytree=0.8,     # feature subsampling
+            reg_alpha=1.0,            # L1 regularisation
+            reg_lambda=2.0,           # L2 regularisation
             eval_metric="logloss",
             random_state=RANDOM_SEED,
         )),
