@@ -90,6 +90,12 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Absence>> PostAbsence(CreateAbsenceDto dto)
         {
+            // Validate FKs up front so a bad reference returns 404 instead of a 500.
+            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null))
+                return NotFound(new { message = "Etudiant actif introuvable." });
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+                return NotFound(new { message = "Module introuvable." });
+
             var absence = new Absence
             {
                 EtudiantId   = dto.EtudiantId,

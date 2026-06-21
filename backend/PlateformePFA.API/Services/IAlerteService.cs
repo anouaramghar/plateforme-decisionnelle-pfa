@@ -19,6 +19,12 @@ namespace PlateformePFA.API.Services
         Task CheckAbsenceAlertAsync(int etudiantId);
 
         /// <summary>
+        /// Dedupe + escalate a "RisqueEchec" alert from an ML prediction. Add-only —
+        /// the caller batches the SaveChanges. No-op for niveaux below Eleve.
+        /// </summary>
+        Task UpsertRiskAlertAsync(int etudiantId, string niveau, string message);
+
+        /// <summary>
         /// Full scan: checks every student's notes and absences and creates missing alerts.
         /// Call after seeding or bulk imports.
         /// </summary>

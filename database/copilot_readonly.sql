@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Copilot read-only DW access — agent-service /query_dw tool (P1.B).
+-- Copilot read-only DW access — backend query_dw tool (CopilotToolController).
 --
 -- Run by entrypoint.sh on EVERY boot (not only cold init), so it rolls forward
 -- onto volumes that were seeded before Copilot existed. Fully idempotent.

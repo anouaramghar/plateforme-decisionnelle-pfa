@@ -310,6 +310,13 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(e => e.Id == id && e.DesinscritLe == null);
             if (etudiant == null) return NotFound();
 
+            // Mirror the POST guards: reject a matricule collision or unknown filière
+            // up front instead of letting SQL throw an unhandled 500 on save.
+            if (await _context.Etudiants.AnyAsync(e => e.Matricule == dto.Matricule && e.Id != id))
+                return Conflict(new { message = $"Matricule '{dto.Matricule}' déjà utilisé." });
+            if (!await _context.Filieres.AnyAsync(f => f.Id == dto.FiliereId))
+                return BadRequest(new { message = $"FiliereId {dto.FiliereId} introuvable." });
+
             etudiant.Matricule = dto.Matricule;
             etudiant.Nom       = dto.Nom;
             etudiant.Prenom    = dto.Prenom;

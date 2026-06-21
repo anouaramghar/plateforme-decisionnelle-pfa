@@ -57,7 +57,12 @@ app.use("/api/copilotkit", (req, res, next) => {
   }
 
   try {
-    jwt.verify(token, secret);
+    // Pin the algorithm (rejects alg-confusion / "none") and validate issuer +
+    // audience when configured, matching the backend's token validation.
+    const opts: jwt.VerifyOptions = { algorithms: ["HS256"] };
+    if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
+    if (process.env.JWT_AUDIENCE) opts.audience = process.env.JWT_AUDIENCE;
+    jwt.verify(token, secret, opts);
     authStore.run(token, () => next());
   } catch (err: any) {
     console.error("JWT validation error:", err.message);

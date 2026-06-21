@@ -87,6 +87,17 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Note>> PostNote(CreateNoteDto dto)
         {
+            // Validate FKs + uniqueness up front so a bad reference or a duplicate
+            // returns 404/409 instead of letting SQL throw an unhandled 500.
+            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null))
+                return NotFound(new { message = "Etudiant actif introuvable." });
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+                return NotFound(new { message = "Module introuvable." });
+            if (await _context.Notes.AnyAsync(n =>
+                    n.EtudiantId == dto.EtudiantId && n.ModuleId == dto.ModuleId
+                    && n.Annee == dto.Annee && n.Semestre == dto.Semestre))
+                return Conflict(new { message = "Une note existe déjà pour cet étudiant, ce module et cette période." });
+
             var note = new Note
             {
                 EtudiantId = dto.EtudiantId,

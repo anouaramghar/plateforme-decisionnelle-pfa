@@ -490,8 +490,22 @@ namespace PlateformePFA.API.Services
 
         private static string CsvEscape(string v)
         {
+            v = NeutralizeFormula(v);
             if (v.Contains(',') || v.Contains('"') || v.Contains('\n'))
                 return "\"" + v.Replace("\"", "\"\"") + "\"";
+            return v;
+        }
+
+        // CSV/formula injection guard: Excel/Sheets evaluate a cell whose text
+        // starts with = + - @ (or a control char that strips to one) as a formula
+        // on open. Student names and alert messages are user-controlled and flow
+        // into exports, so prefix a single quote to force literal display.
+        // (XLSX is unaffected — ClosedXML writes these as string-typed cells,
+        // which Excel never evaluates.)
+        private static string NeutralizeFormula(string v)
+        {
+            if (!string.IsNullOrEmpty(v) && v[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+                return "'" + v;
             return v;
         }
 

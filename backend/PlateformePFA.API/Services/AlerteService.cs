@@ -158,6 +158,43 @@ namespace PlateformePFA.API.Services
                 etudiantId, totalHeures);
         }
 
+        // ── ML risk alert ─────────────────────────────────────────
+        // Dedupe + escalate so re-running predictions doesn't spam duplicate
+        // RisqueEchec rows for the same student. Add-only: the caller owns the
+        // SaveChanges so a batch persists predictions + alerts in one round-trip.
+        // ponytail: one indexed query per high-risk student; fine at ENIAD scale
+        // (hundreds), bulk-preload the open set if cohorts ever grow large.
+        public async Task UpsertRiskAlertAsync(int etudiantId, string niveau, string message)
+        {
+            if (niveau is not ("Eleve" or "Critique")) return;
+
+            var existing = await _context.Alertes
+                .FirstOrDefaultAsync(a =>
+                    a.EtudiantId == etudiantId
+                    && a.Type    == "RisqueEchec"
+                    && !a.Resolue);
+
+            if (existing != null)
+            {
+                if (NiveauRank[niveau] > NiveauRank[existing.Niveau])
+                {
+                    existing.Niveau  = niveau;
+                    existing.Message = message;
+                }
+                return;
+            }
+
+            _context.Alertes.Add(new Alerte
+            {
+                EtudiantId = etudiantId,
+                Type       = "RisqueEchec",
+                Niveau     = niveau,
+                Message    = message,
+                Resolue    = false,
+                CreeLe     = DateTime.UtcNow,
+            });
+        }
+
         // ── Full scan ─────────────────────────────────────────────
         public async Task<(int notes, int absences)> ScanAllAsync()
         {

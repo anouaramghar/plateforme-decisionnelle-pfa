@@ -26,6 +26,7 @@ namespace PlateformePFA.API.Controllers
         private readonly ILogger<PredictionsController> _logger;
         private readonly IAuditService _audit;
         private readonly RiskScorer _riskScorer;
+        private readonly IAlerteService _alertes;
 
         public PredictionsController(
             AppDbContext context,
@@ -33,7 +34,8 @@ namespace PlateformePFA.API.Controllers
             IConfiguration configuration,
             ILogger<PredictionsController> logger,
             IAuditService audit,
-            RiskScorer riskScorer)
+            RiskScorer riskScorer,
+            IAlerteService alertes)
         {
             _context           = context;
             _httpClientFactory = httpClientFactory;
@@ -41,6 +43,7 @@ namespace PlateformePFA.API.Controllers
             _logger            = logger;
             _audit             = audit;
             _riskScorer        = riskScorer;
+            _alertes           = alertes;
         }
 
         // GET: api/predictions/metrics — proxies the ML service's /metrics so
@@ -381,15 +384,11 @@ namespace PlateformePFA.API.Controllers
                     {
                         result.RisqueEleve++;
 
-                        _context.Alertes.Add(new Alerte
-                        {
-                            EtudiantId = student.Id,
-                            Type       = "RisqueEchec",
-                            Niveau     = niveauRisque,
-                            Message    = $"Risque élevé détecté : {niveauRisque} ({scoreRisque:P0})",
-                            Resolue    = false,
-                            CreeLe     = DateTime.UtcNow,
-                        });
+                        // Dedupe + escalate instead of appending a fresh alert on
+                        // every batch run (otherwise re-running fills Alertes with dupes).
+                        await _alertes.UpsertRiskAlertAsync(
+                            student.Id, niveauRisque,
+                            $"Risque élevé détecté : {niveauRisque} ({scoreRisque:P0})");
                     }
                 }
 
@@ -649,17 +648,12 @@ namespace PlateformePFA.API.Controllers
 
             // Insert an Alerte for high-risk predictions. Trust the ML label —
             // single source of truth for thresholds, no duplicated magic numbers.
+            // Dedupe + escalate so repeated predictions don't pile up duplicates.
             if (niveauRisque is "Eleve" or "Critique")
             {
-                _context.Alertes.Add(new Alerte
-                {
-                    EtudiantId = etudiantId,
-                    Type       = "RisqueEchec",
-                    Niveau     = niveauRisque,
-                    Message    = $"Risque élevé détecté : {niveauRisque} ({scoreRisque:P0})",
-                    Resolue    = false,
-                    CreeLe     = DateTime.UtcNow,
-                });
+                await _alertes.UpsertRiskAlertAsync(
+                    etudiantId, niveauRisque,
+                    $"Risque élevé détecté : {niveauRisque} ({scoreRisque:P0})");
                 await _context.SaveChangesAsync();
                 _logger.LogInformation(
                     "Alerte créée automatiquement : EtudiantId={Id}, Niveau={N}",

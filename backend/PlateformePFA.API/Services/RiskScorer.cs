@@ -12,17 +12,22 @@ public class RiskScorer
         _context = context;
     }
 
-    public static decimal HeuristicScore(decimal moyenne, int absencesH)
-    {
-        var fromMoy = moyenne == 0m ? 0.4m
-            : moyenne < 10m ? 0.55m
-            : moyenne < 12m ? 0.32m
-            : 0.12m;
-        var fromAbs = absencesH > 30 ? 0.22m
-            : absencesH > 18 ? 0.12m
-            : 0m;
-        return Math.Min(0.98m, fromMoy + fromAbs);
-    }
+    // Step-function risk-factor weights. Exposed individually so the Copilot
+    // "explain" breakdown reuses the exact same values instead of duplicating
+    // the magic numbers (which would silently drift if either side changed).
+    public static decimal MoyenneWeight(decimal moyenne) =>
+        moyenne == 0m ? 0.4m
+        : moyenne < 10m ? 0.55m
+        : moyenne < 12m ? 0.32m
+        : 0.12m;
+
+    public static decimal AbsenceWeight(int absencesH) =>
+        absencesH > 30 ? 0.22m
+        : absencesH > 18 ? 0.12m
+        : 0m;
+
+    public static decimal HeuristicScore(decimal moyenne, int absencesH) =>
+        Math.Min(0.98m, MoyenneWeight(moyenne) + AbsenceWeight(absencesH));
 
     public decimal Score(decimal? moyenne, int absencesH, int etudiantId,
         IReadOnlyDictionary<int, decimal> latestPredictions)

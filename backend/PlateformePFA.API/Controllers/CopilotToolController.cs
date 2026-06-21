@@ -12,12 +12,12 @@ using PlateformePFA.API.Services;
 namespace PlateformePFA.API.Controllers
 {
     /// <summary>
-    /// Tool callback surface for the Copilot agent-service. The agent loop POSTs
-    /// here once per tool the LLM decides to call. Every tool returns the
-    /// {ok,data}|{ok,error,hint} envelope the LLM is trained to recover from.
+    /// Tool callback surface for the Copilot runtime (copilot-runtime, CopilotKit).
+    /// The agent POSTs here once per tool the LLM decides to call. Every tool
+    /// returns the {ok,data}|{ok,error,hint} envelope the LLM is trained to recover from.
     ///
     /// Two gates: the user's JWT ([Authorize], so tools run with the caller's
-    /// role — L2) AND the agent-service shared secret (X-Internal-Token), because
+    /// role — L2) AND the copilot-runtime shared secret (X-Internal-Token), because
     /// this route is reachable through nginx like any /api route and must not be
     /// callable by a logged-in user bypassing the agent loop.
     /// </summary>
@@ -481,10 +481,10 @@ namespace PlateformePFA.API.Controllers
             var modVal = s.ModulesValides;
             var modTotal = s.ModulesTotal;
 
-            // Risk factor weights — use the same step-function values as the heuristic
-            // score formula so that the displayed breakdown matches the headline score.
-            var wMoy  = moy == 0m ? 0.4m : moy < 10m ? 0.55m : moy < 12m ? 0.32m : 0.12m;
-            var wAbs  = abs > 30  ? 0.22m : abs > 18  ? 0.12m : 0m;
+            // Risk factor weights — reuse the heuristic score's step functions so the
+            // displayed breakdown can never drift from the headline score.
+            var wMoy  = RiskScorer.MoyenneWeight(moy);
+            var wAbs  = RiskScorer.AbsenceWeight(abs);
             var wMod  = modTotal > 0 ? 1.0m - (modVal / (decimal)modTotal) : 0m;
 
             var wSum = wMoy + wAbs + wMod;

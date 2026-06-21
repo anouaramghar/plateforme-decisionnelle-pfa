@@ -21,15 +21,16 @@ BI & predictive-analytics platform for student performance monitoring at ENIAD B
 
 ```
 Internet → nginx:80 (pfa_public)
-               ├─ /api/*  → backend:8080
-               └─ /*      → frontend:8080
+               ├─ /api/copilotkit → copilot-runtime:4000
+               ├─ /api/*          → backend:8080
+               └─ /*              → frontend:8080
 
-backend:8080 → ml-service:8000     (pfa_internal_ml)
-backend:8080 → agent-service:8001  (pfa_internal_ml)
-backend:8080 → db:1433             (pfa_internal_db)
+copilot-runtime:4000 → backend:8080   (tool callbacks via /api/copilot/tool/*)
+backend:8080         → ml-service:8000 (pfa_internal_ml)
+backend:8080         → db:1433         (pfa_internal_db)
 ```
 
-Three isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`. ML service, agent service, and database are unreachable from the public internet (`internal: true`).
+Three isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`. ML service and database are unreachable from the public internet (`internal: true`).
 
 ---
 
@@ -70,14 +71,12 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-### Agent Service (FastAPI + NVIDIA NIM)
+### CopilotKit Runtime (Node + NVIDIA NIM)
 ```bash
-cd agent-service
-python -m venv .venv && .venv/Scripts/activate
-pip install -r requirements.txt
-# Requires AGENT_INTERNAL_TOKEN + NVIDIA_NIM_API_KEY in env
-uvicorn main:app --reload --port 8001
-pytest tests/ -v
+cd copilot-runtime
+npm install
+# Requires AGENT_INTERNAL_TOKEN + NVIDIA_NIM_API_KEY + JWT_SECRET in env
+npm run dev     # http://localhost:4000/api/copilotkit
 ```
 
 ### Frontend (Vite + React)
@@ -161,6 +160,6 @@ See `.env.example` for the full annotated list. Required at minimum:
 | Backend API | ✅ Complete |
 | ML Service | ✅ Complete |
 | Frontend — all 5 pages | ✅ Complete |
-| Copilot agent-service | 🔄 P1.A + P1.B + P2 done (2 tools: `get_student`, `list_at_risk`) |
+| Copilot (CopilotKit runtime) | 🔄 5 tools: `get_student`, `list_at_risk`, `query_dw`, `draft_alert`, `explain_risk` |
 | Copilot frontend panel | ❌ Not started |
 | End-to-end tests | ⏳ Pending |

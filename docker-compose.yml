@@ -66,11 +66,11 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_healthy
-      # NOTE: agent-service is intentionally NOT a startup gate. Copilot is an
+      # NOTE: copilot-runtime is intentionally NOT a startup gate. Copilot is an
       # optional add-on; the BI platform (auth, students, notes, exports) must
       # boot and stay available even if the AI sidecar is down or unhealthy.
-      # CopilotController surfaces a clean SSE `error` event when it can't reach
-      # agent-service, so no hard dependency is needed here.
+      # The frontend surfaces a clean error when it can't reach copilot-runtime,
+      # so no hard dependency is needed here.
     healthcheck:
       # curl is installed in the backend Dockerfile runtime stage.
       test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/health || exit 1"]
