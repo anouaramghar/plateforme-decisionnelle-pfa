@@ -394,6 +394,7 @@ function EtudiantsTab() {
   const [search, setSearch]                 = useState('')
   const [filterFiliere, setFilterFiliere]   = useState('')
   const [filterNiveau, setFilterNiveau]     = useState('')
+  const [successMsg, setSuccessMsg]         = useState<string | null>(null)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['admin-etudiants'] })
@@ -423,7 +424,13 @@ function EtudiantsTab() {
 
   const createMutation = useMutation({
     mutationFn: createEtudiant,
-    onSuccess: () => { invalidate(); setShowCreate(false) },
+    onSuccess: (_result, vars) => {
+      invalidate()
+      setShowCreate(false)
+      const filCode = filieres.find(f => f.id === vars.filiereId)?.code ?? vars.filiereId
+      setSuccessMsg(`${vars.prenom} ${vars.nom} a été inscrit(e) en ${filCode} — ${vars.niveau}.`)
+      setTimeout(() => setSuccessMsg(null), 5000)
+    },
   })
 
   const updateMutation = useMutation({
@@ -492,6 +499,24 @@ function EtudiantsTab() {
           Nouvel étudiant
         </button>
       </div>
+
+      {/* Success banner */}
+      {successMsg && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-[13px]"
+          style={{
+            background: 'color-mix(in oklch, var(--ok) 10%, transparent)',
+            border: '1px solid color-mix(in oklch, var(--ok) 30%, transparent)',
+            color: 'var(--ok)',
+          }}
+        >
+          <Icon name="check" size={15} style={{ flexShrink: 0 }} />
+          <span className="flex-1 font-medium">{successMsg}</span>
+          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--ok)' }} onClick={() => setSuccessMsg(null)}>
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
 
       {showCreate && (
         <EtudiantForm
