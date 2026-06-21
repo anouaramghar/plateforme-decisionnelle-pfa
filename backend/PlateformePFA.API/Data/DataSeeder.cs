@@ -146,26 +146,37 @@ namespace PlateformePFA.API.Data
                 .ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
 
             // ==========================================
-            // 5. NOTES — profils réalistes et cohérents avec les seuils ML
+            // 5. NOTES — 3 profils pour forcer le modèle ML à apprendre
+            //    une frontière probabiliste (et non binaire) :
             //
-            //  À risque (25 %, index % 4 == 3, seed=42 → déterministe) :
-            //    NoteExamen 1–7, NoteTD 4–12, NoteTP 4–12
-            //    → NoteFinal 2.2 – 9.0  (clairement < 10)
+            //  À risque   (25 %, i%4==3) :
+            //    NoteExamen 1–7,  NoteTD 3–11, NoteTP 3–11
+            //    → NoteFinal 2–9  (clairement < 10, at_risk=1 dans DW)
             //
-            //  Normal (75 %) :
-            //    NoteExamen 8–18, NoteTD 10–20, NoteTP 10–20
-            //    → NoteFinal 8.8 – 18.8 (majoritairement > 10, réaliste)
+            //  Fragile    (25 %, i%4==1) :
+            //    NoteExamen 5–13, NoteTD 7–15, NoteTP 7–15
+            //    → NoteFinal 6–14 (croise le seuil 10 → zone grise)
+            //    → at_risk=1 quand moy<10, at_risk=0 quand moy≥10
+            //    → force le modèle à prédire 30–70% dans cette zone
+            //
+            //  Normal     (50 %, reste) :
+            //    NoteExamen 10–18, NoteTD 12–20, NoteTP 12–20
+            //    → NoteFinal 11–19 (clairement > 10, at_risk=0 dans DW)
             // ==========================================
             var noteRng = new Random(42);
 
             var atRiskIds = new HashSet<int>(
                 etudiants.Where((_, i) => i % 4 == 3).Select(e => e.Id)
             );
+            var fragileIds = new HashSet<int>(
+                etudiants.Where((_, i) => i % 4 == 1).Select(e => e.Id)
+            );
 
             var notes = new List<Note>();
             foreach (var etudiant in etudiants)
             {
                 bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
+                bool isFragile = !isAtRisk && fragileIds.Contains(etudiant.Id);
                 var  moduleIds = filiereModulesMap[etudiant.FiliereId];
 
                 foreach (var moduleId in moduleIds)
@@ -175,17 +186,24 @@ namespace PlateformePFA.API.Data
                         decimal noteExamen, noteTD, noteTP;
                         if (isAtRisk)
                         {
-                            // Profil en difficulté : exam très bas → NoteFinal 2–9
+                            // En difficulté : NoteFinal 2–9 (clairement < 10)
                             noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 6  + 1),  2); // 1–7
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 4),  2); // 4–12
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 4),  2); // 4–12
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2); // 3–11
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2); // 3–11
+                        }
+                        else if (isFragile)
+                        {
+                            // Fragile : NoteFinal 6–14 (zone grise autour de 10)
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 5),  2); // 5–13
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2); // 7–15
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2); // 7–15
                         }
                         else
                         {
-                            // Profil normal : exam correct → NoteFinal 9–19
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 10 + 8),  2); // 8–18
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2); // 10–20
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2); // 10–20
+                            // Normal : NoteFinal 11–19 (clairement > 10)
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 10), 2); // 10–18
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
                         }
 
                         notes.Add(new Note
@@ -207,15 +225,17 @@ namespace PlateformePFA.API.Data
             context.SaveChanges();
 
             // ==========================================
-            // 6. ABSENCES — corrélées au profil de risque
+            // 6. ABSENCES — 3 profils cohérents avec les notes
             //
-            //  À risque : 5–14 événements × 2–6h → total 10–84h (avg ~38h)
-            //             → dépasse le seuil 30h de l'heuristique RiskScorer
-            //             → taux DW ≈ 38h / (4 modules × 32h) ≈ 30 % (feature ML utile)
+            //  À risque : 7–14 événements × 2–6h → total 14–84h (avg ~48h)
+            //             → dépasse le seuil 30h → taux DW ~37%
             //
-            //  Normal   : 0–5  événements × 2–4h → total 0–20h  (avg ~7h)
-            //             → sous le seuil 18h de l'heuristique
-            //             → taux DW ≈ 7h / 128h ≈ 5 %
+            //  Fragile  : 3–8  événements × 2–4h → total 6–32h  (avg ~20h)
+            //             → zone grise : parfois > 18h, rarement > 30h
+            //             → taux DW ~16% → model incertain
+            //
+            //  Normal   : 0–3  événements × 2–4h → total 0–12h  (avg ~4h)
+            //             → clairement sous 18h → taux DW ~3%
             // ==========================================
             var absRng   = new Random(123);
             var absences = new List<Absence>();
@@ -223,11 +243,12 @@ namespace PlateformePFA.API.Data
             foreach (var etudiant in etudiants)
             {
                 bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
+                bool isFragile = !isAtRisk && fragileIds.Contains(etudiant.Id);
                 var  moduleIds = filiereModulesMap[etudiant.FiliereId];
 
-                int nbEvents = isAtRisk
-                    ? absRng.Next(5, 15)   // 5–14 absences
-                    : absRng.Next(0, 6);   // 0–5 absences
+                int nbEvents = isAtRisk  ? absRng.Next(7, 15)
+                             : isFragile ? absRng.Next(3, 9)
+                             :             absRng.Next(0, 4);
 
                 for (int i = 0; i < nbEvents; i++)
                 {
@@ -236,10 +257,10 @@ namespace PlateformePFA.API.Data
                     {
                         EtudiantId   = etudiant.Id,
                         ModuleId     = moduleIds[absRng.Next(moduleIds.Count)],
-                        NombreHeures = isAtRisk
-                            ? absRng.Next(1, 4) * 2   // 2, 4 ou 6 heures
-                            : absRng.Next(1, 3) * 2,  // 2 ou 4 heures
-                        Justifiee    = absRng.NextDouble() < (isAtRisk ? 0.15 : 0.50),
+                        NombreHeures = isAtRisk  ? absRng.Next(1, 4) * 2   // 2, 4 ou 6 h
+                                     : isFragile ? absRng.Next(1, 3) * 2   // 2 ou 4 h
+                                     :             absRng.Next(1, 3) * 2,   // 2 ou 4 h
+                        Justifiee    = absRng.NextDouble() < (isAtRisk ? 0.15 : isFragile ? 0.35 : 0.55),
                         DateAbsence  = dateAbsence,
                         CreeLe       = dateAbsence,
                     });

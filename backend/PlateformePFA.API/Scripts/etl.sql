@@ -76,6 +76,7 @@ USING (
             FROM   PFA_DB.dbo.Absences a
             WHERE  a.EtudiantId = n.EtudiantId
               AND  a.ModuleId   = n.ModuleId
+              AND  a.Justifiee  = 0                        -- unjustified only (matches batch predict feature)
               -- Fix: for S2 the academic year starts in the *second* calendar
               -- year of the pair (e.g. 2026 for "2025/2026 S2"), not the first.
               AND  a.DateAbsence BETWEEN

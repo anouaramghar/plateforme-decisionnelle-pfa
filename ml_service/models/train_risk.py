@@ -29,7 +29,7 @@ import joblib
 
 RANDOM_SEED = 42
 N_SAMPLES = 1000
-MODEL_VERSION = "1.4.0"
+MODEL_VERSION = "1.5.0"
 
 ML_MODELS_DIR = Path(__file__).parent.parent / "saved_models"
 MODEL_PATH = ML_MODELS_DIR / "risk_model.joblib"
