@@ -120,9 +120,10 @@ interface DashboardSummary {
   retraitsCetteSemaine: number
 }
 
-async function fetchSummary(filiere: string): Promise<DashboardSummary> {
-  const params = filiere && filiere !== 'TOUS' ? `?filiere=${filiere}` : ''
-  const res = await api.get<DashboardSummary>(`/dashboard/summary${params}`)
+async function fetchSummary(filiere: string, period = 'S2'): Promise<DashboardSummary> {
+  const params = new URLSearchParams({ period })
+  if (filiere && filiere !== 'TOUS') params.set('filiere', filiere)
+  const res = await api.get<DashboardSummary>(`/dashboard/summary?${params}`)
   return res.data
 }
 
@@ -133,13 +134,23 @@ const ABS_MODES: { key: AbsTrendMode; label: string }[] = [
   { key: 'pct',       label: '%'         },
 ]
 
+type Period = '7j' | '30j' | 'S2' | 'Année'
+const PERIODS: Period[] = ['7j', '30j', 'S2', 'Année']
+const PERIOD_LABELS: Record<Period, string> = {
+  '7j':    '7 derniers jours',
+  '30j':   '30 derniers jours',
+  'S2':    '14 dernières semaines',
+  'Année': '12 derniers mois',
+}
+
 export default function Dashboard() {
   const { filiere } = useFiliere()
   const [absTrendMode, setAbsTrendMode] = useState<AbsTrendMode>('heures')
+  const [period, setPeriod] = useState<Period>('S2')
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['dashboard-summary', filiere],
-    queryFn: () => fetchSummary(filiere),
+    queryKey: ['dashboard-summary', filiere, period],
+    queryFn: () => fetchSummary(filiere, period),
     refetchInterval: 60_000,
   })
 
@@ -241,14 +252,15 @@ export default function Dashboard() {
             className="flex items-center rounded-lg overflow-hidden"
             style={{ border: '1px solid var(--border-2)', background: 'var(--surface)' }}
           >
-            {['7j', '30j', 'S2', 'Année'].map((p, i) => (
+            {PERIODS.map((p, i) => (
               <button
                 key={p}
+                onClick={() => setPeriod(p)}
                 className="px-3 py-1.5 text-[12px] transition"
                 style={{
-                  background: i === 2 ? 'var(--text)' : 'transparent',
-                  color: i === 2 ? 'var(--bg)' : 'var(--text-3)',
-                  fontWeight: i === 2 ? 500 : 400,
+                  background: period === p ? 'var(--text)' : 'transparent',
+                  color: period === p ? 'var(--bg)' : 'var(--text-3)',
+                  fontWeight: period === p ? 500 : 400,
                   borderRight: i < 3 ? '1px solid var(--border)' : 'none',
                 }}
               >
@@ -427,7 +439,7 @@ export default function Dashboard() {
       <div className="card p-5">
         <SectionHeader
           title="Heures d'absence cumulées"
-          subtitle="14 dernières semaines — toutes filières"
+          subtitle={`${PERIOD_LABELS[period]}${filiere !== 'TOUS' ? ` — filière ${filiere}` : ' — toutes filières'}`}
           right={
             <>
               {absTrend.length > 0 && (() => {

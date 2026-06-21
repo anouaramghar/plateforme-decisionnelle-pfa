@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Dashboard;
 using PlateformePFA.API.Services;
+using System.Globalization;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -55,7 +56,9 @@ namespace PlateformePFA.API.Controllers
         }
 
         [HttpGet("summary")]
-        public async Task<ActionResult<DashboardSummaryDto>> GetSummary([FromQuery] string? filiere = null)
+        public async Task<ActionResult<DashboardSummaryDto>> GetSummary(
+            [FromQuery] string? filiere = null,
+            [FromQuery] string? period  = "S2")
         {
             bool isFiltered = !string.IsNullOrWhiteSpace(filiere) && filiere != "TOUS";
 
@@ -156,10 +159,22 @@ namespace PlateformePFA.API.Controllers
                 new() { Label = "Élevé",  N = withRisk.Count(s => s.Score >= 0.65m),                     Color = "#dc2626" },
             };
 
-            // 9) Absence trend — last 14 ISO weeks. Bucket on the host side
-            //    because SQL Server's DATEPART(week, ...) varies by language
-            //    settings and this is only ~400 rows seeded.
-            var since = DateTime.UtcNow.Date.AddDays(-14 * 7);
+            // 9) Absence trend — period-aware bucketing.
+            //    period  │ buckets │ bucket size │ label style
+            //    ────────┼─────────┼─────────────┼────────────
+            //    7j      │  7      │  1 day      │ "Lun", "Mar" …
+            //    30j     │ 10      │  3 days     │ "J1" … "J10"
+            //    S2      │ 14      │  7 days     │ "S1" … "S14"
+            //    Année   │ 12      │ 30 days     │ "Jan", "Fév" …
+            var (nBuckets, bucketDays) = (period ?? "S2") switch
+            {
+                "7j"    => (7,  1),
+                "30j"   => (10, 3),
+                "Année" => (12, 30),
+                _       => (14, 7),
+            };
+
+            var since = DateTime.UtcNow.Date.AddDays(-(nBuckets * bucketDays));
             var absencesQuery = _context.Absences.AsNoTracking().Where(a => a.DateAbsence >= since);
             if (isFiltered)
                 absencesQuery = absencesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
@@ -167,19 +182,29 @@ namespace PlateformePFA.API.Controllers
                 .Select(a => new { a.DateAbsence, a.NombreHeures, a.EtudiantId })
                 .ToListAsync();
 
+            var frFR = new CultureInfo("fr-FR");
             var trend = new List<AbsenceTrendDto>();
-            for (int w = 13; w >= 0; w--)
+            for (int i = nBuckets - 1; i >= 0; i--)
             {
-                var weekStart = DateTime.UtcNow.Date.AddDays(-w * 7 - 6);
-                var weekEnd   = weekStart.AddDays(7);
-                var week = rawAbsences
-                    .Where(a => a.DateAbsence >= weekStart && a.DateAbsence < weekEnd)
+                var bucketStart = DateTime.UtcNow.Date.AddDays(-i * bucketDays - (bucketDays - 1));
+                var bucketEnd   = bucketStart.AddDays(bucketDays);
+                var bucket = rawAbsences
+                    .Where(a => a.DateAbsence >= bucketStart && a.DateAbsence < bucketEnd)
                     .ToList();
+
+                var label = (period ?? "S2") switch
+                {
+                    "7j"    => bucketStart.ToString("ddd", frFR).TrimEnd('.'),
+                    "30j"   => $"J{nBuckets - i}",
+                    "Année" => bucketStart.ToString("MMM", frFR).TrimEnd('.'),
+                    _       => $"S{nBuckets - i}",
+                };
+
                 trend.Add(new AbsenceTrendDto
                 {
-                    Semaine    = $"S{14 - w}",
-                    Heures     = week.Sum(a => a.NombreHeures),
-                    NbEtudiants = week.Select(a => a.EtudiantId).Distinct().Count(),
+                    Semaine     = label,
+                    Heures      = bucket.Sum(a => a.NombreHeures),
+                    NbEtudiants = bucket.Select(a => a.EtudiantId).Distinct().Count(),
                 });
             }
 
