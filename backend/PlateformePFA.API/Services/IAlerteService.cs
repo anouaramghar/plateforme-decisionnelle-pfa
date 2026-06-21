@@ -17,5 +17,11 @@ namespace PlateformePFA.API.Services
         /// Check if the student's cumulative unjustified absences warrant an "AbsenceExcessive" alert.
         /// </summary>
         Task CheckAbsenceAlertAsync(int etudiantId);
+
+        /// <summary>
+        /// Full scan: checks every student's notes and absences and creates missing alerts.
+        /// Call after seeding or bulk imports.
+        /// </summary>
+        Task<(int notes, int absences)> ScanAllAsync();
     }
 }

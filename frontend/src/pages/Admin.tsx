@@ -58,6 +58,11 @@ async function syncDw(): Promise<{ message: string; timestamp: string }> {
   return res.data
 }
 
+async function generateAlerts(): Promise<{ message: string; notes: number; absences: number }> {
+  const res = await api.post<{ message: string; notes: number; absences: number }>('/admin/generate-alerts')
+  return res.data
+}
+
 interface Filiere { id: number; code: string; intitule: string }
 interface EtudiantRow {
   id: number; matricule: string; nom: string; prenom: string; email?: string
@@ -762,18 +767,25 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
 // ── DW sync tab ───────────────────────────────────────────────────────────────
 
 function DwTab() {
-  const [lastSync, setLastSync] = useState<string | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastSync, setLastSync]       = useState<string | null>(null)
+  const [syncError, setSyncError]     = useState<string | null>(null)
+  const [alertsMsg, setAlertsMsg]     = useState<string | null>(null)
+  const [alertsError, setAlertsError] = useState<string | null>(null)
 
   const syncMutation = useMutation({
     mutationFn: syncDw,
+    onSuccess: (data) => { setLastSync(data.timestamp); setSyncError(null) },
+    onError: (err: Error) => { setSyncError(err.message) },
+  })
+
+  const alertsMutation = useMutation({
+    mutationFn: generateAlerts,
     onSuccess: (data) => {
-      setLastSync(data.timestamp)
-      setSyncError(null)
+      setAlertsMsg(data.message)
+      setAlertsError(null)
+      setTimeout(() => setAlertsMsg(null), 6000)
     },
-    onError: (err: Error) => {
-      setSyncError(err.message)
-    },
+    onError: (err: Error) => { setAlertsError(err.message) },
   })
 
   return (
@@ -836,6 +848,42 @@ function DwTab() {
         >
           <Icon name={syncMutation.isPending ? 'refresh' : 'refresh'} size={14} />
           {syncMutation.isPending ? 'Synchronisation en cours…' : 'Lancer la synchronisation'}
+        </button>
+      </div>
+
+      {/* Generate alerts card */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-[14px] font-semibold">Génération des alertes</h3>
+            <p className="cap mt-1">
+              Analyse tous les étudiants et crée les alertes manquantes (Note faible, Absences excessives).
+              À lancer après un seeding ou un import bulk.
+            </p>
+          </div>
+          <Icon name="bell" size={22} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+        </div>
+
+        {alertsMsg && (
+          <div className="rounded-lg px-4 py-3 text-[12.5px]" style={{ background: 'color-mix(in oklch, var(--ok) 10%, transparent)', border: '1px solid color-mix(in oklch, var(--ok) 30%, transparent)', color: 'var(--ok)' }}>
+            <Icon name="check" size={13} style={{ display: 'inline', marginRight: 6 }} />
+            {alertsMsg}
+          </div>
+        )}
+        {alertsError && (
+          <div className="rounded-lg px-4 py-3 text-[12.5px]" style={{ background: 'color-mix(in oklch, var(--bad) 8%, transparent)', border: '1px solid color-mix(in oklch, var(--bad) 25%, transparent)', color: 'var(--bad)' }}>
+            <strong>Erreur :</strong> {alertsError}
+          </div>
+        )}
+
+        <button
+          className="btn btn-accent"
+          onClick={() => alertsMutation.mutate()}
+          disabled={alertsMutation.isPending}
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
+          <Icon name="bell" size={14} />
+          {alertsMutation.isPending ? 'Scan en cours…' : 'Générer les alertes manquantes'}
         </button>
       </div>
 

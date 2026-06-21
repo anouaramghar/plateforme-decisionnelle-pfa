@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using PlateformePFA.API.Services;
 
 namespace PlateformePFA.API.Controllers;
 
@@ -10,19 +11,18 @@ namespace PlateformePFA.API.Controllers;
 [Authorize(Roles = "Admin")]
 public class AdminController : ControllerBase
 {
-    // Splits a T-SQL script on a `GO` batch separator that sits on its own line,
-    // tolerating both LF (\n) and CRLF (\r\n) endings and any trailing whitespace.
-    // Avoids the `\nGO` literal split, which silently no-ops on Windows checkouts.
     private static readonly Regex GoBatchSeparator =
         new(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IConfiguration _config;
     private readonly ILogger<AdminController> _logger;
+    private readonly IAlerteService _alerteService;
 
-    public AdminController(IConfiguration config, ILogger<AdminController> logger)
+    public AdminController(IConfiguration config, ILogger<AdminController> logger, IAlerteService alerteService)
     {
-        _config = config;
-        _logger = logger;
+        _config        = config;
+        _logger        = logger;
+        _alerteService = alerteService;
     }
 
     /// <summary>
@@ -65,6 +65,31 @@ public class AdminController : ControllerBase
         {
             _logger.LogError(ex, "DW sync failed");
             return StatusCode(500, new { message = "Erreur lors de la synchronisation.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Scans all students and generates missing NoteFaible / AbsenceExcessive alerts.
+    /// Call once after seeding or bulk imports.
+    /// </summary>
+    [HttpPost("generate-alerts")]
+    public async Task<IActionResult> GenerateAlerts()
+    {
+        try
+        {
+            var (notes, absences) = await _alerteService.ScanAllAsync();
+            return Ok(new
+            {
+                message  = $"Scan terminé : {notes} alerte(s) NoteFaible, {absences} alerte(s) AbsenceExcessive créées.",
+                notes,
+                absences,
+                timestamp = DateTime.UtcNow,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "generate-alerts failed");
+            return StatusCode(500, new { message = "Erreur lors du scan.", detail = ex.Message });
         }
     }
 }

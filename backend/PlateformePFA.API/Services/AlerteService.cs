@@ -157,5 +157,44 @@ namespace PlateformePFA.API.Services
                 "Alerte créée : AbsenceExcessive — EtudiantId={E}, Heures={H}",
                 etudiantId, totalHeures);
         }
+
+        // ── Full scan ─────────────────────────────────────────────
+        public async Task<(int notes, int absences)> ScanAllAsync()
+        {
+            var etudiantIds = await _context.Etudiants
+                .AsNoTracking()
+                .Select(e => e.Id)
+                .ToListAsync();
+
+            var noteAlerts = 0;
+            var absenceAlerts = 0;
+
+            // Count existing open alerts before scan (to detect new ones created).
+            var beforeNotes    = await _context.Alertes.CountAsync(a => a.Type == "NoteFaible"       && !a.Resolue);
+            var beforeAbsences = await _context.Alertes.CountAsync(a => a.Type == "AbsenceExcessive" && !a.Resolue);
+
+            // Check notes: all (etudiantId, moduleId) pairs that have a NoteFinal.
+            var notePairs = await _context.Notes
+                .Where(n => n.NoteFinal.HasValue)
+                .Select(n => new { n.EtudiantId, n.ModuleId })
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var p in notePairs)
+                await CheckNoteAlertAsync(p.EtudiantId, p.ModuleId);
+
+            // Check absences for every student.
+            foreach (var id in etudiantIds)
+                await CheckAbsenceAlertAsync(id);
+
+            noteAlerts    = await _context.Alertes.CountAsync(a => a.Type == "NoteFaible"       && !a.Resolue) - beforeNotes;
+            absenceAlerts = await _context.Alertes.CountAsync(a => a.Type == "AbsenceExcessive" && !a.Resolue) - beforeAbsences;
+
+            _logger.LogInformation(
+                "ScanAll terminé : +{N} alertes NoteFaible, +{A} alertes AbsenceExcessive",
+                noteAlerts, absenceAlerts);
+
+            return (noteAlerts, absenceAlerts);
+        }
     }
 }
