@@ -44,47 +44,31 @@ export default function Login() {
       <div
         className="hidden lg:flex flex-col justify-between p-10 flex-1"
         style={{
-          background: 'linear-gradient(165deg, #0c0a09 0%, #1c1917 60%, #292524 100%)',
+          backgroundImage: 'url(/ecole-eniad.avif)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
           color: '#fff',
           position: 'relative',
           overflow: 'hidden',
         }}
       >
-        {/* ambient amber glow */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '-20%',
-            right: '-15%',
-            width: 520,
-            height: 520,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(249,115,22,0.32) 0%, rgba(249,115,22,0) 60%)',
-            filter: 'blur(20px)',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '-10%',
-            left: '-10%',
-            width: 420,
-            height: 420,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(249,115,22,0.12) 0%, rgba(0,0,0,0) 70%)',
-          }}
-        />
-
-        {/* grid lines */}
+        {/* dark overlay for readability */}
         <div
           style={{
             position: 'absolute',
             inset: 0,
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-            maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 80%)',
-            WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 80%)',
+            background: 'linear-gradient(165deg, rgba(12,10,9,0.78) 0%, rgba(28,25,23,0.72) 60%, rgba(41,37,36,0.65) 100%)',
+          }}
+        />
+        {/* amber glow accent */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '40%',
+            background: 'linear-gradient(to top, rgba(249,115,22,0.18) 0%, transparent 100%)',
           }}
         />
 
