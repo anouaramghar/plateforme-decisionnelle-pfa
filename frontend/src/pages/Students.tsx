@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -73,10 +74,16 @@ export default function Students() {
     refetchInterval: 60_000,
   })
 
+  const navigate = useNavigate()
+  const csvRef = useRef<HTMLInputElement>(null)
+
   const [q, setQ] = useState('')
   const [niveau, setNiveau] = useState('Tous')
   const [risque, setRisque] = useState('Tous')
   const [filiere, setFiliere] = useState('Tous')
+  const [statut, setStatut] = useState('Tous')
+  const [showExtra, setShowExtra] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
   const [pendingAlert, setPendingAlert] = useState<{
@@ -90,17 +97,68 @@ export default function Students() {
         if (filiere !== 'Tous' && e.filiereCode !== filiere) return false
         if (niveau !== 'Tous' && e.niveau !== niveau) return false
         if (risque !== 'Tous' && e.risque !== risque) return false
+        if (statut !== 'Tous' && e.statut !== statut) return false
         if (q && !(e.nomComplet.toLowerCase().includes(q.toLowerCase()) || e.matricule.toLowerCase().includes(q.toLowerCase())))
           return false
         return true
       }),
-    [all, filiere, niveau, risque, q],
+    [all, filiere, niveau, risque, statut, q],
   )
-  // Reset to page 1 whenever filters change, otherwise the user can land on
-  // an empty page (e.g. page 3 of a result set that now only has 1 page).
   useEffect(() => {
     setPage(1)
-  }, [filiere, niveau, risque, q])
+  }, [filiere, niveau, risque, statut, q])
+
+  const handleExport = () => {
+    const rows = filtered.map(e => ({
+      Matricule: e.matricule,
+      Nom: e.nom,
+      Prénom: e.prenom,
+      Filière: e.filiereCode,
+      Niveau: e.niveau,
+      Moyenne: e.moyenne,
+      Absences: `${e.absences}h`,
+      'Modules validés': `${e.modulesValides}/${e.modulesTotal}`,
+      'Score risque': `${Math.round(e.scoreRisque * 100)}%`,
+      Statut: e.statut,
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Étudiants')
+    XLSX.writeFile(wb, `etudiants-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      if (lines.length < 2) return
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase())
+      const filRes = await api.get<{ items: { id: number; code: string }[] }>('/filieres?pageSize=50')
+      const filMap = Object.fromEntries(filRes.data.items.map(f => [f.code.toLowerCase(), f.id]))
+      for (const line of lines.slice(1)) {
+        const cols = line.split(',').map(c => c.trim())
+        const row = Object.fromEntries(header.map((h, i) => [h, cols[i] ?? '']))
+        const filiereId = filMap[(row.filierecode ?? row.filiere ?? '').toLowerCase()]
+        if (!filiereId || !row.matricule) continue
+        await api.post('/etudiants', {
+          matricule: row.matricule,
+          nom: row.nom ?? '',
+          prenom: row.prenom ?? '',
+          email: row.email ?? '',
+          niveau: row.niveau ?? 'CP1',
+          annee: row.annee ?? '2025/2026',
+          filiereId,
+        })
+      }
+      refetch()
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
+  }
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
 
@@ -153,15 +211,19 @@ export default function Students() {
           <h1 className="text-[22px] font-semibold tracking-tight">Étudiants</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm">
+          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />
+          <button className="btn btn-sm" onClick={() => csvRef.current?.click()} disabled={importing}>
             <Icon name="upload" size={13} />
-            Importer CSV
+            {importing ? 'Import…' : 'Importer CSV'}
           </button>
-          <button className="btn btn-sm">
+          <button className="btn btn-sm" onClick={handleExport}>
             <Icon name="download" size={13} />
             Exporter
           </button>
-          <button className="btn btn-sm btn-accent">
+          <button
+            className="btn btn-sm btn-accent"
+            onClick={() => navigate('/admin', { state: { tab: 'etudiants', openCreate: true } })}
+          >
             <Icon name="plus" size={13} strokeWidth={2.2} />
             Inscrire
           </button>
@@ -180,23 +242,32 @@ export default function Students() {
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Rechercher par nom ou matricule…"
-            className="input pl-9"
+            className="input"
+            style={{ paddingLeft: '2.25rem' }}
           />
         </div>
         <Select value={filiere} onChange={setFiliere} options={FILIERES} label="Filière" />
         <Select value={niveau} onChange={setNiveau} options={NIVEAUX} label="Niveau" />
         <Select value={risque} onChange={setRisque} options={RISQUES} label="Risque" />
-        <button className="btn btn-sm btn-ghost">
+        {showExtra && (
+          <Select value={statut} onChange={setStatut} options={['Tous', 'Régulier', 'Suivi', 'En difficulté']} label="Statut" />
+        )}
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={() => setShowExtra(v => !v)}
+          style={{ color: showExtra ? 'var(--accent-700)' : undefined }}
+        >
           <Icon name="filter" size={13} />
           Plus de filtres
         </button>
-        {(q || filiere !== 'Tous' || niveau !== 'Tous' || risque !== 'Tous') && (
+        {(q || filiere !== 'Tous' || niveau !== 'Tous' || risque !== 'Tous' || statut !== 'Tous') && (
           <button
             onClick={() => {
               setQ('')
               setFiliere('Tous')
               setNiveau('Tous')
               setRisque('Tous')
+              setStatut('Tous')
             }}
             className="btn btn-sm btn-ghost"
             style={{ color: 'var(--accent-700)' }}
@@ -312,12 +383,29 @@ export default function Students() {
       </div>
       )}
 
-      {selected && <StudentDrawer student={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <StudentDrawer
+          student={selected}
+          onClose={() => setSelected(null)}
+          onAlert={(severite, message) => setPendingAlert({ student: selected, severite, message })}
+        />
+      )}
     </div>
   )
 }
 
-function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: () => void }) {
+function StudentDrawer({
+  student,
+  onClose,
+  onAlert,
+}: {
+  student: EtudiantRow
+  onClose: () => void
+  onAlert?: (severite: string, message: string) => void
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ['etudiant-notes', student.id],
     queryFn: () => fetchStudentNotes(student.id),
@@ -328,6 +416,66 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
     queryFn: () => fetchShap(student.id),
     retry: false,
   })
+
+  // ── Note form ──────────────────────────────────────────────────────────────
+  const [showNoteForm, setShowNoteForm] = useState(false)
+  const [noteForm, setNoteForm] = useState({
+    moduleId: 0, noteTD: '', noteTP: '', noteExamen: '', noteFinal: '', semestre: 'S1', annee: '2025/2026',
+  })
+  const [savingNote, setSavingNote]   = useState(false)
+  const [noteSuccess, setNoteSuccess] = useState(false)
+
+  const submitNote = async () => {
+    if (!noteForm.moduleId) return
+    setSavingNote(true)
+    try {
+      await api.post('/notes', {
+        etudiantId:  student.id,
+        moduleId:    noteForm.moduleId,
+        noteTD:      noteForm.noteTD      ? parseFloat(noteForm.noteTD)      : null,
+        noteTP:      noteForm.noteTP      ? parseFloat(noteForm.noteTP)      : null,
+        noteExamen:  noteForm.noteExamen  ? parseFloat(noteForm.noteExamen)  : null,
+        noteFinal:   noteForm.noteFinal   ? parseFloat(noteForm.noteFinal)   : null,
+        semestre:    noteForm.semestre,
+        annee:       noteForm.annee,
+      })
+      queryClient.invalidateQueries({ queryKey: ['etudiant-notes', student.id] })
+      queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
+      setShowNoteForm(false)
+      setNoteSuccess(true)
+      setTimeout(() => setNoteSuccess(false), 3000)
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
+  // ── Alert actions ──────────────────────────────────────────────────────────
+  const [sendingEntretien, setSendingEntretien] = useState(false)
+  const [entretienSent, setEntretienSent]       = useState(false)
+
+  const handleEnvoyerCoordination = () => {
+    onAlert?.(
+      'eleve',
+      `${student.nomComplet} (${student.filiereCode} ${student.niveau}) — score ML ${Math.round(student.scoreRisque * 100)}%, moyenne ${student.moyenne.toFixed(2)}/20. Suivi requis.`,
+    )
+    onClose()
+  }
+
+  const handlePlanifierEntretien = async () => {
+    setSendingEntretien(true)
+    try {
+      await api.post('/alertes', {
+        etudiantId: student.id,
+        type:       'RisqueEchec',
+        niveau:     'Eleve',
+        message:    `Entretien à planifier — ${student.nomComplet} · ${student.filiereCode} ${student.niveau} · Score ML : ${Math.round(student.scoreRisque * 100)}%`,
+      })
+      setEntretienSent(true)
+      setTimeout(() => setEntretienSent(false), 3000)
+    } finally {
+      setSendingEntretien(false)
+    }
+  }
 
   const moyenne = student.moyenne
   const riskColor =
@@ -498,12 +646,64 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
               title="Notes par module"
               subtitle={`${student.niveau} — ${student.filiereIntitule}`}
               right={
-                <button className="btn btn-sm">
+                <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
                   <Icon name="plus" size={12} />
-                  Saisir
+                  {showNoteForm ? 'Fermer' : 'Saisir'}
                 </button>
               }
             />
+            {noteSuccess && (
+              <div className="mb-2 px-3 py-2 rounded-lg text-[12.5px] font-medium" style={{ background: 'color-mix(in oklch, var(--ok) 12%, transparent)', color: 'var(--ok)' }}>
+                Note enregistrée avec succès.
+              </div>
+            )}
+            {showNoteForm && (
+              <div className="mb-3 p-4 rounded-xl border space-y-3" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="cap mb-1">Module</div>
+                    {notes.length > 0 ? (
+                      <select
+                        className="input"
+                        value={noteForm.moduleId}
+                        onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) }))}
+                      >
+                        <option value={0}>Choisir un module…</option>
+                        {notes.map(n => (
+                          <option key={n.moduleId} value={n.moduleId}>{n.code} — {n.nom}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input className="input" type="number" placeholder="ID du module" value={noteForm.moduleId || ''}
+                        onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) || 0 }))} />
+                    )}
+                  </div>
+                  <div>
+                    <div className="cap mb-1">Semestre</div>
+                    <select className="input" value={noteForm.semestre} onChange={e => setNoteForm(f => ({ ...f, semestre: e.target.value }))}>
+                      <option value="S1">S1</option>
+                      <option value="S2">S2</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['noteTD', 'noteTP', 'noteExamen', 'noteFinal'] as const).map((field, i) => (
+                    <div key={field}>
+                      <div className="cap mb-1 text-[11px]">{['CC', 'TP', 'Examen', 'Finale'][i]}</div>
+                      <input className="input" type="number" min={0} max={20} step={0.01} placeholder="/20"
+                        value={noteForm[field]}
+                        onChange={e => setNoteForm(f => ({ ...f, [field]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button className="btn btn-sm" onClick={() => setShowNoteForm(false)}>Annuler</button>
+                  <button className="btn btn-sm btn-accent" onClick={submitNote} disabled={savingNote || !noteForm.moduleId}>
+                    {savingNote ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="card overflow-hidden">
               <table className="tbl">
                 <thead>
@@ -622,13 +822,24 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
           className="p-4 flex items-center justify-between"
           style={{ borderTop: '1px solid var(--border)', background: 'var(--surface-2)' }}
         >
-          <button className="btn btn-sm">
+          <button
+            className="btn btn-sm"
+            onClick={() => { navigate(`/students/${student.id}`); onClose() }}
+          >
             <Icon name="ext" size={12} />
             Ouvrir la fiche complète
           </button>
           <div className="flex items-center gap-2">
-            <button className="btn btn-sm">Envoyer à la coordination</button>
-            <button className="btn btn-sm btn-accent">Planifier un entretien</button>
+            <button className="btn btn-sm" onClick={handleEnvoyerCoordination}>
+              Envoyer à la coordination
+            </button>
+            <button
+              className="btn btn-sm btn-accent"
+              onClick={handlePlanifierEntretien}
+              disabled={sendingEntretien}
+            >
+              {entretienSent ? 'Alerte créée ✓' : sendingEntretien ? 'Envoi…' : 'Planifier un entretien'}
+            </button>
           </div>
         </div>
       </div>

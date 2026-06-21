@@ -64,7 +64,7 @@ namespace PlateformePFA.API.Controllers
 
             // 1) Per-student aggregates: average final note + total absence hours.
             //    Pulled in a single round-trip; everything below is in-memory.
-            var studentsQuery = _context.Etudiants.AsNoTracking();
+            var studentsQuery = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 studentsQuery = studentsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
 
@@ -261,22 +261,26 @@ namespace PlateformePFA.API.Controllers
                 prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var prevActiveAlerts = await prevAlertsQuery.CountAsync();
 
-            // Student count trend: % growth in CreeLe last 30 days vs the prior 30 days.
+            // Student count trend: % growth of active students vs 30 days ago.
             var since30 = DateTime.UtcNow.AddDays(-30);
-            var since60 = DateTime.UtcNow.AddDays(-60);
-            var etudiantsBase = _context.Etudiants.AsNoTracking();
+            // activeBase: active students only (DesinscritLe == null), scoped to filière.
+            var activeBase = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
             if (isFiltered)
-                etudiantsBase = etudiantsBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
-            var newLast30 = await etudiantsBase.CountAsync(e => e.CreeLe >= since30);
-            var newPrev30 = await etudiantsBase.CountAsync(e => e.CreeLe < since30 && e.CreeLe >= since60);
-            var nbDelta = newPrev30 == 0 ? 0m : Math.Round((decimal)(newLast30 - newPrev30) / newPrev30 * 100m, 1);
+                activeBase = activeBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            var totalBefore30 = await activeBase.CountAsync(e => e.CreeLe < since30);
+            var nbDelta = totalBefore30 == 0 ? 0m : Math.Round((decimal)(nbEtudiants - totalBefore30) / totalBefore30 * 100m, 1);
+
+            // allBase: all students (including desinscrit), scoped to filière — used for sparkline and retraits.
+            var allBase = _context.Etudiants.AsNoTracking();
+            if (isFiltered)
+                allBase = allBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
 
             // ── Sparkline + side stats (Phase 1 task 1.6) ────────────────────
             // Cumulative student count at the end of each of the last 14 weeks,
             // oldest first so the bars render left→right naturally on the UI.
             // One DB roundtrip (vs 14 CountAsync calls) — sort once, then
             // binary-search each weekEnd cutoff in memory.
-            var creeLeDates = await etudiantsBase
+            var creeLeDates = await activeBase
                 .Select(e => e.CreeLe)
                 .ToListAsync();
             creeLeDates.Sort();
@@ -293,8 +297,8 @@ namespace PlateformePFA.API.Controllers
                 }
                 sparkPoints.Add(lo);
             }
-            var nouveaux = await etudiantsBase.CountAsync(e => e.CreeLe >= weekAgo);
-            var retraits = await etudiantsBase.CountAsync(e => e.DesinscritLe >= weekAgo);
+            var nouveaux = await activeBase.CountAsync(e => e.CreeLe >= weekAgo);
+            var retraits = await allBase.CountAsync(e => e.DesinscritLe != null && e.DesinscritLe >= weekAgo);
 
             return new DashboardSummaryDto
             {

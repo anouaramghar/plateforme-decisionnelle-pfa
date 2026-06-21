@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
@@ -6,6 +7,7 @@ import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
 import { FilterChip } from '../components/ui/FilterChip'
 import { api } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 
 // Localised labels + tone for the alert types the backend emits.
 // Inlined here (not in a "mock" module) because they're real UI strings.
@@ -57,8 +59,12 @@ async function fetchAlertes(): Promise<BackendAlerte[]> {
 }
 
 export default function Alerts() {
+  const { user } = useAuth()
+  const canResolve = user?.role !== 'Enseignant'
+  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('active')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('Tous')
+  const [resolvedName, setResolvedName] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: all = [], isLoading, isError } = useQuery({
@@ -68,8 +74,19 @@ export default function Alerts() {
   })
 
   const resolveMutation = useMutation({
-    mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+    mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`, {}),
+    onSuccess: (_res, id) => {
+      queryClient.invalidateQueries({ queryKey: ['alertes'] })
+      queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] })
+      const alerte = all.find(a => a.id === id)
+      if (alerte) {
+        const nom = alerte.etudiant
+          ? `${alerte.etudiant.prenom} ${alerte.etudiant.nom}`
+          : `Étudiant #${alerte.etudiantId}`
+        setResolvedName(`Alerte de ${nom} marquée comme résolue.`)
+        setTimeout(() => setResolvedName(null), 4000)
+      }
+    },
   })
 
   // "Tout marquer lu" — resolves every currently-visible unresolved alert.
@@ -129,6 +146,24 @@ export default function Alerts() {
 
   return (
     <div className="space-y-4">
+      {/* Resolve success banner */}
+      {resolvedName && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-[13px]"
+          style={{
+            background: 'color-mix(in oklch, var(--ok) 10%, transparent)',
+            border: '1px solid color-mix(in oklch, var(--ok) 30%, transparent)',
+            color: 'var(--ok)',
+          }}
+        >
+          <Icon name="check" size={15} style={{ flexShrink: 0 }} />
+          <span className="flex-1 font-medium">{resolvedName}</span>
+          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--ok)' }} onClick={() => setResolvedName(null)}>
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-end justify-between">
         <div>
           <div className="cap mb-1 flex items-center gap-2">
@@ -138,14 +173,16 @@ export default function Alerts() {
           <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="btn btn-sm"
-            onClick={handleMarkAllRead}
-            disabled={resolveAllMutation.isPending || filtered.every(a => a.resolue)}
-          >
-            <Icon name="check" size={13} />
-            {resolveAllMutation.isPending ? 'Marquage…' : 'Tout marquer lu'}
-          </button>
+          {canResolve && (
+            <button
+              className="btn btn-sm"
+              onClick={handleMarkAllRead}
+              disabled={resolveAllMutation.isPending || filtered.every(a => a.resolue)}
+            >
+              <Icon name="check" size={13} />
+              {resolveAllMutation.isPending ? 'Marquage…' : 'Tout marquer lu'}
+            </button>
+          )}
           <button
             className="btn btn-sm"
             onClick={handleExport}
@@ -249,6 +286,13 @@ export default function Alerts() {
             key={a.id}
             alert={a}
             divider={i < Math.min(filtered.length, 30) - 1}
+            canResolve={canResolve}
+            onView={() => {
+              const q = a.etudiant
+                ? `${a.etudiant.prenom} ${a.etudiant.nom}`
+                : String(a.etudiantId)
+              navigate(`/students?q=${encodeURIComponent(q)}`)
+            }}
             onResolve={() => resolveMutation.mutate(a.id)}
             resolving={resolveMutation.isPending && resolveMutation.variables === a.id}
           />
@@ -261,11 +305,15 @@ export default function Alerts() {
 function AlertRow({
   alert,
   divider,
+  canResolve,
+  onView,
   onResolve,
   resolving,
 }: {
   alert: BackendAlerte
   divider: boolean
+  canResolve: boolean
+  onView: () => void
   onResolve: () => void
   resolving: boolean
 }) {
@@ -332,20 +380,24 @@ function AlertRow({
       </div>
       {!alert.resolue ? (
         <div className="flex items-center gap-1.5">
-          <button className="btn btn-sm">Voir</button>
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={onResolve}
-            disabled={resolving}
-          >
-            <Icon name="check" size={12} strokeWidth={2.4} />
-            {resolving ? '…' : 'Résoudre'}
+          <button className="btn btn-sm" onClick={onView} title="Voir la fiche étudiant">
+            <Icon name="eye" size={13} />
+            Voir
           </button>
+          {canResolve && (
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={onResolve}
+              disabled={resolving}
+              title="Marquer cette alerte comme résolue"
+            >
+              <Icon name="check" size={12} strokeWidth={2.4} />
+              {resolving ? '…' : 'Résoudre'}
+            </button>
+          )}
         </div>
       ) : (
-        <Pill tone="ok" dot>
-          Résolue
-        </Pill>
+        <Pill tone="ok" dot>Résolue</Pill>
       )}
     </div>
   )

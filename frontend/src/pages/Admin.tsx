@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Icon } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
 import { Avatar } from '../components/ui/Avatar'
+import { PasswordInput } from '../components/ui/PasswordInput'
 import { api } from '../services/api'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ async function createUser(data: {
   email: string
   role: string
   motDePasse: string
+  moduleId?: number | null
 }): Promise<Utilisateur> {
   const res = await api.post<Utilisateur>('/utilisateurs', data)
   return res.data
@@ -55,6 +57,11 @@ async function createUser(data: {
 
 async function syncDw(): Promise<{ message: string; timestamp: string }> {
   const res = await api.post<{ message: string; timestamp: string }>('/admin/sync-dw')
+  return res.data
+}
+
+async function generateAlerts(): Promise<{ message: string; notes: number; absences: number }> {
+  const res = await api.post<{ message: string; notes: number; absences: number }>('/admin/generate-alerts')
   return res.data
 }
 
@@ -67,6 +74,12 @@ interface EtudiantRow {
 
 async function fetchFilieres(): Promise<Filiere[]> {
   const res = await api.get<{ items: Filiere[] }>('/filieres?pageSize=20')
+  return res.data.items
+}
+
+interface ModuleItem { id: number; code: string; nom: string; filiereCode: string; niveau: string }
+async function fetchModules(): Promise<ModuleItem[]> {
+  const res = await api.get<{ items: ModuleItem[] }>('/modules?pageSize=100')
   return res.data.items
 }
 
@@ -138,7 +151,7 @@ export default function Admin() {
       </div>
 
       {tab === 'users'     && <UsersTab />}
-      {tab === 'etudiants' && <EtudiantsTab />}
+      {tab === 'etudiants' && <EtudiantsTab initialOpenCreate={!!(location.state as { openCreate?: boolean } | null)?.openCreate} />}
       {tab === 'dw'        && <DwTab />}
     </div>
   )
@@ -183,7 +196,14 @@ function UsersTab() {
           onSubmit={data => createMutation.mutate(data)}
           onCancel={() => setShowCreate(false)}
           isPending={createMutation.isPending}
-          error={createMutation.error?.message}
+          error={createMutation.error
+            ? (() => {
+                const r = (createMutation.error as any)?.response?.data
+                if (!r) return createMutation.error.message
+                if (r.errors) return Object.values(r.errors).flat().join(' ')
+                return r.message || createMutation.error.message
+              })()
+            : undefined}
         />
       )}
 
@@ -268,7 +288,7 @@ function UsersTab() {
 // ── Create user form ──────────────────────────────────────────────────────────
 
 interface CreateUserFormProps {
-  onSubmit: (data: { nom: string; prenom: string; email: string; role: string; motDePasse: string }) => void
+  onSubmit: (data: { nom: string; prenom: string; email: string; role: string; motDePasse: string; moduleId?: number | null }) => void
   onCancel: () => void
   isPending: boolean
   error?: string
@@ -281,6 +301,12 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
     email: '',
     role: 'Enseignant' as Role,
     motDePasse: '',
+    moduleId: null as number | null,
+  })
+
+  const { data: modules = [] } = useQuery({
+    queryKey: ['modules-all'],
+    queryFn: fetchModules,
   })
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -288,7 +314,10 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(form)
+    onSubmit({
+      ...form,
+      moduleId: form.role === 'Enseignant' ? form.moduleId : null,
+    })
   }
 
   return (
@@ -307,36 +336,17 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1">
           <span className="cap">Prénom</span>
-          <input
-            className="input"
-            placeholder="Mohamed"
-            value={form.prenom}
-            onChange={set('prenom')}
-            required
-          />
+          <input className="input" placeholder="Mohamed" value={form.prenom} onChange={set('prenom')} required />
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Nom</span>
-          <input
-            className="input"
-            placeholder="Ait Ali"
-            value={form.nom}
-            onChange={set('nom')}
-            required
-          />
+          <input className="input" placeholder="Ait Ali" value={form.nom} onChange={set('nom')} required />
         </label>
       </div>
 
       <label className="flex flex-col gap-1">
         <span className="cap">Email</span>
-        <input
-          className="input"
-          type="email"
-          placeholder="m.aitali@eniad.dz"
-          value={form.email}
-          onChange={set('email')}
-          required
-        />
+        <input className="input" type="email" placeholder="m.aitali@eniad.ma" value={form.email} onChange={set('email')} required />
       </label>
 
       <div className="grid grid-cols-2 gap-3">
@@ -350,26 +360,41 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Mot de passe temporaire</span>
-          <input
-            className="input"
-            type="password"
-            placeholder="Min. 8 caractères"
+          <PasswordInput
+            placeholder="Min. 12 caractères"
             value={form.motDePasse}
             onChange={set('motDePasse')}
             required
-            minLength={8}
+            minLength={12}
           />
         </label>
       </div>
+
+      {form.role === 'Enseignant' && (
+        <label className="flex flex-col gap-1">
+          <span className="cap">Module enseigné</span>
+          <select
+            className="input"
+            value={form.moduleId ?? ''}
+            onChange={e => setForm(f => ({ ...f, moduleId: e.target.value ? Number(e.target.value) : null }))}
+            required
+          >
+            <option value="">Sélectionner un module…</option>
+            {modules.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.code} — {m.nom} ({m.filiereCode} · {m.niveau})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {error && (
         <p className="text-[12px]" style={{ color: 'var(--bad)' }}>{error}</p>
       )}
 
       <div className="flex items-center gap-2 justify-end">
-        <button type="button" className="btn btn-sm" onClick={onCancel}>
-          Annuler
-        </button>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>Annuler</button>
         <button type="submit" className="btn btn-sm btn-accent" disabled={isPending}>
           {isPending ? 'Création…' : 'Créer l\'utilisateur'}
         </button>
@@ -383,12 +408,12 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
 const NIVEAUX = ['CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 const ANNEE_RE = /^\d{4}\/\d{4}$/
 
-function EtudiantsTab() {
+function EtudiantsTab({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const { user } = useAuth()
   const isAdmin = user?.role === 'Admin'
   const queryClient = useQueryClient()
 
-  const [showCreate, setShowCreate]         = useState(false)
+  const [showCreate, setShowCreate]         = useState(initialOpenCreate)
   const [editingStudent, setEditingStudent] = useState<EtudiantRow | null>(null)
   const [deletingId, setDeletingId]         = useState<number | null>(null)
   const [search, setSearch]                 = useState('')
@@ -718,7 +743,7 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Email (optionnel)</span>
-          <input className="input" type="email" placeholder="a.benali@eniad.dz" value={form.email} onChange={set('email')} />
+          <input className="input" type="email" placeholder="a.benali@eniad.ma" value={form.email} onChange={set('email')} />
         </label>
       </div>
 
@@ -762,18 +787,25 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
 // ── DW sync tab ───────────────────────────────────────────────────────────────
 
 function DwTab() {
-  const [lastSync, setLastSync] = useState<string | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastSync, setLastSync]       = useState<string | null>(null)
+  const [syncError, setSyncError]     = useState<string | null>(null)
+  const [alertsMsg, setAlertsMsg]     = useState<string | null>(null)
+  const [alertsError, setAlertsError] = useState<string | null>(null)
 
   const syncMutation = useMutation({
     mutationFn: syncDw,
+    onSuccess: (data) => { setLastSync(data.timestamp); setSyncError(null) },
+    onError: (err: Error) => { setSyncError(err.message) },
+  })
+
+  const alertsMutation = useMutation({
+    mutationFn: generateAlerts,
     onSuccess: (data) => {
-      setLastSync(data.timestamp)
-      setSyncError(null)
+      setAlertsMsg(data.message)
+      setAlertsError(null)
+      setTimeout(() => setAlertsMsg(null), 6000)
     },
-    onError: (err: Error) => {
-      setSyncError(err.message)
-    },
+    onError: (err: Error) => { setAlertsError(err.message) },
   })
 
   return (
@@ -836,6 +868,42 @@ function DwTab() {
         >
           <Icon name={syncMutation.isPending ? 'refresh' : 'refresh'} size={14} />
           {syncMutation.isPending ? 'Synchronisation en cours…' : 'Lancer la synchronisation'}
+        </button>
+      </div>
+
+      {/* Generate alerts card */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-[14px] font-semibold">Génération des alertes</h3>
+            <p className="cap mt-1">
+              Analyse tous les étudiants et crée les alertes manquantes (Note faible, Absences excessives).
+              À lancer après un seeding ou un import bulk.
+            </p>
+          </div>
+          <Icon name="bell" size={22} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+        </div>
+
+        {alertsMsg && (
+          <div className="rounded-lg px-4 py-3 text-[12.5px]" style={{ background: 'color-mix(in oklch, var(--ok) 10%, transparent)', border: '1px solid color-mix(in oklch, var(--ok) 30%, transparent)', color: 'var(--ok)' }}>
+            <Icon name="check" size={13} style={{ display: 'inline', marginRight: 6 }} />
+            {alertsMsg}
+          </div>
+        )}
+        {alertsError && (
+          <div className="rounded-lg px-4 py-3 text-[12.5px]" style={{ background: 'color-mix(in oklch, var(--bad) 8%, transparent)', border: '1px solid color-mix(in oklch, var(--bad) 25%, transparent)', color: 'var(--bad)' }}>
+            <strong>Erreur :</strong> {alertsError}
+          </div>
+        )}
+
+        <button
+          className="btn btn-accent"
+          onClick={() => alertsMutation.mutate()}
+          disabled={alertsMutation.isPending}
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
+          <Icon name="bell" size={14} />
+          {alertsMutation.isPending ? 'Scan en cours…' : 'Générer les alertes manquantes'}
         </button>
       </div>
 

@@ -73,14 +73,16 @@ export function Sidebar() {
     { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
     { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: etudiantsCount },
     { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
-    { to: '/predictions', label: 'Prédictions ML',  icon: 'brain' },
+    ...(user?.role !== 'Enseignant'
+      ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }]
+      : []),
     { to: '/reports',     label: 'Rapports',        icon: 'doc' },
   ]
 
   // Best-effort display name; fall back to the email's local part if the
   // backend hasn't returned a NomComplet (e.g. legacy seed accounts).
   const displayName = user?.nom?.trim() || user?.email?.split('@')[0] || 'Utilisateur'
-  const role = user?.role ? `Responsable · ${user.role}` : 'Plateforme PFA'
+  const role = user?.role ?? 'Plateforme PFA'
   return (
     <aside
       style={{
@@ -250,6 +252,18 @@ export function Sidebar() {
         ))}
 
         {!sidebarCollapsed && <div className="nav-section-title">Système</div>}
+        {user?.role === 'Enseignant' && (
+          <NavLink to="/enseignant" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Icon name="doc" size={15} />
+            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Enseignant</span>}
+          </NavLink>
+        )}
+        {user?.role === 'Responsable' && (
+          <NavLink to="/responsable" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Icon name="graduation" size={15} />
+            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Responsable</span>}
+          </NavLink>
+        )}
         {SECONDARY.filter(it => it.to !== '/admin' || user?.role === 'Admin').map(it => (
           <NavLink
             key={it.to}

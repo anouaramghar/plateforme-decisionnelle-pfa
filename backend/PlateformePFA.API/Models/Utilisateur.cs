@@ -30,5 +30,9 @@ namespace PlateformePFA.API.Models
 
         public bool EstActif { get; set; } = true;
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
+
+        // Null for Admin/Responsable; required for Enseignant
+        public int? ModuleId { get; set; }
+        [JsonIgnore] public Module? Module { get; set; }
     }
 }

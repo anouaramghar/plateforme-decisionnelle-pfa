@@ -22,7 +22,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/Modules (paginated)
         [HttpGet]
-        public async Task<ActionResult<PaginatedResult<Module>>> GetModules(
+        public async Task<IActionResult> GetModules(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] int? filiereId = null)
@@ -39,9 +39,14 @@ namespace PlateformePFA.API.Controllers
                 .Include(m => m.Filiere)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(m => new {
+                    m.Id, m.Code, m.Nom, m.FiliereId,
+                    filiereCode = m.Filiere != null ? m.Filiere.Code : "",
+                    m.Niveau, m.Coefficient, m.Semestre,
+                })
                 .ToListAsync();
 
-            return new PaginatedResult<Module>(items, total, page, pageSize);
+            return Ok(new { items, total, page, pageSize });
         }
 
         // GET: api/Modules/5
