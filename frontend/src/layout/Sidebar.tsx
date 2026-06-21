@@ -73,7 +73,9 @@ export function Sidebar() {
     { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
     { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: etudiantsCount },
     { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
-    { to: '/predictions', label: 'Prédictions ML',  icon: 'brain' },
+    ...(user?.role !== 'Enseignant'
+      ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }]
+      : []),
     { to: '/reports',     label: 'Rapports',        icon: 'doc' },
   ]
 
