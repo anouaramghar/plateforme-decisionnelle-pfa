@@ -388,9 +388,12 @@ function EtudiantsTab() {
   const isAdmin = user?.role === 'Admin'
   const queryClient = useQueryClient()
 
-  const [showCreate, setShowCreate]       = useState(false)
+  const [showCreate, setShowCreate]         = useState(false)
   const [editingStudent, setEditingStudent] = useState<EtudiantRow | null>(null)
-  const [deletingId, setDeletingId]       = useState<number | null>(null)
+  const [deletingId, setDeletingId]         = useState<number | null>(null)
+  const [search, setSearch]                 = useState('')
+  const [filterFiliere, setFilterFiliere]   = useState('')
+  const [filterNiveau, setFilterNiveau]     = useState('')
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['admin-etudiants'] })
@@ -410,6 +413,14 @@ function EtudiantsTab() {
     },
   })
 
+  const filtered = students.filter(s => {
+    const q = search.trim().toLowerCase()
+    const matchQ = !q || [s.prenom, s.nom, s.matricule, s.email ?? ''].some(v => v.toLowerCase().includes(q))
+    const matchF = !filterFiliere || s.filiereCode === filterFiliere
+    const matchN = !filterNiveau  || s.niveau === filterNiveau
+    return matchQ && matchF && matchN
+  })
+
   const createMutation = useMutation({
     mutationFn: createEtudiant,
     onSuccess: () => { invalidate(); setShowCreate(false) },
@@ -427,11 +438,56 @@ function EtudiantsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="cap">
-          {isLoading ? '…' : `${students.length} étudiant${students.length > 1 ? 's' : ''} enregistré${students.length > 1 ? 's' : ''}`}
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Search input */}
+        <div className="flex items-center gap-2 flex-1 min-w-[200px]" style={{ position: 'relative' }}>
+          <Icon name="search" size={13} style={{ position: 'absolute', left: 10, color: 'var(--text-3)', pointerEvents: 'none' }} />
+          <input
+            className="input"
+            style={{ paddingLeft: 32 }}
+            placeholder="Nom, prénom, matricule…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              className="btn btn-sm btn-ghost"
+              style={{ position: 'absolute', right: 4 }}
+              onClick={() => setSearch('')}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </div>
+
+        {/* Filière filter */}
+        <select
+          className="input"
+          style={{ width: 'auto', minWidth: 130 }}
+          value={filterFiliere}
+          onChange={e => setFilterFiliere(e.target.value)}
+        >
+          <option value="">Toutes filières</option>
+          {filieres.map(f => <option key={f.id} value={f.code}>{f.code}</option>)}
+        </select>
+
+        {/* Niveau filter */}
+        <select
+          className="input"
+          style={{ width: 'auto', minWidth: 110 }}
+          value={filterNiveau}
+          onChange={e => setFilterNiveau(e.target.value)}
+        >
+          <option value="">Tous niveaux</option>
+          {NIVEAUX.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+
+        <p className="cap" style={{ whiteSpace: 'nowrap' }}>
+          {isLoading ? '…' : `${filtered.length} / ${students.length}`}
         </p>
-        <button className="btn btn-sm btn-accent" onClick={() => { setShowCreate(true); setEditingStudent(null) }}>
+
+        <button className="btn btn-sm btn-accent" style={{ marginLeft: 'auto' }} onClick={() => { setShowCreate(true); setEditingStudent(null) }}>
           <Icon name="plus" size={13} strokeWidth={2.4} />
           Nouvel étudiant
         </button>
@@ -479,7 +535,10 @@ function EtudiantsTab() {
               <span />
             </div>
 
-            {students.slice(0, 50).map((s, i) => (
+            {filtered.length === 0 && (
+              <div className="px-4 py-8 text-center cap">Aucun étudiant ne correspond à votre recherche.</div>
+            )}
+            {filtered.slice(0, 100).map((s, i) => (
               <div key={s.id}>
                 <div
                   className="grid items-center px-4 py-2.5"
@@ -487,7 +546,7 @@ function EtudiantsTab() {
                     gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
                     borderBottom: deletingId === s.id
                       ? 'none'
-                      : i < students.length - 1 ? '1px solid var(--border)' : 'none',
+                      : i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
                   }}
                 >
                   <span className="text-[13px] font-medium">{s.prenom} {s.nom}</span>
@@ -522,7 +581,7 @@ function EtudiantsTab() {
                 {deletingId === s.id && (
                   <div
                     className="px-4 py-3 flex items-center gap-3"
-                    style={{ background: 'color-mix(in oklch, var(--bad) 6%, transparent)', borderBottom: i < students.length - 1 ? '1px solid var(--border)' : 'none' }}
+                    style={{ background: 'color-mix(in oklch, var(--bad) 6%, transparent)', borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
                   >
                     <Icon name="alert" size={14} style={{ color: 'var(--bad)', flexShrink: 0 }} />
                     <span className="text-[12.5px] flex-1" style={{ color: 'var(--bad)' }}>
@@ -542,9 +601,9 @@ function EtudiantsTab() {
               </div>
             ))}
 
-            {students.length > 50 && (
+            {filtered.length > 100 && (
               <div className="px-4 py-2 text-center cap" style={{ borderTop: '1px solid var(--border)' }}>
-                {students.length - 50} autres étudiants — utilisez la page Étudiants pour voir tous
+                {filtered.length - 100} autres résultats — affinez votre recherche
               </div>
             )}
           </>
