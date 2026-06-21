@@ -48,6 +48,7 @@ namespace PlateformePFA.API.Controllers
             // Per-student aggregates in one DB round trip.
             var rows = await _context.Etudiants
                 .AsNoTracking()
+                .Where(e => e.DesinscritLe == null)
                 .Select(e => new
                 {
                     e.Id,
@@ -159,7 +160,7 @@ namespace PlateformePFA.API.Controllers
             page     = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var query = _context.Etudiants.AsNoTracking().OrderBy(e => e.Id);
+            var query = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null).OrderBy(e => e.Id);
             var total = await query.CountAsync();
             var items = await query
                 .Skip((page - 1) * pageSize)
@@ -258,7 +259,7 @@ namespace PlateformePFA.API.Controllers
             var etudiant = await _context.Etudiants.FindAsync(id);
             if (etudiant == null) return NotFound();
 
-            _context.Etudiants.Remove(etudiant);
+            etudiant.DesinscritLe = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             return NoContent();
