@@ -83,7 +83,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
     {
       label: 'Ajouter un étudiant',
       icon: 'students',
-      action: () => { navigate('/students'); setNouveauOpen(false) },
+      action: () => { navigate('/admin', { state: { tab: 'etudiants' } }); setNouveauOpen(false) },
     },
     {
       label: batchLoading ? 'Calcul en cours…' : 'Prédictions batch',

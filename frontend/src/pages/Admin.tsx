@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { Icon } from '../components/ui/Icon'
@@ -23,7 +24,7 @@ interface PaginatedResult<T> {
   pageSize: number
 }
 
-type Tab = 'users' | 'dw'
+type Tab = 'users' | 'etudiants' | 'dw'
 type Role = 'Admin' | 'Responsable' | 'Enseignant'
 
 const ROLE_PILL: Record<string, 'bad' | 'warn' | 'ok' | 'info' | 'neutral'> = {
@@ -57,11 +58,31 @@ async function syncDw(): Promise<{ message: string; timestamp: string }> {
   return res.data
 }
 
+interface Filiere { id: number; code: string; intitule: string }
+interface EtudiantRow {
+  id: number; matricule: string; nom: string; prenom: string
+  filiereCode: string; niveau: string; annee: string
+  moyenne: number; scoreRisque: number
+}
+
+async function fetchFilieres(): Promise<Filiere[]> {
+  const res = await api.get<{ items: Filiere[] }>('/filieres?pageSize=20')
+  return res.data.items
+}
+
+async function createEtudiant(data: {
+  matricule: string; nom: string; prenom: string; email: string
+  filiereId: number; niveau: string; annee: string
+}): Promise<void> {
+  await api.post('/etudiants', data)
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function Admin() {
   const { user } = useAuth()
-  const [tab, setTab] = useState<Tab>('users')
+  const location = useLocation()
+  const [tab, setTab] = useState<Tab>(() => (location.state as { tab?: Tab } | null)?.tab ?? 'users')
 
   if (user?.role !== 'Admin') {
     return (
@@ -84,8 +105,9 @@ export default function Admin() {
       <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
         {(
           [
-            { id: 'users', label: 'Utilisateurs', icon: 'students' },
-            { id: 'dw',    label: 'Data Warehouse', icon: 'database' },
+            { id: 'users',     label: 'Utilisateurs',   icon: 'students' },
+            { id: 'etudiants', label: 'Étudiants',      icon: 'user'     },
+            { id: 'dw',        label: 'Data Warehouse', icon: 'database' },
           ] as { id: Tab; label: string; icon: string }[]
         ).map(t => (
           <button
@@ -105,8 +127,9 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab === 'users' && <UsersTab />}
-      {tab === 'dw'    && <DwTab />}
+      {tab === 'users'     && <UsersTab />}
+      {tab === 'etudiants' && <EtudiantsTab />}
+      {tab === 'dw'        && <DwTab />}
     </div>
   )
 }
@@ -339,6 +362,213 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         </button>
         <button type="submit" className="btn btn-sm btn-accent" disabled={isPending}>
           {isPending ? 'Création…' : 'Créer l\'utilisateur'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Étudiants tab ────────────────────────────────────────────────────────────
+
+const NIVEAUX = ['CP1', 'CP2', 'CI1', 'CI2', 'CI3']
+const ANNEE_RE = /^\d{4}\/\d{4}$/
+
+function EtudiantsTab() {
+  const [showCreate, setShowCreate] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: filieres = [], isLoading: loadingFil } = useQuery({
+    queryKey: ['filieres'],
+    queryFn: fetchFilieres,
+  })
+
+  const { data: students = [], isLoading, isError } = useQuery({
+    queryKey: ['admin-etudiants'],
+    queryFn: async () => {
+      const res = await api.get<{ items: EtudiantRow[] }>('/etudiants/with-stats?pageSize=500')
+      return res.data.items
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: createEtudiant,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-etudiants'] })
+      queryClient.invalidateQueries({ queryKey: ['etudiants'] })
+      setShowCreate(false)
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="cap">
+          {isLoading ? '…' : `${students.length} étudiant${students.length > 1 ? 's' : ''} enregistré${students.length > 1 ? 's' : ''}`}
+        </p>
+        <button className="btn btn-sm btn-accent" onClick={() => setShowCreate(true)}>
+          <Icon name="plus" size={13} strokeWidth={2.4} />
+          Nouvel étudiant
+        </button>
+      </div>
+
+      {showCreate && (
+        <CreateEtudiantForm
+          filieres={filieres}
+          loadingFil={loadingFil}
+          onSubmit={data => createMutation.mutate(data)}
+          onCancel={() => setShowCreate(false)}
+          isPending={createMutation.isPending}
+          error={createMutation.error?.message}
+        />
+      )}
+
+      <div className="card overflow-hidden">
+        {isLoading && <div className="px-4 py-8 text-center cap">Chargement…</div>}
+        {isError  && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>Impossible de charger les étudiants.</div>}
+        {!isLoading && !isError && (
+          <>
+            <div
+              className="grid px-4 py-2.5 text-[11px] uppercase tracking-wider"
+              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', color: 'var(--text-3)', borderBottom: '1px solid var(--border)', fontWeight: 500 }}
+            >
+              <span>Nom</span>
+              <span>Matricule</span>
+              <span>Filière</span>
+              <span>Niveau</span>
+              <span>Moyenne</span>
+            </div>
+            {students.slice(0, 50).map((s, i) => (
+              <div
+                key={s.id}
+                className="grid items-center px-4 py-2.5"
+                style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', borderBottom: i < students.length - 1 ? '1px solid var(--border)' : 'none' }}
+              >
+                <span className="text-[13px] font-medium">{s.prenom} {s.nom}</span>
+                <span className="cap">{s.matricule}</span>
+                <span className="cap">{s.filiereCode}</span>
+                <span className="cap">{s.niveau}</span>
+                <span className="text-[12.5px] num" style={{ color: s.moyenne >= 10 ? 'var(--ok)' : 'var(--bad)' }}>
+                  {s.moyenne.toFixed(2)}/20
+                </span>
+              </div>
+            ))}
+            {students.length > 50 && (
+              <div className="px-4 py-2 text-center cap" style={{ borderTop: '1px solid var(--border)' }}>
+                {students.length - 50} autres étudiants — utilisez la page Étudiants pour voir tous
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface CreateEtudiantFormProps {
+  filieres: Filiere[]
+  loadingFil: boolean
+  onSubmit: (data: { matricule: string; nom: string; prenom: string; email: string; filiereId: number; niveau: string; annee: string }) => void
+  onCancel: () => void
+  isPending: boolean
+  error?: string
+}
+
+function CreateEtudiantForm({ filieres, loadingFil, onSubmit, onCancel, isPending, error }: CreateEtudiantFormProps) {
+  const currentYear = new Date().getFullYear()
+  const defaultAnnee = `${currentYear - 1}/${currentYear}`
+
+  const [form, setForm] = useState({
+    matricule: '',
+    prenom: '',
+    nom: '',
+    email: '',
+    filiereId: '' as string | number,
+    niveau: 'CP1',
+    annee: defaultAnnee,
+  })
+
+  const [anneeError, setAnneeError] = useState('')
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!ANNEE_RE.test(form.annee)) {
+      setAnneeError('Format requis : YYYY/YYYY (ex : 2025/2026)')
+      return
+    }
+    setAnneeError('')
+    onSubmit({ ...form, filiereId: Number(form.filiereId), email: form.email || '' })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="card p-5 space-y-4" style={{ borderColor: 'var(--accent-400)' }}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-[14px] font-semibold">Nouvel étudiant</h3>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>
+          <Icon name="x" size={13} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="cap">Prénom</span>
+          <input className="input" placeholder="Amine" value={form.prenom} onChange={set('prenom')} required />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Nom</span>
+          <input className="input" placeholder="Benali" value={form.nom} onChange={set('nom')} required />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="cap">Matricule</span>
+          <input className="input" placeholder="ENI-2025-001" value={form.matricule} onChange={set('matricule')} required maxLength={20} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Email (optionnel)</span>
+          <input className="input" type="email" placeholder="a.benali@eniad.dz" value={form.email} onChange={set('email')} />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="cap">Filière</span>
+          <select className="input" value={form.filiereId} onChange={set('filiereId')} required disabled={loadingFil}>
+            <option value="">-- Choisir --</option>
+            {filieres.map(f => (
+              <option key={f.id} value={f.id}>{f.code} — {f.intitule}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Niveau</span>
+          <select className="input" value={form.niveau} onChange={set('niveau')} required>
+            {NIVEAUX.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Année scolaire</span>
+          <input
+            className="input"
+            placeholder="2025/2026"
+            value={form.annee}
+            onChange={set('annee')}
+            required
+            maxLength={9}
+          />
+          {anneeError && <span className="text-[11px]" style={{ color: 'var(--bad)' }}>{anneeError}</span>}
+        </label>
+      </div>
+
+      {error && <p className="text-[12px]" style={{ color: 'var(--bad)' }}>{error}</p>}
+
+      <div className="flex items-center gap-2 justify-end">
+        <button type="button" className="btn btn-sm" onClick={onCancel}>Annuler</button>
+        <button type="submit" className="btn btn-sm btn-accent" disabled={isPending || !form.filiereId}>
+          {isPending ? 'Création…' : 'Ajouter l\'étudiant'}
         </button>
       </div>
     </form>
