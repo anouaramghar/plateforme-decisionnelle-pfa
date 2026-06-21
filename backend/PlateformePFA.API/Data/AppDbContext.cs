@@ -84,6 +84,13 @@ namespace PlateformePFA.API.Data
                 e.Property(p => p.Confiance).HasPrecision(5, 4);
             });
 
+            // Utilisateur.ModuleId → Module (optional — only set for Enseignant)
+            modelBuilder.Entity<Utilisateur>()
+                .HasOne(u => u.Module)
+                .WithMany()
+                .HasForeignKey(u => u.ModuleId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             // ── Copilot ──────────────────────────────────────────────────────
             modelBuilder.Entity<AlertDraft>()
                 .HasIndex(d => new { d.CreatedBy, d.Status });

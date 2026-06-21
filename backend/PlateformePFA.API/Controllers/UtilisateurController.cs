@@ -62,6 +62,7 @@ namespace PlateformePFA.API.Controllers
                 Prenom = dto.Prenom,
                 Email = dto.Email,
                 Role = dto.Role,
+                ModuleId = dto.Role == "Enseignant" ? dto.ModuleId : null,
                 MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(dto.MotDePasse)
             };
 

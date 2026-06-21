@@ -22,5 +22,8 @@ namespace PlateformePFA.API.DTOs.Auth
         [AllowedValues("Admin", "Enseignant", "Responsable",
             ErrorMessage = "Rôle invalide. Valeurs acceptées : Admin, Enseignant, Responsable.")]
         public string Role { get; set; } = string.Empty;
+
+        // Only relevant when Role == "Enseignant"
+        public int? ModuleId { get; set; }
     }
 }
