@@ -116,6 +116,45 @@ services:
       - pfa_internal_ml
       - pfa_internal_db
 
+  # 6. CopilotKit runtime (Node 20 / Express + @copilotkit/runtime v2)
+  # Serves the CopilotKit sidebar's runtime endpoint. nginx proxies
+  # /api/copilotkit here; the frontend's <CopilotKit> provider talks to it.
+  # Optional add-on — like agent-service, it is NOT a startup gate for nginx,
+  # so the BI platform stays up even if this sidecar is down.
+  copilot-runtime:
+    build:
+      context: ./copilot-runtime
+    environment:
+      - PORT=4000
+      # Must match the backend's JWT_SECRET — the runtime verifies the JWT
+      # signature before forwarding tool calls to the backend.
+      - JWT_SECRET=${JWT_SECRET}
+      - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
+      - NVIDIA_NIM_BASE_URL=${NVIDIA_NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-meta/llama-3.3-70b-instruct}
+      - AGENT_INTERNAL_TOKEN=${AGENT_INTERNAL_TOKEN}
+      # Internal service URL — hardcoded (NOT ${BACKEND_URL}) so a local-dev
+      # BACKEND_URL=http://localhost:5135 in .env can't leak into the container.
+      - BACKEND_URL=http://backend:8080
+      # Same-origin in the nginx-proxied setup, so CORS is moot; set anyway.
+      - FRONTEND_URL=${COPILOT_RUNTIME_FRONTEND_URL:-http://localhost}
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      # pfa_public: reachable by nginx, reaches backend (also on pfa_public),
+      # and gets outbound internet for the NVIDIA NIM API.
+      - pfa_public
+
   # 4. Frontend React.js (nginx-unprivileged serves on 8080)
   frontend:
     build:

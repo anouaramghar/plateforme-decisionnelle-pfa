@@ -18,6 +18,8 @@ const BREADCRUMBS: Record<string, [string, string]> = {
 
 interface TopbarProps {
   onCommandOpen: () => void
+  onCopilotOpen: () => void
+  copilotActive?: boolean
 }
 
 interface NouveauItem {
@@ -27,7 +29,7 @@ interface NouveauItem {
   adminOnly?: boolean
 }
 
-export function Topbar({ onCommandOpen }: TopbarProps) {
+export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarProps) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -190,6 +192,21 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
         </button>
 
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+
+        {/* ENIAD Copilot toggle */}
+        <button
+          onClick={onCopilotOpen}
+          className="btn btn-sm"
+          title="ENIAD Copilot (⌘J)"
+          style={copilotActive ? {
+            background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',
+            color: 'var(--accent-600)',
+          } : undefined}
+        >
+          <Icon name="brain" size={13} />
+          Copilot
+        </button>
 
         {/* + Nouveau dropdown */}
         <div ref={nouveauRef} style={{ position: 'relative' }}>

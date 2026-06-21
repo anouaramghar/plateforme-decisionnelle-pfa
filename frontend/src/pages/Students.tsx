@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
@@ -17,6 +18,8 @@ import { parseStudentCsv } from '../services/studentImport'
 import type { StudentImportResult } from '../services/studentImport'
 import { canCreateAlerts, canEnterNotes, canManageStudents } from '../auth/roles'
 import { useAuth } from '../context/AuthContext'
+import { ConfirmCard } from '../components/copilot/ConfirmCard'
+import type { ConfirmData } from '../components/copilot/ConfirmCard'
 
 // Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
 const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
@@ -167,6 +170,104 @@ export default function Students() {
     const qParam = searchParams.get('q')
     if (qParam) setQ(qParam)
   }, [searchParams])
+
+  useCopilotReadable({
+    description: 'Currently visible students after filters — name, matricule, filière, niveau, risk score',
+    value: slice.map(s => ({
+      matricule: s.matricule,
+      name: s.nomComplet,
+      filiere: s.filiereCode,
+      niveau: s.niveau,
+      averageScore: s.moyenne,
+      absences: s.absences,
+      riskScore: s.scoreRisque,
+      riskLevel: s.risque,
+    })),
+  })
+
+  useCopilotAction({
+    name: 'filter_students',
+    description: 'Filter the student table by filière, niveau, risk level, or search text.',
+    parameters: [
+      { name: 'filiere', type: 'string', description: 'Filière code: TCP, GI, IA, ROC, IRSI, or Tous to clear.', required: false },
+      { name: 'niveau', type: 'string', description: 'Academic level: CP1, CP2, CI1, CI2, CI3, or Tous.', required: false },
+      { name: 'risque', type: 'string', description: 'Risk level: faible, modere, eleve, or Tous.', required: false },
+      { name: 'search', type: 'string', description: 'Free text search on name or matricule.', required: false },
+    ],
+    handler: async ({ filiere: f, niveau: n, risque: r, search: s }: { filiere?: string; niveau?: string; risque?: string; search?: string }) => {
+      if (f !== undefined) setFiliere(f)
+      if (n !== undefined) setNiveau(n)
+      if (r !== undefined) setRisque(r)
+      if (s !== undefined) setQ(s)
+      return 'Filtres appliqués'
+    },
+  })
+
+  useCopilotAction({
+    name: 'open_student',
+    description: 'Open the detail panel for a specific student by matricule.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule to open.', required: true },
+    ],
+    handler: async ({ matricule }: { matricule: string }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === matricule.toLowerCase())
+      if (!student) return `Étudiant ${matricule} introuvable`
+      setSelected(student)
+      return `Profil de ${student.nomComplet} ouvert`
+    },
+  })
+
+  useCopilotAction({
+    name: 'draft_alert',
+    description:
+      'Propose creating an alert for a student at risk. This only drafts the alert — ' +
+      'the user must click "Confirmer" in the UI before anything is saved. ' +
+      'Severity values: high, medium, low.',
+    parameters: [
+      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
+      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
+      { name: 'message', type: 'string', description: 'Alert message content', required: true },
+    ],
+    renderAndWaitForResponse: ({ args, status, respond }: { args: { matricule?: string; severity?: string; message?: string }; status: string; respond?: (r: unknown) => void }) => {
+      const student = all.find(s => s.matricule.toLowerCase() === (args.matricule ?? '').toLowerCase())
+      
+      const confirmData: ConfirmData = {
+        draftId: 0,
+        preview: {
+          student_name: student?.nomComplet ?? args.matricule ?? '',
+          matricule: args.matricule ?? '',
+          severity: args.severity ?? 'medium',
+          message: args.message ?? '',
+        },
+        tool: 'draft_alert',
+        state: status === 'complete' ? 'confirmed' : 'pending',
+      }
+
+      const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
+      const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
+
+      return (
+        <ConfirmCard
+          data={confirmData}
+          onConfirm={async () => {
+            const severite = VALID_SEVERITES[args.severity ?? 'medium']
+            if (!severite || !student) {
+              respond?.({ confirmed: false })
+              return
+            }
+            await api.post('/alertes', {
+              etudiantId: student.id,
+              type: 'RisqueEchec',
+              niveau: NIVEAU_MAP[severite] ?? 'Moyen',
+              message: args.message ?? '',
+            })
+            respond?.({ confirmed: true })
+          }}
+          onDismiss={() => respond?.({ confirmed: false })}
+        />
+      )
+    },
+  })
 
   async function confirmAlert() {
     if (!pendingAlert) return
