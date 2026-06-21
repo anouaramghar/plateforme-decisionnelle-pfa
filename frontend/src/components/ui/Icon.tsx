@@ -31,6 +31,8 @@ const ICONS: Record<string, ReactElement> = {
   bookmark:  <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />,
   clock:     <path d="M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2" />,
   trend:     <path d="M3 17l6-6 4 4 8-8M21 7v6h-6" />,
+  sun:       <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
+  moon:      <path d="M21 12.8A9 9 0 1111.2 3a7 7 0 109.8 9.8z"/>,
   collapse:  <path d="M9 4v16M14 8l-4 4 4 4" />,
   expand:    <path d="M9 4v16M10 8l4 4-4 4" />,
   graduation:<path d="M22 10L12 5 2 10l10 5 10-5zM6 12v5c0 1 3 3 6 3s6-2 6-3v-5" />,

@@ -30,7 +30,7 @@ interface NouveauItem {
 export function Topbar({ onCommandOpen }: TopbarProps) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { theme, toggleTheme, density, cycleDensity } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const { user, token } = useAuth()
   const breadcrumb = BREADCRUMBS[pathname] ?? ['Pilotage', 'Page']
 
@@ -179,23 +179,13 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
           )}
         </button>
 
-        {/* Density */}
-        <button
-          onClick={cycleDensity}
-          className="btn btn-sm btn-ghost"
-          title={`Densité : ${density}`}
-        >
-          <Icon name="filter" size={14} />
-        </button>
-
         {/* Theme */}
         <button
           onClick={toggleTheme}
           className="btn btn-sm btn-ghost"
           title={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
-          style={{ fontSize: 14 }}
         >
-          {theme === 'dark' ? '☀' : '☾'}
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} strokeWidth={1.8} />
         </button>
 
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
