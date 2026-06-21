@@ -32,6 +32,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, token } = useAuth()
+  const mayAccessAlerts = user?.role === 'Admin' || user?.role === 'Responsable'
   const breadcrumb = BREADCRUMBS[pathname] ?? ['Pilotage', 'Page']
 
   const [nouveauOpen, setNouveauOpen]   = useState(false)
@@ -48,7 +49,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
       )
       return res.data.items.filter(a => !a.resolue).length
     },
-    enabled: !!token,
+    enabled: !!token && mayAccessAlerts,
     refetchInterval: 30_000,
     staleTime: 25_000,
   })
@@ -148,7 +149,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
 
         {/* Bell → /alerts */}
-        <button
+        {mayAccessAlerts && <button
           className="btn btn-sm btn-ghost relative"
           title={`Alertes${alertCount > 0 ? ` (${alertCount} non résolues)` : ''}`}
           onClick={() => navigate('/alerts')}
@@ -177,7 +178,7 @@ export function Topbar({ onCommandOpen }: TopbarProps) {
               {alertCount > 9 ? '9+' : alertCount}
             </span>
           )}
-        </button>
+        </button>}
 
         {/* Theme */}
         <button

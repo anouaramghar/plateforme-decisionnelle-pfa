@@ -12,6 +12,7 @@ import Admin from './pages/Admin'
 import Settings from './pages/Settings'
 import Enseignant from './pages/Enseignant'
 import Responsable from './pages/Responsable'
+import { RoleRoute } from './components/auth/RoleRoute'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
@@ -35,12 +36,12 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
-          <Route path="alerts" element={<Alerts />} />
+          <Route path="alerts" element={<RoleRoute roles={['Admin', 'Responsable']}><Alerts /></RoleRoute>} />
           <Route path="predictions" element={<Predictions />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="admin" element={<Admin />} />
-          <Route path="enseignant" element={<Enseignant />} />
-          <Route path="responsable" element={<Responsable />} />
+          <Route path="admin" element={<RoleRoute roles={['Admin', 'Responsable']}><Admin /></RoleRoute>} />
+          <Route path="enseignant" element={<RoleRoute roles={['Admin', 'Enseignant']}><Enseignant /></RoleRoute>} />
+          <Route path="responsable" element={<RoleRoute roles={['Admin', 'Responsable']}><Responsable /></RoleRoute>} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

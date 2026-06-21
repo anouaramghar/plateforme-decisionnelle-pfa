@@ -104,9 +104,12 @@ async function deleteEtudiant(id: number): Promise<void> {
 export default function Admin() {
   const { user } = useAuth()
   const location = useLocation()
-  const [tab, setTab] = useState<Tab>(() => (location.state as { tab?: Tab } | null)?.tab ?? 'users')
+  const isAdmin = user?.role === 'Admin'
+  const isResponsable = user?.role === 'Responsable'
+  const [tab, setTab] = useState<Tab>(() =>
+    isResponsable ? 'etudiants' : (location.state as { tab?: Tab } | null)?.tab ?? 'users')
 
-  if (user?.role !== 'Admin') {
+  if (!isAdmin && !isResponsable) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4">
         <Icon name="alert" size={40} style={{ color: 'var(--bad)' }} />
@@ -131,6 +134,7 @@ export default function Admin() {
             { id: 'etudiants', label: 'Étudiants',      icon: 'user'     },
             { id: 'dw',        label: 'Data Warehouse', icon: 'database' },
           ] as { id: Tab; label: string; icon: string }[]
+        ).filter(item => isAdmin || item.id === 'etudiants'
         ).map(t => (
           <button
             key={t.id}
@@ -149,9 +153,9 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab === 'users'     && <UsersTab />}
+      {isAdmin && tab === 'users' && <UsersTab />}
       {tab === 'etudiants' && <EtudiantsTab initialOpenCreate={!!(location.state as { openCreate?: boolean } | null)?.openCreate} />}
-      {tab === 'dw'        && <DwTab />}
+      {isAdmin && tab === 'dw' && <DwTab />}
     </div>
   )
 }

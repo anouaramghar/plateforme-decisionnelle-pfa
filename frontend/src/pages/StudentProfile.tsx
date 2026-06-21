@@ -10,6 +10,8 @@ import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
 import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
+import { canCreateAlerts, canEnterNotes } from '../auth/roles'
+import { useAuth } from '../context/AuthContext'
 
 interface EtudiantRow {
   id: number; matricule: string; nom: string; prenom: string; nomComplet: string
@@ -40,6 +42,7 @@ async function fetchShap(id: number): Promise<ShapExplainData> {
 }
 
 export default function StudentProfile() {
+  const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -173,13 +176,13 @@ export default function StudentProfile() {
           Retour
         </button>
         <div className="flex items-center gap-2">
-          <button
+          {canCreateAlerts(user?.role) && <button
             className="btn btn-sm btn-accent"
             onClick={handlePlanifierEntretien}
             disabled={sendingAlert}
           >
             {alertSent ? 'Alerte créée ✓' : sendingAlert ? 'Envoi…' : 'Planifier un entretien'}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -233,10 +236,10 @@ export default function StudentProfile() {
             <div className="text-[15px] font-semibold tracking-tight">Notes par module</div>
             <div className="cap mt-0.5">{student.niveau} — {student.filiereIntitule}</div>
           </div>
-          <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
+          {canEnterNotes(user?.role) && <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
             <Icon name="plus" size={12} />
             {showNoteForm ? 'Fermer' : 'Saisir'}
-          </button>
+          </button>}
         </div>
 
         {noteSuccess && (

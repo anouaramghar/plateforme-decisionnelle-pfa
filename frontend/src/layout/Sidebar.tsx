@@ -32,6 +32,7 @@ export function Sidebar() {
   const { user, token } = useAuth()
   const { filiere, setFiliere } = useFiliere()
   const W = sidebarCollapsed ? 64 : 232
+  const mayAccessAlerts = user?.role === 'Admin' || user?.role === 'Responsable'
 
   const [dropOpen, setDropOpen] = useState(false)
   const dropRef = useRef<HTMLDivElement>(null)
@@ -54,7 +55,7 @@ export function Sidebar() {
       const res = await api.get<PaginatedResult<AlerteRow>>('/alertes?pageSize=200')
       return res.data.items.filter(a => !a.resolue).length
     },
-    enabled: !!token,
+    enabled: !!token && mayAccessAlerts,
     refetchInterval: 30_000,
     staleTime: 25_000,
   })
@@ -229,7 +230,7 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-3">
         {!sidebarCollapsed && <div className="nav-section-title">Pilotage</div>}
-        {PRIMARY.map(it => (
+        {PRIMARY.filter(it => it.to !== '/alerts' || mayAccessAlerts).map(it => (
           <NavLink
             key={it.to}
             to={it.to}

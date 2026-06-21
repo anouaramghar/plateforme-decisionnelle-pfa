@@ -13,6 +13,10 @@ import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
 import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
+import { parseStudentCsv } from '../services/studentImport'
+import type { StudentImportResult } from '../services/studentImport'
+import { canCreateAlerts, canEnterNotes, canManageStudents } from '../auth/roles'
+import { useAuth } from '../context/AuthContext'
 
 // Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
 const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
@@ -71,6 +75,7 @@ async function fetchShap(id: number): Promise<ShapExplainData> {
 }
 
 export default function Students() {
+  const { user } = useAuth()
   const { data: all = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['etudiants-with-stats'],
     queryFn: fetchStudents,
@@ -87,12 +92,15 @@ export default function Students() {
   const [statut, setStatut] = useState('Tous')
   const [showExtra, setShowExtra] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+  const [importErrors, setImportErrors] = useState<StudentImportResult['errors']>([])
   const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
   const [pendingAlert, setPendingAlert] = useState<{
     student: EtudiantRow; severite: string; message: string
   } | null>(null)
   const PAGE = 14
+  const mayManageStudents = canManageStudents(user?.role)
 
   const filtered = useMemo(
     () =>
@@ -135,28 +143,15 @@ export default function Students() {
     if (!file) return
     setImporting(true)
     try {
-      const text = await file.text()
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-      if (lines.length < 2) return
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase())
-      const filRes = await api.get<{ items: { id: number; code: string }[] }>('/filieres?pageSize=50')
-      const filMap = Object.fromEntries(filRes.data.items.map(f => [f.code.toLowerCase(), f.id]))
-      for (const line of lines.slice(1)) {
-        const cols = line.split(',').map(c => c.trim())
-        const row = Object.fromEntries(header.map((h, i) => [h, cols[i] ?? '']))
-        const filiereId = filMap[(row.filierecode ?? row.filiere ?? '').toLowerCase()]
-        if (!filiereId || !row.matricule) continue
-        await api.post('/etudiants', {
-          matricule: row.matricule,
-          nom: row.nom ?? '',
-          prenom: row.prenom ?? '',
-          email: row.email ?? '',
-          niveau: row.niveau ?? 'CP1',
-          annee: row.annee ?? '2025/2026',
-          filiereId,
-        })
-      }
-      refetch()
+      const rows = parseStudentCsv(await file.text())
+      const response = await api.post<StudentImportResult>('/etudiants/import', rows)
+      setImportMessage(`${response.data.imported} étudiant(s) importé(s) avec succès.`)
+      setImportErrors([])
+      await refetch()
+    } catch (error) {
+      const payload = (error as AxiosError<StudentImportResult>).response?.data
+      setImportErrors(payload?.errors ?? [{ rowNumber: 0, field: 'file', message: 'Import impossible.' }])
+      setImportMessage(null)
     } finally {
       setImporting(false)
       e.target.value = ''
@@ -214,24 +209,37 @@ export default function Students() {
           <h1 className="text-[22px] font-semibold tracking-tight">Étudiants</h1>
         </div>
         <div className="flex items-center gap-2">
-          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />
-          <button className="btn btn-sm" onClick={() => csvRef.current?.click()} disabled={importing}>
-            <Icon name="upload" size={13} />
-            {importing ? 'Import…' : 'Importer CSV'}
-          </button>
+          {mayManageStudents && <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />}
+          {mayManageStudents && (
+            <button className="btn btn-sm" onClick={() => csvRef.current?.click()} disabled={importing}>
+              <Icon name="upload" size={13} />
+              {importing ? 'Import…' : 'Importer CSV'}
+            </button>
+          )}
           <button className="btn btn-sm" onClick={handleExport}>
             <Icon name="download" size={13} />
             Exporter
           </button>
-          <button
+          {mayManageStudents && <button
             className="btn btn-sm btn-accent"
             onClick={() => navigate('/admin', { state: { tab: 'etudiants', openCreate: true } })}
           >
             <Icon name="plus" size={13} strokeWidth={2.2} />
             Inscrire
-          </button>
+          </button>}
         </div>
       </div>
+
+      {importMessage && <div className="card px-4 py-3 text-[12.5px]" style={{ color: 'var(--ok)' }}>{importMessage}</div>}
+      {importErrors.length > 0 && (
+        <div className="card px-4 py-3 text-[12.5px] space-y-1" style={{ color: 'var(--bad)' }}>
+          {importErrors.map((error, index) => (
+            <div key={`${error.rowNumber}-${error.field}-${index}`}>
+              {error.rowNumber > 0 ? `Ligne ${error.rowNumber} · ` : ''}{error.field}: {error.message}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card p-3 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[260px]">
@@ -406,6 +414,9 @@ function StudentDrawer({
   onClose: () => void
   onAlert?: (severite: string, message: string) => void
 }) {
+  const { user } = useAuth()
+  const mayEnterNotes = canEnterNotes(user?.role)
+  const mayCreateAlerts = canCreateAlerts(user?.role)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -655,11 +666,11 @@ function StudentDrawer({
             <SectionHeader
               title="Notes par module"
               subtitle={`${student.niveau} — ${student.filiereIntitule}`}
-              right={
+              right={mayEnterNotes ?
                 <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
                   <Icon name="plus" size={12} />
                   {showNoteForm ? 'Fermer' : 'Saisir'}
-                </button>
+                </button> : undefined
               }
             />
             {noteSuccess && (
@@ -843,7 +854,7 @@ function StudentDrawer({
             <Icon name="ext" size={12} />
             Ouvrir la fiche complète
           </button>
-          <div className="flex items-center gap-2">
+          {mayCreateAlerts && <div className="flex items-center gap-2">
             <button className="btn btn-sm" onClick={handleEnvoyerCoordination}>
               Envoyer à la coordination
             </button>
@@ -854,7 +865,7 @@ function StudentDrawer({
             >
               {entretienSent ? 'Alerte créée ✓' : sendingEntretien ? 'Envoi…' : 'Planifier un entretien'}
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>
