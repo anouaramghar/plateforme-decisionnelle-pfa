@@ -405,8 +405,8 @@ function EtudiantsTab() {
   const { data: students = [], isLoading, isError } = useQuery({
     queryKey: ['admin-etudiants'],
     queryFn: async () => {
-      const res = await api.get<{ items: EtudiantRow[] }>('/etudiants/with-stats?pageSize=500')
-      return res.data.items
+      const res = await api.get<EtudiantRow[]>('/etudiants/with-stats')
+      return res.data
     },
   })
 
