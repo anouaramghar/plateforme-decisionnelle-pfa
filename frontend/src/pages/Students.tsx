@@ -242,7 +242,8 @@ export default function Students() {
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Rechercher par nom ou matricule…"
-            className="input pl-9"
+            className="input"
+            style={{ paddingLeft: '2.25rem' }}
           />
         </div>
         <Select value={filiere} onChange={setFiliere} options={FILIERES} label="Filière" />
