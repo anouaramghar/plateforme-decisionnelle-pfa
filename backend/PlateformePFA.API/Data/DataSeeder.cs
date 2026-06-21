@@ -159,16 +159,36 @@ namespace PlateformePFA.API.Data
             var noteRng = new Random(42); // seeded — reproducible data across restarts
             var notes   = new List<Note>();
 
+            // ~25% of students are "at risk" (moyenne < 10) so the DW has both
+            // classes for ML binary classification. The set is deterministic
+            // (seed=42) so reseeds always produce the same split.
+            var atRiskIds = new HashSet<int>(
+                etudiants.Where((_, i) => i % 4 == 3).Select(e => e.Id)
+            );
+
             foreach (var etudiant in etudiants)
             {
+                bool isAtRisk = atRiskIds.Contains(etudiant.Id);
                 var moduleIds = filiereModulesMap[etudiant.FiliereId];
                 foreach (var moduleId in moduleIds)
                 {
                     foreach (var semestre in new[] { "S1", "S2" })
                     {
-                        var noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 15 + 4), 2);
-                        var noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2);
-                        var noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2);
+                        decimal noteExamen, noteTD, noteTP;
+                        if (isAtRisk)
+                        {
+                            // At-risk profile: low exam grades, leading to moyenne < 10
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 5 + 1), 2);   // 1–6
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8 + 5), 2);   // 5–13
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8 + 5), 2);   // 5–13
+                        }
+                        else
+                        {
+                            // Normal profile: varied grades, mostly above 10
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 15 + 4), 2);  // 4–19
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2); // 10–20
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
+                        }
                         notes.Add(new Note
                         {
                             EtudiantId = etudiant.Id,

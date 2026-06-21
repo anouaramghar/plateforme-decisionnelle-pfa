@@ -122,9 +122,15 @@ def train(df: pd.DataFrame) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
 
     print("\n=== Risk Model Evaluation ===")
     print(classification_report(y_test, y_pred,
-                                 target_names=["Not at risk", "At risk"]))
-    print(f"ROC-AUC: {roc_auc_score(y_test, y_proba):.3f}")
-    print("  (ROC-AUC of 1.0 = perfect, 0.5 = random -- aim for > 0.80)")
+                                 labels=[0, 1],
+                                 target_names=["Not at risk", "At risk"],
+                                 zero_division=0))
+    try:
+        auc_display = roc_auc_score(y_test, y_proba)
+        print(f"ROC-AUC: {auc_display:.3f}")
+        print("  (ROC-AUC of 1.0 = perfect, 0.5 = random -- aim for > 0.80)")
+    except ValueError:
+        print("ROC-AUC: N/A (only one class present in test set)")
 
     return pipeline, X_test, y_test
 
@@ -184,7 +190,10 @@ def save_with_metadata(
     y_pred = pipeline.predict(X_test)
     y_proba = pipeline.predict_proba(X_test)[:, 1]
 
-    auc = float(roc_auc_score(y_test, y_proba))
+    try:
+        auc = float(roc_auc_score(y_test, y_proba))
+    except ValueError:
+        auc = 0.0  # only one class in test set — not meaningful
     f1 = float(f1_score(y_test, y_pred, zero_division=0))
     precision = float(precision_score(y_test, y_pred, zero_division=0))
     recall = float(recall_score(y_test, y_pred, zero_division=0))

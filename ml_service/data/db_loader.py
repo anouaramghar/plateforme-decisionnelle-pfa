@@ -93,6 +93,15 @@ def load_risk_data() -> pd.DataFrame | None:
         # Drop Matricule (not a feature)
         df = df.drop(columns=["Matricule"])
 
+        # A classifier needs both classes — fall back if data is single-class.
+        n_classes = df["at_risk"].nunique()
+        if n_classes < 2:
+            logger.warning("DW data has only one class (all students %s risk) "
+                           "— cannot train a binary classifier. "
+                           "Falling back to synthetic data.",
+                           "at" if df["at_risk"].iloc[0] == 1 else "not at")
+            return None
+
         logger.info("Loaded %d students from DW for risk training "
                      "(%.1f%% at risk).", len(df), df["at_risk"].mean() * 100)
         return df
