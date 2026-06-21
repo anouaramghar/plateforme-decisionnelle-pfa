@@ -164,7 +164,7 @@ namespace PlateformePFA.API.Controllers
             if (isFiltered)
                 absencesQuery = absencesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var rawAbsences = await absencesQuery
-                .Select(a => new { a.DateAbsence, a.NombreHeures })
+                .Select(a => new { a.DateAbsence, a.NombreHeures, a.EtudiantId })
                 .ToListAsync();
 
             var trend = new List<AbsenceTrendDto>();
@@ -172,13 +172,14 @@ namespace PlateformePFA.API.Controllers
             {
                 var weekStart = DateTime.UtcNow.Date.AddDays(-w * 7 - 6);
                 var weekEnd   = weekStart.AddDays(7);
-                var heures = rawAbsences
+                var week = rawAbsences
                     .Where(a => a.DateAbsence >= weekStart && a.DateAbsence < weekEnd)
-                    .Sum(a => a.NombreHeures);
+                    .ToList();
                 trend.Add(new AbsenceTrendDto
                 {
-                    Semaine = $"S{14 - w}",
-                    Heures = heures,
+                    Semaine    = $"S{14 - w}",
+                    Heures     = week.Sum(a => a.NombreHeures),
+                    NbEtudiants = week.Select(a => a.EtudiantId).Distinct().Count(),
                 });
             }
 

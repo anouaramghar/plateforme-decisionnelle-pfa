@@ -46,12 +46,31 @@ export function ChartBars({ data, height = 240, label = 'Moyenne' }: ChartBarsPr
 }
 
 interface ChartAreaProps {
-  data: { semaine: string; heures: number }[]
+  data: { semaine: string; heures: number; nbEtudiants?: number }[]
   height?: number
+  mode?: 'heures' | 'etudiants' | 'pct'
+  totalEtudiants?: number
 }
 
-export function ChartArea({ data, height = 240 }: ChartAreaProps) {
-  const k = useChartKey()
+export function ChartArea({ data, height = 240, mode = 'heures', totalEtudiants = 1 }: ChartAreaProps) {
+  const k = useChartKey(mode)
+
+  const values = data.map(d => {
+    if (mode === 'heures') return d.heures
+    if (mode === 'etudiants') return d.nbEtudiants ?? 0
+    return totalEtudiants > 0 ? Math.round(((d.nbEtudiants ?? 0) / totalEtudiants) * 100) : 0
+  })
+
+  const yFormatter = (v: number) =>
+    mode === 'heures' ? `${Math.round(v)} h`
+    : mode === 'etudiants' ? `${Math.round(v)} étud.`
+    : `${Math.round(v)} %`
+
+  const seriesName =
+    mode === 'heures' ? "Heures d'absence"
+    : mode === 'etudiants' ? 'Étudiants absents'
+    : '% étudiants absents'
+
   const options: ApexOptions = {
     ...baseTheme(),
     chart: { ...baseTheme().chart, type: 'area', height, sparkline: { enabled: false } },
@@ -61,7 +80,10 @@ export function ChartArea({ data, height = 240 }: ChartAreaProps) {
       axisTicks: { show: false },
       labels: { style: { fontSize: '10.5px' } },
     },
-    yaxis: { labels: { style: { fontSize: '10.5px' }, formatter: v => `${Math.round(v)}h` } },
+    yaxis: {
+      labels: { style: { fontSize: '10.5px' }, formatter: yFormatter },
+      ...(mode === 'pct' ? { min: 0, max: 100 } : {}),
+    },
     stroke: { curve: 'smooth', width: 2 },
     fill: {
       type: 'gradient',
@@ -69,9 +91,10 @@ export function ChartArea({ data, height = 240 }: ChartAreaProps) {
     },
     colors: [readCssVar('--accent-500', '#f97316')],
     markers: { size: 0, hover: { size: 4 } },
-    tooltip: { ...baseTheme().tooltip, y: { formatter: v => `${v} h` } },
+    tooltip: { ...baseTheme().tooltip, y: { formatter: yFormatter } },
   }
-  const series = [{ name: "Heures d'absence", data: data.map(d => d.heures) }]
+
+  const series = [{ name: seriesName, data: values }]
   return <Chart key={k} options={options} series={series} type="area" height={height} />
 }
 

@@ -56,6 +56,7 @@ namespace PlateformePFA.API.DTOs.Dashboard
     {
         public string Semaine { get; set; } = string.Empty;
         public decimal Heures { get; set; }
+        public int NbEtudiants { get; set; }
     }
 
     /// <summary>One row of the dashboard's "Activité récente" feed,

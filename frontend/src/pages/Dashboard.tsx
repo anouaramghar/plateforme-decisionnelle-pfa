@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
@@ -103,7 +104,7 @@ interface DashboardSummary {
   notesByFiliere: { filiere: string; moyenne: number; color: string }[]
   moyenneDistribution: { label: string; n: number }[]
   riskBreakdown: { label: string; n: number; color: string }[]
-  absenceTrend: { semaine: string; heures: number }[]
+  absenceTrend: { semaine: string; heures: number; nbEtudiants: number }[]
   topARisque: {
     id: number
     nomComplet: string
@@ -125,8 +126,16 @@ async function fetchSummary(filiere: string): Promise<DashboardSummary> {
   return res.data
 }
 
+type AbsTrendMode = 'heures' | 'etudiants' | 'pct'
+const ABS_MODES: { key: AbsTrendMode; label: string }[] = [
+  { key: 'heures',    label: 'Heures'    },
+  { key: 'etudiants', label: 'Étudiants' },
+  { key: 'pct',       label: '%'         },
+]
+
 export default function Dashboard() {
   const { filiere } = useFiliere()
+  const [absTrendMode, setAbsTrendMode] = useState<AbsTrendMode>('heures')
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['dashboard-summary', filiere],
@@ -429,25 +438,26 @@ export default function Dashboard() {
                 className="flex items-center rounded-md overflow-hidden ml-2"
                 style={{ border: '1px solid var(--border)' }}
               >
-                {['Heures', 'Étudiants', '%'].map((p, i) => (
+                {ABS_MODES.map((m, i) => (
                   <button
-                    key={p}
-                    className="px-2.5 py-1 text-[11px]"
+                    key={m.key}
+                    onClick={() => setAbsTrendMode(m.key)}
+                    className="px-2.5 py-1 text-[11px] transition"
                     style={{
-                      background: i === 0 ? 'var(--surface-2)' : 'transparent',
-                      color: i === 0 ? 'var(--text)' : 'var(--text-3)',
-                      fontWeight: i === 0 ? 500 : 400,
+                      background: absTrendMode === m.key ? 'var(--surface-2)' : 'transparent',
+                      color: absTrendMode === m.key ? 'var(--text)' : 'var(--text-3)',
+                      fontWeight: absTrendMode === m.key ? 500 : 400,
                       borderRight: i < 2 ? '1px solid var(--border)' : 'none',
                     }}
                   >
-                    {p}
+                    {m.label}
                   </button>
                 ))}
               </div>
             </>
           }
         />
-        <ChartArea data={absTrend} height={200} />
+        <ChartArea data={absTrend} height={200} mode={absTrendMode} totalEtudiants={k.nbEtudiants} />
       </div>
 
       {/* Bottom — table + activity */}
