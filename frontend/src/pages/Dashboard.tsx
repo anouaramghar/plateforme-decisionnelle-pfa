@@ -421,7 +421,10 @@ export default function Dashboard() {
           subtitle="14 dernières semaines — toutes filières"
           right={
             <>
-              <Pill tone="warn" dot>Pic semaine 12</Pill>
+              {absTrend.length > 0 && (() => {
+                const peak = absTrend.reduce((a, b) => b.heures > a.heures ? b : a)
+                return peak.heures > 0 ? <Pill tone="warn" dot>Pic {peak.semaine}</Pill> : null
+              })()}
               <div
                 className="flex items-center rounded-md overflow-hidden ml-2"
                 style={{ border: '1px solid var(--border)' }}
