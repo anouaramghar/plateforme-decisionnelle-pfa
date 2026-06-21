@@ -82,7 +82,7 @@ export function Sidebar() {
   // Best-effort display name; fall back to the email's local part if the
   // backend hasn't returned a NomComplet (e.g. legacy seed accounts).
   const displayName = user?.nom?.trim() || user?.email?.split('@')[0] || 'Utilisateur'
-  const role = user?.role ? `Responsable · ${user.role}` : 'Plateforme PFA'
+  const role = user?.role ?? 'Plateforme PFA'
   return (
     <aside
       style={{
