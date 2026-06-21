@@ -60,8 +60,8 @@ async function syncDw(): Promise<{ message: string; timestamp: string }> {
 
 interface Filiere { id: number; code: string; intitule: string }
 interface EtudiantRow {
-  id: number; matricule: string; nom: string; prenom: string
-  filiereCode: string; niveau: string; annee: string
+  id: number; matricule: string; nom: string; prenom: string; email?: string
+  filiereId: number; filiereCode: string; niveau: string; annee: string
   moyenne: number; scoreRisque: number
 }
 
@@ -70,11 +70,21 @@ async function fetchFilieres(): Promise<Filiere[]> {
   return res.data.items
 }
 
-async function createEtudiant(data: {
+type EtudiantPayload = {
   matricule: string; nom: string; prenom: string; email: string
   filiereId: number; niveau: string; annee: string
-}): Promise<void> {
+}
+
+async function createEtudiant(data: EtudiantPayload): Promise<void> {
   await api.post('/etudiants', data)
+}
+
+async function updateEtudiant({ id, data }: { id: number; data: EtudiantPayload }): Promise<void> {
+  await api.put(`/etudiants/${id}`, data)
+}
+
+async function deleteEtudiant(id: number): Promise<void> {
+  await api.delete(`/etudiants/${id}`)
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -374,8 +384,18 @@ const NIVEAUX = ['CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 const ANNEE_RE = /^\d{4}\/\d{4}$/
 
 function EtudiantsTab() {
-  const [showCreate, setShowCreate] = useState(false)
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'Admin'
   const queryClient = useQueryClient()
+
+  const [showCreate, setShowCreate]       = useState(false)
+  const [editingStudent, setEditingStudent] = useState<EtudiantRow | null>(null)
+  const [deletingId, setDeletingId]       = useState<number | null>(null)
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-etudiants'] })
+    queryClient.invalidateQueries({ queryKey: ['etudiants'] })
+  }
 
   const { data: filieres = [], isLoading: loadingFil } = useQuery({
     queryKey: ['filieres'],
@@ -392,11 +412,17 @@ function EtudiantsTab() {
 
   const createMutation = useMutation({
     mutationFn: createEtudiant,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-etudiants'] })
-      queryClient.invalidateQueries({ queryKey: ['etudiants'] })
-      setShowCreate(false)
-    },
+    onSuccess: () => { invalidate(); setShowCreate(false) },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: updateEtudiant,
+    onSuccess: () => { invalidate(); setEditingStudent(null) },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteEtudiant,
+    onSuccess: () => { invalidate(); setDeletingId(null) },
   })
 
   return (
@@ -405,14 +431,15 @@ function EtudiantsTab() {
         <p className="cap">
           {isLoading ? '…' : `${students.length} étudiant${students.length > 1 ? 's' : ''} enregistré${students.length > 1 ? 's' : ''}`}
         </p>
-        <button className="btn btn-sm btn-accent" onClick={() => setShowCreate(true)}>
+        <button className="btn btn-sm btn-accent" onClick={() => { setShowCreate(true); setEditingStudent(null) }}>
           <Icon name="plus" size={13} strokeWidth={2.4} />
           Nouvel étudiant
         </button>
       </div>
 
       {showCreate && (
-        <CreateEtudiantForm
+        <EtudiantForm
+          title="Nouvel étudiant"
           filieres={filieres}
           loadingFil={loadingFil}
           onSubmit={data => createMutation.mutate(data)}
@@ -422,36 +449,99 @@ function EtudiantsTab() {
         />
       )}
 
+      {editingStudent && (
+        <EtudiantForm
+          title={`Modifier — ${editingStudent.prenom} ${editingStudent.nom}`}
+          filieres={filieres}
+          loadingFil={loadingFil}
+          initial={editingStudent}
+          onSubmit={data => updateMutation.mutate({ id: editingStudent.id, data })}
+          onCancel={() => setEditingStudent(null)}
+          isPending={updateMutation.isPending}
+          error={updateMutation.error?.message}
+        />
+      )}
+
       <div className="card overflow-hidden">
         {isLoading && <div className="px-4 py-8 text-center cap">Chargement…</div>}
-        {isError  && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>Impossible de charger les étudiants.</div>}
+        {isError   && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>Impossible de charger les étudiants.</div>}
         {!isLoading && !isError && (
           <>
             <div
               className="grid px-4 py-2.5 text-[11px] uppercase tracking-wider"
-              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', color: 'var(--text-3)', borderBottom: '1px solid var(--border)', fontWeight: 500 }}
+              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', color: 'var(--text-3)', borderBottom: '1px solid var(--border)', fontWeight: 500 }}
             >
               <span>Nom</span>
               <span>Matricule</span>
               <span>Filière</span>
               <span>Niveau</span>
               <span>Moyenne</span>
+              <span />
             </div>
+
             {students.slice(0, 50).map((s, i) => (
-              <div
-                key={s.id}
-                className="grid items-center px-4 py-2.5"
-                style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', borderBottom: i < students.length - 1 ? '1px solid var(--border)' : 'none' }}
-              >
-                <span className="text-[13px] font-medium">{s.prenom} {s.nom}</span>
-                <span className="cap">{s.matricule}</span>
-                <span className="cap">{s.filiereCode}</span>
-                <span className="cap">{s.niveau}</span>
-                <span className="text-[12.5px] num" style={{ color: s.moyenne >= 10 ? 'var(--ok)' : 'var(--bad)' }}>
-                  {s.moyenne.toFixed(2)}/20
-                </span>
+              <div key={s.id}>
+                <div
+                  className="grid items-center px-4 py-2.5"
+                  style={{
+                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
+                    borderBottom: deletingId === s.id
+                      ? 'none'
+                      : i < students.length - 1 ? '1px solid var(--border)' : 'none',
+                  }}
+                >
+                  <span className="text-[13px] font-medium">{s.prenom} {s.nom}</span>
+                  <span className="cap">{s.matricule}</span>
+                  <span className="cap">{s.filiereCode}</span>
+                  <span className="cap">{s.niveau}</span>
+                  <span className="text-[12.5px] num" style={{ color: s.moyenne >= 10 ? 'var(--ok)' : 'var(--bad)' }}>
+                    {s.moyenne.toFixed(2)}/20
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      title="Modifier"
+                      onClick={() => { setEditingStudent(s); setShowCreate(false); setDeletingId(null) }}
+                    >
+                      <Icon name="edit" size={13} />
+                    </button>
+                    {isAdmin && (
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        title="Supprimer"
+                        onClick={() => { setDeletingId(s.id); setEditingStudent(null); setShowCreate(false) }}
+                        style={{ color: 'var(--bad)' }}
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline delete confirmation */}
+                {deletingId === s.id && (
+                  <div
+                    className="px-4 py-3 flex items-center gap-3"
+                    style={{ background: 'color-mix(in oklch, var(--bad) 6%, transparent)', borderBottom: i < students.length - 1 ? '1px solid var(--border)' : 'none' }}
+                  >
+                    <Icon name="alert" size={14} style={{ color: 'var(--bad)', flexShrink: 0 }} />
+                    <span className="text-[12.5px] flex-1" style={{ color: 'var(--bad)' }}>
+                      Supprimer <strong>{s.prenom} {s.nom}</strong> ? Cette action est irréversible.
+                    </span>
+                    <button className="btn btn-sm" onClick={() => setDeletingId(null)}>Annuler</button>
+                    <button
+                      className="btn btn-sm"
+                      style={{ background: 'var(--bad)', color: '#fff', borderColor: 'var(--bad)' }}
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteMutation.mutate(s.id)}
+                    >
+                      {deleteMutation.isPending ? 'Suppression…' : 'Confirmer'}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
+
             {students.length > 50 && (
               <div className="px-4 py-2 text-center cap" style={{ borderTop: '1px solid var(--border)' }}>
                 {students.length - 50} autres étudiants — utilisez la page Étudiants pour voir tous
@@ -464,27 +554,30 @@ function EtudiantsTab() {
   )
 }
 
-interface CreateEtudiantFormProps {
+// ── Étudiant form (shared create / edit) ─────────────────────────────────────
+
+interface EtudiantFormProps {
+  title: string
   filieres: Filiere[]
   loadingFil: boolean
-  onSubmit: (data: { matricule: string; nom: string; prenom: string; email: string; filiereId: number; niveau: string; annee: string }) => void
+  initial?: EtudiantRow
+  onSubmit: (data: EtudiantPayload) => void
   onCancel: () => void
   isPending: boolean
   error?: string
 }
 
-function CreateEtudiantForm({ filieres, loadingFil, onSubmit, onCancel, isPending, error }: CreateEtudiantFormProps) {
+function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel, isPending, error }: EtudiantFormProps) {
   const currentYear = new Date().getFullYear()
-  const defaultAnnee = `${currentYear - 1}/${currentYear}`
 
   const [form, setForm] = useState({
-    matricule: '',
-    prenom: '',
-    nom: '',
-    email: '',
-    filiereId: '' as string | number,
-    niveau: 'CP1',
-    annee: defaultAnnee,
+    matricule: initial?.matricule ?? '',
+    prenom:    initial?.prenom    ?? '',
+    nom:       initial?.nom       ?? '',
+    email:     initial?.email     ?? '',
+    filiereId: initial?.filiereId != null ? String(initial.filiereId) : '',
+    niveau:    initial?.niveau    ?? 'CP1',
+    annee:     initial?.annee     ?? `${currentYear - 1}/${currentYear}`,
   })
 
   const [anneeError, setAnneeError] = useState('')
@@ -502,10 +595,16 @@ function CreateEtudiantForm({ filieres, loadingFil, onSubmit, onCancel, isPendin
     onSubmit({ ...form, filiereId: Number(form.filiereId), email: form.email || '' })
   }
 
+  const isEdit = !!initial
+
   return (
-    <form onSubmit={handleSubmit} className="card p-5 space-y-4" style={{ borderColor: 'var(--accent-400)' }}>
+    <form
+      onSubmit={handleSubmit}
+      className="card p-5 space-y-4"
+      style={{ borderColor: isEdit ? 'var(--text-3)' : 'var(--accent-400)' }}
+    >
       <div className="flex items-center justify-between">
-        <h3 className="text-[14px] font-semibold">Nouvel étudiant</h3>
+        <h3 className="text-[14px] font-semibold">{title}</h3>
         <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>
           <Icon name="x" size={13} />
         </button>
@@ -551,14 +650,7 @@ function CreateEtudiantForm({ filieres, loadingFil, onSubmit, onCancel, isPendin
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Année scolaire</span>
-          <input
-            className="input"
-            placeholder="2025/2026"
-            value={form.annee}
-            onChange={set('annee')}
-            required
-            maxLength={9}
-          />
+          <input className="input" placeholder="2025/2026" value={form.annee} onChange={set('annee')} required maxLength={9} />
           {anneeError && <span className="text-[11px]" style={{ color: 'var(--bad)' }}>{anneeError}</span>}
         </label>
       </div>
@@ -568,7 +660,9 @@ function CreateEtudiantForm({ filieres, loadingFil, onSubmit, onCancel, isPendin
       <div className="flex items-center gap-2 justify-end">
         <button type="button" className="btn btn-sm" onClick={onCancel}>Annuler</button>
         <button type="submit" className="btn btn-sm btn-accent" disabled={isPending || !form.filiereId}>
-          {isPending ? 'Création…' : 'Ajouter l\'étudiant'}
+          {isPending
+            ? (isEdit ? 'Enregistrement…' : 'Création…')
+            : (isEdit ? 'Enregistrer' : "Ajouter l'étudiant")}
         </button>
       </div>
     </form>
