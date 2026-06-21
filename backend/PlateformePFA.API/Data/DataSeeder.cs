@@ -10,8 +10,6 @@ namespace PlateformePFA.API.Data
             // Separate block, NOT inside the Filieres block
             if (!context.Utilisateurs.Any(u => u.Role == "Admin"))
             {
-                // Read admin seed credentials from configuration (env vars in Docker).
-                // Fail fast rather than silently baking a known password into the binary.
                 var adminEmail    = configuration["ADMIN_SEED_EMAIL"];
                 var adminPassword = configuration["ADMIN_SEED_PASSWORD"];
                 var adminNom      = configuration["ADMIN_SEED_NOM"]    ?? "Admin";
@@ -43,10 +41,6 @@ namespace PlateformePFA.API.Data
 
             if (context.Filieres.Any()) return;
 
-            // Use the configured academic year if set; otherwise compute it from
-            // UTC clock (school year flips on 1 September). This avoids the
-            // historic drift where seeded data was hardcoded to 2025/2026 even
-            // though predictions stamped a different year, leaving zero overlap.
             var anneeCourante = configuration["CurrentAcademicYear"]
                                 ?? CurrentAcademicYear();
 
@@ -56,120 +50,124 @@ namespace PlateformePFA.API.Data
                 .FirstOrDefault();
 
             // ==========================================
-            // 1. CRÉATION DES FILIÈRES (Inclus le Tronc Commun)
+            // 1. FILIÈRES
             // ==========================================
             var filieres = new List<Filiere>
             {
-                new Filiere { Code = "TCP", Intitule = "Tronc Commun Préparatoire", ResponsableId = responsableId },
-                new Filiere { Code = "GI", Intitule = "Génie Informatique", ResponsableId = responsableId },
-                new Filiere { Code = "IA", Intitule = "Intelligence Artificielle", ResponsableId = responsableId },
-                new Filiere { Code = "ROC", Intitule = "Robotique et Objets Connectés", ResponsableId = responsableId },
-                new Filiere { Code = "IRSI", Intitule = "Ingénierie en Réseaux et Systèmes d'Information", ResponsableId = responsableId }
+                new Filiere { Code = "TCP",  Intitule = "Tronc Commun Préparatoire",                         ResponsableId = responsableId },
+                new Filiere { Code = "GI",   Intitule = "Génie Informatique",                                ResponsableId = responsableId },
+                new Filiere { Code = "IA",   Intitule = "Intelligence Artificielle",                         ResponsableId = responsableId },
+                new Filiere { Code = "ROC",  Intitule = "Robotique et Objets Connectés",                     ResponsableId = responsableId },
+                new Filiere { Code = "IRSI", Intitule = "Ingénierie en Réseaux et Systèmes d'Information",   ResponsableId = responsableId },
             };
             context.Filieres.AddRange(filieres);
-            context.SaveChanges(); 
+            context.SaveChanges();
 
             // ==========================================
-            // 2. CRÉATION DES MODULES PAR FILIÈRE
+            // 2. MODULES — 4 par filière pour que nb_modules soit significatif
+            //    comme feature ML. Chaque module reçoit des notes pour S1 et S2
+            //    dans la boucle de génération ci-dessous.
             // ==========================================
             var modules = new List<Module>
             {
-                // Modules Tronc Commun (CP)
-                new Module { Code = "TCP11", Nom = "Analyse Mathématique", FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "TCP12", Nom = "Algèbre Linéaire", FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "TCP21", Nom = "Physique Quantique & Mécanique", FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 4m, Semestre = "S3" },
-                new Module { Code = "TCP22", Nom = "Initiation à l'Algorithmique", FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 3m, Semestre = "S4" },
+                // TCP — 4 modules (CP1 + CP2)
+                new Module { Code = "TCP11", Nom = "Analyse Mathématique",            FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
+                new Module { Code = "TCP12", Nom = "Algèbre Linéaire",                FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
+                new Module { Code = "TCP21", Nom = "Physique Quantique & Mécanique",  FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 4m, Semestre = "S2" },
+                new Module { Code = "TCP22", Nom = "Initiation à l'Algorithmique",    FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 3m, Semestre = "S2" },
 
-                // Modules Génie Informatique (GI)
-                new Module { Code = "GI01", Nom = "Architecture Logicielle", FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "GI02", Nom = "Développement Fullstack", FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" },
+                // GI — 4 modules (CI1 + CI2)
+                new Module { Code = "GI01", Nom = "Architecture Logicielle",          FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "GI02", Nom = "Développement Fullstack",          FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
+                new Module { Code = "GI03", Nom = "Bases de données avancées",        FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "GI04", Nom = "Systèmes d'exploitation",          FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 3m, Semestre = "S2" },
 
-                // Modules Intelligence Artificielle (IA)
+                // IA — 4 modules (CI1 + CI2)
                 new Module { Code = "IA01", Nom = "Fondamentaux du Machine Learning", FiliereId = filieres[2].Id, Niveau = "CI1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "IA02", Nom = "Deep Learning & Vision par Ordinateur", FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" },
+                new Module { Code = "IA02", Nom = "Deep Learning & Vision",           FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
+                new Module { Code = "IA03", Nom = "Traitement du langage naturel",    FiliereId = filieres[2].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "IA04", Nom = "Mathématiques pour l'IA",          FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
 
-                // Modules Robotique et Objets Connectés (ROC)
-                new Module { Code = "ROC01", Nom = "Systèmes Embarqués", FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "ROC02", Nom = "Protocoles IoT & Microcontrôleurs", FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S3" },
+                // ROC — 4 modules (CI1 + CI2)
+                new Module { Code = "ROC01", Nom = "Systèmes Embarqués",              FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
+                new Module { Code = "ROC02", Nom = "Protocoles IoT & Microcontrôleurs", FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
+                new Module { Code = "ROC03", Nom = "Automatique et contrôle",         FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 3m, Semestre = "S1" },
+                new Module { Code = "ROC04", Nom = "Communication sans fil",          FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 3m, Semestre = "S2" },
 
-                // Modules Ingénierie en Réseaux et SI (IRSI)
+                // IRSI — 4 modules (CI1 + CI2)
                 new Module { Code = "IRSI01", Nom = "Architecture des Réseaux Avancés", FiliereId = filieres[4].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "IRSI02", Nom = "Cybersécurité et Cryptographie", FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S3" }
+                new Module { Code = "IRSI02", Nom = "Cybersécurité et Cryptographie",   FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
+                new Module { Code = "IRSI03", Nom = "Administration système Linux",     FiliereId = filieres[4].Id, Niveau = "CI1", Coefficient = 3m, Semestre = "S1" },
+                new Module { Code = "IRSI04", Nom = "Sécurité des infrastructures",    FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
             };
             context.Modules.AddRange(modules);
             context.SaveChanges();
 
             // ==========================================
-            // 3. DICTIONNAIRES DE NOMS MAROCAINS
+            // 3. NOMS MAROCAINS
             // ==========================================
-            var prenomsMarocains = new[] { 
-                "Youssef", "Fatima", "Amine", "Salma", "Karim", "Aya", "Mehdi", "Khadija", "Hamza", "Imane", 
-                "Omar", "Sara", "Yassine", "Meryem", "Ilyas", "Hiba", "Marouane", "Anouar", "Aymen", "Reda", 
+            var prenomsMarocains = new[] {
+                "Youssef", "Fatima", "Amine", "Salma", "Karim", "Aya", "Mehdi", "Khadija", "Hamza", "Imane",
+                "Omar", "Sara", "Yassine", "Meryem", "Ilyas", "Hiba", "Marouane", "Anouar", "Aymen", "Reda",
                 "Zineb", "Saad", "Kenza", "Zakaria", "Hajar", "Ayoub", "Nada", "Oussama", "Najat", "Bilal"
             };
-
-            var nomsMarocains = new[] { 
-                "Alaoui", "Benali", "Amrani", "El Idrissi", "Bennani", "Tazi", "Ait Ali", "Amghar", "Engar", 
-                "Chraibi", "Tahiri", "Zeroual", "Berrada", "El Fassi", "Mansouri", "Ouazzani", "Guessous", 
+            var nomsMarocains = new[] {
+                "Alaoui", "Benali", "Amrani", "El Idrissi", "Bennani", "Tazi", "Ait Ali", "Amghar", "Engar",
+                "Chraibi", "Tahiri", "Zeroual", "Berrada", "El Fassi", "Mansouri", "Ouazzani", "Guessous",
                 "Lahlou", "El Oufir", "Benjelloun", "Belghiti", "Moutaouakil", "Zidane", "El Amrani"
             };
 
             // ==========================================
-            // 4. GÉNÉRATION DES ÉTUDIANTS
+            // 4. ÉTUDIANTS
             // ==========================================
             var niveauxCP = new[] { "CP1", "CP2" };
-            var niveauxCI = new[] { "CI1", "CI2", "CI3" };
-
-            // Counter-based matricule guarantees UNIQUE(Matricule) — random numbers
-            // have a ~39% collision rate at 300 students in a 90 000-value space.
             int matriculeCounter = 10001;
 
             var etudiantFaker = new Faker<Etudiant>()
-                .RuleFor(e => e.Nom, f => f.PickRandom(nomsMarocains))
-                .RuleFor(e => e.Prenom, f => f.PickRandom(prenomsMarocains))
-                .RuleFor(e => e.Matricule, _ => $"E{matriculeCounter++:D5}") // guaranteed unique
-                .RuleFor(e => e.Email, (f, e) => f.Internet.Email(e.Prenom, e.Nom, "eniad.ma").ToLower())
-                // Tirage aléatoire du niveau (CP ou CI)
-                .RuleFor(e => e.Niveau, f => f.PickRandom(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }))
-                // Attribution intelligente de la filière en fonction du niveau
+                .RuleFor(e => e.Nom,      f => f.PickRandom(nomsMarocains))
+                .RuleFor(e => e.Prenom,   f => f.PickRandom(prenomsMarocains))
+                .RuleFor(e => e.Matricule, _ => $"E{matriculeCounter++:D5}")
+                .RuleFor(e => e.Email,    (f, e) => f.Internet.Email(e.Prenom, e.Nom, "eniad.ma").ToLower())
+                .RuleFor(e => e.Niveau,   f => f.PickRandom(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }))
                 .RuleFor(e => e.FiliereId, (f, e) => {
-                    if (niveauxCP.Contains(e.Niveau)) return filieres[0].Id; // Tronc Commun pour CP
-                    return f.PickRandom(filieres.Skip(1)).Id; // L'une des 4 autres filières pour CI
+                    if (niveauxCP.Contains(e.Niveau)) return filieres[0].Id;
+                    return f.PickRandom(filieres.Skip(1)).Id;
                 })
-                .RuleFor(e => e.Annee, anneeCourante)
+                .RuleFor(e => e.Annee,  anneeCourante)
                 .RuleFor(e => e.CreeLe, f => f.Date.Past(1));
 
-            var etudiants = etudiantFaker.Generate(300); // 300 étudiants répartis sur les 5 niveaux
+            var etudiants = etudiantFaker.Generate(300);
             context.Etudiants.AddRange(etudiants);
             context.SaveChanges();
 
-            // ==========================================
-            // 5. OPTIMISATION : MAPPING ETUDIANT -> MODULES
-            // ==========================================
-            // Pour s'assurer qu'un étudiant en GI n'a que des notes de modules GI, 
-            // et un étudiant en CP n'a que des notes de TCP.
             var etudiantFiliereMap = etudiants.ToDictionary(e => e.Id, e => e.FiliereId);
-            var filiereModulesMap = modules.GroupBy(m => m.FiliereId).ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
+            var filiereModulesMap  = modules
+                .GroupBy(m => m.FiliereId)
+                .ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
 
             // ==========================================
-            // 6. GÉNÉRATION DES NOTES (par étudiant × module × semestre)
+            // 5. NOTES — profils réalistes et cohérents avec les seuils ML
+            //
+            //  À risque (25 %, index % 4 == 3, seed=42 → déterministe) :
+            //    NoteExamen 1–7, NoteTD 4–12, NoteTP 4–12
+            //    → NoteFinal 2.2 – 9.0  (clairement < 10)
+            //
+            //  Normal (75 %) :
+            //    NoteExamen 8–18, NoteTD 10–20, NoteTP 10–20
+            //    → NoteFinal 8.8 – 18.8 (majoritairement > 10, réaliste)
             // ==========================================
-            // Random mass-generation caused UNIQUE(EtudiantId, ModuleId, Annee, Semestre)
-            // violations. We now iterate the full cartesian product to guarantee uniqueness.
-            var noteRng = new Random(42); // seeded — reproducible data across restarts
-            var notes   = new List<Note>();
+            var noteRng = new Random(42);
 
-            // ~25% of students are "at risk" (moyenne < 10) so the DW has both
-            // classes for ML binary classification. The set is deterministic
-            // (seed=42) so reseeds always produce the same split.
             var atRiskIds = new HashSet<int>(
                 etudiants.Where((_, i) => i % 4 == 3).Select(e => e.Id)
             );
 
+            var notes = new List<Note>();
             foreach (var etudiant in etudiants)
             {
-                bool isAtRisk = atRiskIds.Contains(etudiant.Id);
-                var moduleIds = filiereModulesMap[etudiant.FiliereId];
+                bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
+                var  moduleIds = filiereModulesMap[etudiant.FiliereId];
+
                 foreach (var moduleId in moduleIds)
                 {
                     foreach (var semestre in new[] { "S1", "S2" })
@@ -177,18 +175,19 @@ namespace PlateformePFA.API.Data
                         decimal noteExamen, noteTD, noteTP;
                         if (isAtRisk)
                         {
-                            // At-risk profile: low exam grades, leading to moyenne < 10
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 5 + 1), 2);   // 1–6
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8 + 5), 2);   // 5–13
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8 + 5), 2);   // 5–13
+                            // Profil en difficulté : exam très bas → NoteFinal 2–9
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 6  + 1),  2); // 1–7
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 4),  2); // 4–12
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 4),  2); // 4–12
                         }
                         else
                         {
-                            // Normal profile: varied grades, mostly above 10
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 15 + 4), 2);  // 4–19
+                            // Profil normal : exam correct → NoteFinal 9–19
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 10 + 8),  2); // 8–18
                             noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2); // 10–20
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 10 + 10), 2); // 10–20
                         }
+
                         notes.Add(new Note
                         {
                             EtudiantId = etudiant.Id,
@@ -199,41 +198,58 @@ namespace PlateformePFA.API.Data
                             NoteTD     = noteTD,
                             NoteTP     = noteTP,
                             NoteFinal  = Math.Round(noteExamen * 0.6m + noteTD * 0.2m + noteTP * 0.2m, 2),
-                            CreeLe     = DateTime.UtcNow.AddDays(-noteRng.Next(1, 365))
+                            CreeLe     = DateTime.UtcNow.AddDays(-noteRng.Next(1, 365)),
                         });
                     }
                 }
             }
-
             context.Notes.AddRange(notes);
             context.SaveChanges();
 
             // ==========================================
-            // 7. GÉNÉRATION DES ABSENCES
+            // 6. ABSENCES — corrélées au profil de risque
+            //
+            //  À risque : 5–14 événements × 2–6h → total 10–84h (avg ~38h)
+            //             → dépasse le seuil 30h de l'heuristique RiskScorer
+            //             → taux DW ≈ 38h / (4 modules × 32h) ≈ 30 % (feature ML utile)
+            //
+            //  Normal   : 0–5  événements × 2–4h → total 0–20h  (avg ~7h)
+            //             → sous le seuil 18h de l'heuristique
+            //             → taux DW ≈ 7h / 128h ≈ 5 %
             // ==========================================
-            var absenceFaker = new Faker<Absence>()
-                .RuleFor(a => a.EtudiantId, f => f.PickRandom(etudiants).Id)
-                // Même logique stricte pour les absences
-                .RuleFor(a => a.ModuleId, (f, a) => {
-                    var filiereId = etudiantFiliereMap[a.EtudiantId];
-                    var modulesDeCetteFiliere = filiereModulesMap[filiereId];
-                    return f.PickRandom(modulesDeCetteFiliere);
-                })
-                .RuleFor(a => a.NombreHeures, f => f.PickRandom(new[] { 2, 4 })) 
-                .RuleFor(a => a.Justifiee, f => f.Random.Bool(0.3f)) 
-                .RuleFor(a => a.DateAbsence, f => f.Date.Recent(100)) 
-                .RuleFor(a => a.CreeLe, (f, a) => a.DateAbsence);
+            var absRng   = new Random(123);
+            var absences = new List<Absence>();
 
-            var absences = absenceFaker.Generate(400);
+            foreach (var etudiant in etudiants)
+            {
+                bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
+                var  moduleIds = filiereModulesMap[etudiant.FiliereId];
+
+                int nbEvents = isAtRisk
+                    ? absRng.Next(5, 15)   // 5–14 absences
+                    : absRng.Next(0, 6);   // 0–5 absences
+
+                for (int i = 0; i < nbEvents; i++)
+                {
+                    var dateAbsence = DateTime.UtcNow.Date.AddDays(-absRng.Next(1, 101));
+                    absences.Add(new Absence
+                    {
+                        EtudiantId   = etudiant.Id,
+                        ModuleId     = moduleIds[absRng.Next(moduleIds.Count)],
+                        NombreHeures = isAtRisk
+                            ? absRng.Next(1, 4) * 2   // 2, 4 ou 6 heures
+                            : absRng.Next(1, 3) * 2,  // 2 ou 4 heures
+                        Justifiee    = absRng.NextDouble() < (isAtRisk ? 0.15 : 0.50),
+                        DateAbsence  = dateAbsence,
+                        CreeLe       = dateAbsence,
+                    });
+                }
+            }
+
             context.Absences.AddRange(absences);
             context.SaveChanges();
         }
 
-        /// <summary>
-        /// Academic year in "YYYY/YYYY" form. The school year flips on 1 September.
-        /// Mirrors PredictionsController.CurrentAcademicYear so seeded years and
-        /// freshly-stamped predictions land in the same dimension row.
-        /// </summary>
         private static string CurrentAcademicYear()
         {
             var now   = DateTime.UtcNow;

@@ -5,9 +5,10 @@ import { Icon, type IconName } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useFiliere } from '../context/FiliereContext'
 import { api } from '../services/api'
 
-const FILIERES = ['TCP', 'GI', 'IA', 'ROC', 'IRSI']
+const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
 
 interface NavEntry {
   to: string
@@ -29,17 +30,11 @@ const SECONDARY: NavEntry[] = [
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useTheme()
   const { user, token } = useAuth()
+  const { filiere, setFiliere } = useFiliere()
   const W = sidebarCollapsed ? 64 : 232
 
-  const [filiere, setFiliere] = useState<string>(
-    () => localStorage.getItem('pfa_filiere') ?? 'GI'
-  )
   const [dropOpen, setDropOpen] = useState(false)
   const dropRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    localStorage.setItem('pfa_filiere', filiere)
-  }, [filiere])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -165,15 +160,15 @@ export function Sidebar() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 9.5,
+                fontSize: filiere === 'TOUS' ? 7.5 : 9.5,
                 fontWeight: 700,
                 color: '#fff',
                 flexShrink: 0,
               }}
             >
-              {filiere}
+              {filiere === 'TOUS' ? 'ALL' : filiere}
             </span>
-            <span className="flex-1 truncate">Filière {filiere}</span>
+            <span className="flex-1 truncate">{filiere === 'TOUS' ? 'Toutes filières' : `Filière ${filiere}`}</span>
             <Icon name={dropOpen ? 'chevUp' : 'chevDown'} size={13} className="opacity-60" />
           </button>
 
@@ -223,7 +218,7 @@ export function Sidebar() {
                   >
                     {f}
                   </span>
-                  Filière {f}
+                  {f === 'TOUS' ? 'Toutes filières' : `Filière ${f}`}
                   {f === filiere && <Icon name="check" size={12} style={{ marginLeft: 'auto', color: 'var(--accent-500)' }} />}
                 </button>
               ))}

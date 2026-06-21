@@ -7,6 +7,7 @@ import { SectionHeader } from '../components/ui/SectionHeader'
 import { MiniKpi } from '../components/ui/KpiCard'
 import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
 import { api } from '../services/api'
+import { useFiliere } from '../context/FiliereContext'
 
 const SPARK = [22, 28, 30, 26, 32, 38, 42, 40, 46, 52, 48, 55, 62, 58]
 
@@ -118,15 +119,18 @@ interface DashboardSummary {
   retraitsCetteSemaine: number
 }
 
-async function fetchSummary(): Promise<DashboardSummary> {
-  const res = await api.get<DashboardSummary>('/dashboard/summary')
+async function fetchSummary(filiere: string): Promise<DashboardSummary> {
+  const params = filiere && filiere !== 'TOUS' ? `?filiere=${filiere}` : ''
+  const res = await api.get<DashboardSummary>(`/dashboard/summary${params}`)
   return res.data
 }
 
 export default function Dashboard() {
+  const { filiere } = useFiliere()
+
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['dashboard-summary'],
-    queryFn: fetchSummary,
+    queryKey: ['dashboard-summary', filiere],
+    queryFn: () => fetchSummary(filiere),
     refetchInterval: 60_000,
   })
 
@@ -156,7 +160,7 @@ export default function Dashboard() {
       }))
     : []
 
-  const filiereCtx = 'GI'
+  const filiereLabel = filiere === 'TOUS' ? 'Toutes filières' : `Filière ${filiere}`
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
@@ -200,7 +204,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 mb-3">
             <span className="pill pill-accent" style={{ padding: '2px 8px' }}>
               <span className="pill-dot live-dot" style={{ background: 'currentColor' }} />
-              Filière {filiereCtx}
+              {filiereLabel}
             </span>
             <span className="cap">Semestre 2 · 2025/2026</span>
             <span style={{ color: 'var(--text-4)' }}>·</span>

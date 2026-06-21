@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { FiliereProvider } from './context/FiliereContext'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <App />
+          <FiliereProvider>
+            <App />
+          </FiliereProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

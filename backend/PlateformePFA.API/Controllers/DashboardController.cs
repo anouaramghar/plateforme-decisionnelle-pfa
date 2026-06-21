@@ -55,12 +55,17 @@ namespace PlateformePFA.API.Controllers
         }
 
         [HttpGet("summary")]
-        public async Task<ActionResult<DashboardSummaryDto>> GetSummary()
+        public async Task<ActionResult<DashboardSummaryDto>> GetSummary([FromQuery] string? filiere = null)
         {
+            bool isFiltered = !string.IsNullOrWhiteSpace(filiere) && filiere != "TOUS";
+
             // 1) Per-student aggregates: average final note + total absence hours.
             //    Pulled in a single round-trip; everything below is in-memory.
-            var students = await _context.Etudiants
-                .AsNoTracking()
+            var studentsQuery = _context.Etudiants.AsNoTracking();
+            if (isFiltered)
+                studentsQuery = studentsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+
+            var students = await studentsQuery
                 .Select(e => new
                 {
                     e.Id,
@@ -81,8 +86,11 @@ namespace PlateformePFA.API.Controllers
             //    the dashboard is never blank on a fresh seed.
             var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
-            // 3) Active alerts count.
-            var alertesActives = await _context.Alertes.CountAsync(a => !a.Resolue);
+            // 3) Active alerts count (scoped to filière when one is selected).
+            var alertesQuery = _context.Alertes.AsNoTracking().Where(a => !a.Resolue);
+            if (isFiltered)
+                alertesQuery = alertesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            var alertesActives = await alertesQuery.CountAsync();
 
             // 4) KPIs.
             var nbEtudiants = students.Count;
@@ -152,9 +160,10 @@ namespace PlateformePFA.API.Controllers
             //    because SQL Server's DATEPART(week, ...) varies by language
             //    settings and this is only ~400 rows seeded.
             var since = DateTime.UtcNow.Date.AddDays(-14 * 7);
-            var rawAbsences = await _context.Absences
-                .AsNoTracking()
-                .Where(a => a.DateAbsence >= since)
+            var absencesQuery = _context.Absences.AsNoTracking().Where(a => a.DateAbsence >= since);
+            if (isFiltered)
+                absencesQuery = absencesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            var rawAbsences = await absencesQuery
                 .Select(a => new { a.DateAbsence, a.NombreHeures })
                 .ToListAsync();
 
@@ -197,8 +206,10 @@ namespace PlateformePFA.API.Controllers
             // the dashboard's KPI tiles show real movement instead of literals.
             var (currentSem, prevAnnee, prevSem) = ResolvePreviousPeriod();
 
-            var prevStudents = await _context.Etudiants
-                .AsNoTracking()
+            var prevEtudiantsQuery = _context.Etudiants.AsNoTracking();
+            if (isFiltered)
+                prevEtudiantsQuery = prevEtudiantsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            var prevStudents = await prevEtudiantsQuery
                 .Select(e => new
                 {
                     Moyenne = (decimal?)e.Notes!
@@ -218,14 +229,20 @@ namespace PlateformePFA.API.Controllers
             // Active alerts 7 days ago: created before the cutoff and not yet resolved
             // by then. Captures the "trend over the last week" the UI needs.
             var weekAgo = DateTime.UtcNow.AddDays(-7);
-            var prevActiveAlerts = await _context.Alertes
-                .CountAsync(a => a.CreeLe < weekAgo && (a.ResolueeLe == null || a.ResolueeLe >= weekAgo));
+            var prevAlertsQuery = _context.Alertes.AsNoTracking()
+                .Where(a => a.CreeLe < weekAgo && (a.ResolueeLe == null || a.ResolueeLe >= weekAgo));
+            if (isFiltered)
+                prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            var prevActiveAlerts = await prevAlertsQuery.CountAsync();
 
             // Student count trend: % growth in CreeLe last 30 days vs the prior 30 days.
             var since30 = DateTime.UtcNow.AddDays(-30);
             var since60 = DateTime.UtcNow.AddDays(-60);
-            var newLast30 = await _context.Etudiants.CountAsync(e => e.CreeLe >= since30);
-            var newPrev30 = await _context.Etudiants.CountAsync(e => e.CreeLe < since30 && e.CreeLe >= since60);
+            var etudiantsBase = _context.Etudiants.AsNoTracking();
+            if (isFiltered)
+                etudiantsBase = etudiantsBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            var newLast30 = await etudiantsBase.CountAsync(e => e.CreeLe >= since30);
+            var newPrev30 = await etudiantsBase.CountAsync(e => e.CreeLe < since30 && e.CreeLe >= since60);
             var nbDelta = newPrev30 == 0 ? 0m : Math.Round((decimal)(newLast30 - newPrev30) / newPrev30 * 100m, 1);
 
             // ── Sparkline + side stats (Phase 1 task 1.6) ────────────────────
@@ -233,7 +250,7 @@ namespace PlateformePFA.API.Controllers
             // oldest first so the bars render left→right naturally on the UI.
             // One DB roundtrip (vs 14 CountAsync calls) — sort once, then
             // binary-search each weekEnd cutoff in memory.
-            var creeLeDates = await _context.Etudiants
+            var creeLeDates = await etudiantsBase
                 .Select(e => e.CreeLe)
                 .ToListAsync();
             creeLeDates.Sort();
@@ -250,10 +267,8 @@ namespace PlateformePFA.API.Controllers
                 }
                 sparkPoints.Add(lo);
             }
-            var nouveaux = await _context.Etudiants.CountAsync(e => e.CreeLe >= weekAgo);
-            
-            var retraits = await _context.Etudiants
-                .CountAsync(e => e.DesinscritLe >= weekAgo);
+            var nouveaux = await etudiantsBase.CountAsync(e => e.CreeLe >= weekAgo);
+            var retraits = await etudiantsBase.CountAsync(e => e.DesinscritLe >= weekAgo);
 
             return new DashboardSummaryDto
             {
