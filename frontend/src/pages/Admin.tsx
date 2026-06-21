@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import type { AxiosError } from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { Icon } from '../components/ui/Icon'
@@ -23,6 +24,11 @@ interface PaginatedResult<T> {
   total: number
   page: number
   pageSize: number
+}
+
+interface ApiErrorPayload {
+  errors?: Record<string, string[]>
+  message?: string
 }
 
 type Tab = 'users' | 'etudiants' | 'dw'
@@ -191,7 +197,7 @@ function UsersTab() {
           isPending={createMutation.isPending}
           error={createMutation.error
             ? (() => {
-                const r = (createMutation.error as any)?.response?.data
+                const r = (createMutation.error as AxiosError<ApiErrorPayload>)?.response?.data
                 if (!r) return createMutation.error.message
                 if (r.errors) return Object.values(r.errors).flat().join(' ')
                 return r.message || createMutation.error.message

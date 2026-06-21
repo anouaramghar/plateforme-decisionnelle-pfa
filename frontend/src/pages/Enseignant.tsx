@@ -88,7 +88,7 @@ export default function Enseignant() {
         <div>
           <div className="cap mb-1">Espace Enseignant</div>
           <h1 className="text-[22px] font-semibold tracking-tight">
-            Bonjour, {user?.prenom || user?.nom || 'Enseignant'}
+            Bonjour, {user?.nom || 'Enseignant'}
           </h1>
         </div>
       </div>
