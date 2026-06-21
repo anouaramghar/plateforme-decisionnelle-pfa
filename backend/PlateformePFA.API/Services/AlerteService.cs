@@ -163,19 +163,18 @@ namespace PlateformePFA.API.Services
         {
             var etudiantIds = await _context.Etudiants
                 .AsNoTracking()
+                .Where(e => e.DesinscritLe == null)
                 .Select(e => e.Id)
                 .ToListAsync();
 
-            var noteAlerts = 0;
-            var absenceAlerts = 0;
-
-            // Count existing open alerts before scan (to detect new ones created).
-            var beforeNotes    = await _context.Alertes.CountAsync(a => a.Type == "NoteFaible"       && !a.Resolue);
-            var beforeAbsences = await _context.Alertes.CountAsync(a => a.Type == "AbsenceExcessive" && !a.Resolue);
+            var beforeIds = (await _context.Alertes
+                .AsNoTracking()
+                .Select(a => a.Id)
+                .ToListAsync()).ToHashSet();
 
             // Check notes: all (etudiantId, moduleId) pairs that have a NoteFinal.
             var notePairs = await _context.Notes
-                .Where(n => n.NoteFinal.HasValue)
+                .Where(n => n.NoteFinal.HasValue && n.Etudiant.DesinscritLe == null)
                 .Select(n => new { n.EtudiantId, n.ModuleId })
                 .Distinct()
                 .ToListAsync();
@@ -187,8 +186,10 @@ namespace PlateformePFA.API.Services
             foreach (var id in etudiantIds)
                 await CheckAbsenceAlertAsync(id);
 
-            noteAlerts    = await _context.Alertes.CountAsync(a => a.Type == "NoteFaible"       && !a.Resolue) - beforeNotes;
-            absenceAlerts = await _context.Alertes.CountAsync(a => a.Type == "AbsenceExcessive" && !a.Resolue) - beforeAbsences;
+            var noteAlerts = await _context.Alertes.CountAsync(a =>
+                a.Type == "NoteFaible" && !beforeIds.Contains(a.Id));
+            var absenceAlerts = await _context.Alertes.CountAsync(a =>
+                a.Type == "AbsenceExcessive" && !beforeIds.Contains(a.Id));
 
             _logger.LogInformation(
                 "ScanAll terminé : +{N} alertes NoteFaible, +{A} alertes AbsenceExcessive",
