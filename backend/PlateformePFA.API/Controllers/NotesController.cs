@@ -113,7 +113,50 @@ namespace PlateformePFA.API.Controllers
         }
 
         [Authorize(Roles = "Admin,Enseignant")]
-        [HttpPut("{id}")]
+        [HttpPut("upsert")]
+        public async Task<ActionResult<UpsertNoteResultDto>> UpsertNote(UpsertNoteDto dto)
+        {
+            var studentExists = await _context.Etudiants
+                .AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null);
+            if (!studentExists)
+                return NotFound(new { message = "Etudiant actif introuvable." });
+
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+                return NotFound(new { message = "Module introuvable." });
+
+            var note = await _context.Notes.SingleOrDefaultAsync(n =>
+                n.EtudiantId == dto.EtudiantId
+                && n.ModuleId == dto.ModuleId
+                && n.Annee == dto.Annee
+                && n.Semestre == dto.Semestre);
+
+            var created = note == null;
+            note ??= new Note
+            {
+                EtudiantId = dto.EtudiantId,
+                ModuleId = dto.ModuleId,
+                Annee = dto.Annee,
+                Semestre = dto.Semestre,
+                CreeLe = DateTime.UtcNow,
+            };
+
+            note.NoteTD = dto.NoteTD;
+            note.NoteTP = dto.NoteTP;
+            note.NoteExamen = dto.NoteExamen;
+            note.NoteFinal = dto.NoteFinal;
+
+            if (created) _context.Notes.Add(note);
+            await _context.SaveChangesAsync();
+            await _alerteService.CheckNoteAlertAsync(note.EtudiantId, note.ModuleId);
+
+            var result = new UpsertNoteResultDto { Id = note.Id, Created = created };
+            return created
+                ? StatusCode(StatusCodes.Status201Created, result)
+                : Ok(result);
+        }
+
+        [Authorize(Roles = "Admin,Enseignant")]
+        [HttpPut("{id:int}")]
         public async Task<IActionResult> PutNote(int id, UpdateNoteDto dto)
         {
             var note = await _context.Notes.FindAsync(id);

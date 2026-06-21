@@ -76,4 +76,14 @@ namespace PlateformePFA.API.DTOs.Notes
         [RegularExpression(Validation.SemestrePattern, ErrorMessage = Validation.SemestreError)]
         public string Semestre { get; set; } = string.Empty;
     }
+
+    public class UpsertNoteDto : CreateNoteDto
+    {
+    }
+
+    public class UpsertNoteResultDto
+    {
+        public int Id { get; set; }
+        public bool Created { get; set; }
+    }
 }
