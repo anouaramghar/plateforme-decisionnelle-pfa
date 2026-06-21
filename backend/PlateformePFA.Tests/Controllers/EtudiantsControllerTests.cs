@@ -43,7 +43,7 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
         var body = await res.Content.ReadFromJsonAsync<List<EtudiantWithStats>>();
         body.Should().NotBeEmpty();
         body!.First().Matricule.Should().Be("E10001");
-        body.First().Moyenne.Should().BeGreaterThan(0);
+        body!.First().Moyenne.Should().BeGreaterThan(0);
     }
 
     [Fact]
