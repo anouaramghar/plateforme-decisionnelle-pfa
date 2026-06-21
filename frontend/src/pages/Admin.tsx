@@ -188,7 +188,14 @@ function UsersTab() {
           onSubmit={data => createMutation.mutate(data)}
           onCancel={() => setShowCreate(false)}
           isPending={createMutation.isPending}
-          error={createMutation.error?.message}
+          error={createMutation.error
+            ? (() => {
+                const r = (createMutation.error as any)?.response?.data
+                if (!r) return createMutation.error.message
+                if (r.errors) return Object.values(r.errors).flat().join(' ')
+                return r.message || createMutation.error.message
+              })()
+            : undefined}
         />
       )}
 
@@ -358,11 +365,11 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
           <input
             className="input"
             type="password"
-            placeholder="Min. 8 caractères"
+            placeholder="Min. 12 caractères"
             value={form.motDePasse}
             onChange={set('motDePasse')}
             required
-            minLength={8}
+            minLength={12}
           />
         </label>
       </div>

@@ -250,6 +250,18 @@ export function Sidebar() {
         ))}
 
         {!sidebarCollapsed && <div className="nav-section-title">Système</div>}
+        {user?.role === 'Enseignant' && (
+          <NavLink to="/enseignant" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Icon name="doc" size={15} />
+            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Enseignant</span>}
+          </NavLink>
+        )}
+        {user?.role === 'Responsable' && (
+          <NavLink to="/responsable" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Icon name="graduation" size={15} />
+            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Responsable</span>}
+          </NavLink>
+        )}
         {SECONDARY.filter(it => it.to !== '/admin' || user?.role === 'Admin').map(it => (
           <NavLink
             key={it.to}
