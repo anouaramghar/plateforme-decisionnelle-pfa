@@ -110,6 +110,113 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
         res.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    [Fact]
+    public async Task GetEtudiant_rejects_withdrawn_student()
+    {
+        var withdrawnId = CreateWithdrawnStudent("E-WITHDRAWN-GET");
+        var client = await CreateAdminClientAsync();
+
+        var response = await client.GetAsync($"/api/etudiants/{withdrawnId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task GetEtudiantNotes_rejects_withdrawn_student()
+    {
+        var withdrawnId = CreateWithdrawnStudent("E-WITHDRAWN-NOTES");
+        var client = await CreateAdminClientAsync();
+
+        var response = await client.GetAsync($"/api/etudiants/{withdrawnId}/notes");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task PutEtudiant_rejects_withdrawn_student()
+    {
+        var withdrawnId = CreateWithdrawnStudent("E-WITHDRAWN-PUT");
+        using var context = _factory.CreateContext();
+        var filiereId = context.Filieres.Single(f => f.Code == "GI").Id;
+        var client = await CreateAdminClientAsync();
+
+        var response = await client.PutAsJsonAsync($"/api/etudiants/{withdrawnId}", new
+        {
+            matricule = "E-WITHDRAWN-PUT",
+            nom = "Changed",
+            prenom = "Student",
+            email = "changed@test.com",
+            filiereId,
+            niveau = "CI1",
+            annee = "2025/2026",
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task DeleteEtudiant_preserves_original_withdrawal_timestamp_when_repeated()
+    {
+        int studentId;
+        using (var context = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(context);
+            var student = new PlateformePFA.API.Models.Etudiant
+            {
+                Matricule = "E-DELETE-IDEMPOTENT",
+                Nom = "Delete",
+                Prenom = "Once",
+                FiliereId = seeded.Filiere.Id,
+                Niveau = "CI1",
+                Annee = "2025/2026",
+            };
+            context.Etudiants.Add(student);
+            context.SaveChanges();
+            studentId = student.Id;
+        }
+
+        var client = await CreateAdminClientAsync();
+        (await client.DeleteAsync($"/api/etudiants/{studentId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        DateTime firstWithdrawal;
+        using (var context = _factory.CreateContext())
+            firstWithdrawal = context.Etudiants.Single(e => e.Id == studentId).DesinscritLe!.Value;
+
+        await Task.Delay(20);
+        (await client.DeleteAsync($"/api/etudiants/{studentId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verifyContext = _factory.CreateContext();
+        verifyContext.Etudiants.Single(e => e.Id == studentId).DesinscritLe.Should().Be(firstWithdrawal);
+    }
+
+    private int CreateWithdrawnStudent(string matricule)
+    {
+        using var context = _factory.CreateContext();
+        var seeded = SampleData.SeedOne(context);
+        var existing = context.Etudiants.SingleOrDefault(e => e.Matricule == matricule);
+        if (existing != null) return existing.Id;
+        var student = new PlateformePFA.API.Models.Etudiant
+        {
+            Matricule = matricule,
+            Nom = "Withdrawn",
+            Prenom = "Student",
+            FiliereId = seeded.Filiere.Id,
+            Niveau = "CI1",
+            Annee = "2025/2026",
+            DesinscritLe = DateTime.UtcNow.AddDays(-1),
+        };
+        context.Etudiants.Add(student);
+        context.SaveChanges();
+        return student.Id;
+    }
+
+    private async Task<HttpClient> CreateAdminClientAsync()
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
     private record EtudiantWithStats(string Matricule, decimal Moyenne, decimal ScoreRisque);
     private record NoteRow(int ModuleId, string Code, string Nom);
 }

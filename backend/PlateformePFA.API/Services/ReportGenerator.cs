@@ -90,7 +90,9 @@ namespace PlateformePFA.API.Services
 
             // Apply filière filter at the SQL level so the report is fast even
             // on a real cohort.
-            var etudiantQuery = _context.Etudiants.AsNoTracking().AsQueryable();
+            var etudiantQuery = _context.Etudiants.AsNoTracking()
+                .Where(e => e.DesinscritLe == null)
+                .AsQueryable();
             if (!string.IsNullOrWhiteSpace(filiereCode) && filiereCode != "TOUS")
             {
                 etudiantQuery = etudiantQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiereCode);

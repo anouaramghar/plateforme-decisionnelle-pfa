@@ -116,7 +116,7 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("{id}/notes")]
         public async Task<ActionResult<List<EtudiantNoteDto>>> GetEtudiantNotes(int id)
         {
-            var exists = await _context.Etudiants.AnyAsync(e => e.Id == id);
+            var exists = await _context.Etudiants.AnyAsync(e => e.Id == id && e.DesinscritLe == null);
             if (!exists) return NotFound();
 
             var notes = await _context.Notes
@@ -177,7 +177,7 @@ namespace PlateformePFA.API.Controllers
         {
             var dto = await _context.Etudiants
                 .AsNoTracking()
-                .Where(e => e.Id == id)
+                .Where(e => e.Id == id && e.DesinscritLe == null)
                 .Select(ToDto)
                 .FirstOrDefaultAsync();
 
@@ -227,7 +227,8 @@ namespace PlateformePFA.API.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutEtudiant(int id, UpdateEtudiantDto dto)
         {
-            var etudiant = await _context.Etudiants.FindAsync(id);
+            var etudiant = await _context.Etudiants
+                .FirstOrDefaultAsync(e => e.Id == id && e.DesinscritLe == null);
             if (etudiant == null) return NotFound();
 
             etudiant.Matricule = dto.Matricule;
@@ -259,8 +260,11 @@ namespace PlateformePFA.API.Controllers
             var etudiant = await _context.Etudiants.FindAsync(id);
             if (etudiant == null) return NotFound();
 
-            etudiant.DesinscritLe = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            if (etudiant.DesinscritLe == null)
+            {
+                etudiant.DesinscritLe = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
 
             return NoContent();
         }

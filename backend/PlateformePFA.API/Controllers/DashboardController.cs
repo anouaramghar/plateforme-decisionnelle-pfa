@@ -90,7 +90,8 @@ namespace PlateformePFA.API.Controllers
             var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
 
             // 3) Active alerts count (scoped to filière when one is selected).
-            var alertesQuery = _context.Alertes.AsNoTracking().Where(a => !a.Resolue);
+            var alertesQuery = _context.Alertes.AsNoTracking()
+                .Where(a => !a.Resolue && a.Etudiant.DesinscritLe == null);
             if (isFiltered)
                 alertesQuery = alertesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var alertesActives = await alertesQuery.CountAsync();
@@ -175,7 +176,8 @@ namespace PlateformePFA.API.Controllers
             };
 
             var since = DateTime.UtcNow.Date.AddDays(-(nBuckets * bucketDays));
-            var absencesQuery = _context.Absences.AsNoTracking().Where(a => a.DateAbsence >= since);
+            var absencesQuery = _context.Absences.AsNoTracking()
+                .Where(a => a.DateAbsence >= since && a.Etudiant.DesinscritLe == null);
             if (isFiltered)
                 absencesQuery = absencesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var rawAbsences = await absencesQuery
@@ -232,7 +234,8 @@ namespace PlateformePFA.API.Controllers
             // the dashboard's KPI tiles show real movement instead of literals.
             var (currentSem, prevAnnee, prevSem) = ResolvePreviousPeriod();
 
-            var prevEtudiantsQuery = _context.Etudiants.AsNoTracking();
+            var prevEtudiantsQuery = _context.Etudiants.AsNoTracking()
+                .Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 prevEtudiantsQuery = prevEtudiantsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
             var prevStudents = await prevEtudiantsQuery
@@ -256,7 +259,10 @@ namespace PlateformePFA.API.Controllers
             // by then. Captures the "trend over the last week" the UI needs.
             var weekAgo = DateTime.UtcNow.AddDays(-7);
             var prevAlertsQuery = _context.Alertes.AsNoTracking()
-                .Where(a => a.CreeLe < weekAgo && (a.ResolueeLe == null || a.ResolueeLe >= weekAgo));
+                .Where(a => a.CreeLe < weekAgo
+                    && (a.ResolueeLe == null || a.ResolueeLe >= weekAgo)
+                    && a.Etudiant.CreeLe < weekAgo
+                    && (a.Etudiant.DesinscritLe == null || a.Etudiant.DesinscritLe >= weekAgo));
             if (isFiltered)
                 prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var prevActiveAlerts = await prevAlertsQuery.CountAsync();
@@ -267,35 +273,29 @@ namespace PlateformePFA.API.Controllers
             var activeBase = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 activeBase = activeBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
-            var totalBefore30 = await activeBase.CountAsync(e => e.CreeLe < since30);
-            var nbDelta = totalBefore30 == 0 ? 0m : Math.Round((decimal)(nbEtudiants - totalBefore30) / totalBefore30 * 100m, 1);
 
-            // allBase: all students (including desinscrit), scoped to filière — used for sparkline and retraits.
+            // allBase: all students (including desinscrit), scoped to filière — used for history and retraits.
             var allBase = _context.Etudiants.AsNoTracking();
             if (isFiltered)
                 allBase = allBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            var totalBefore30 = await allBase.CountAsync(e =>
+                e.CreeLe < since30 && (e.DesinscritLe == null || e.DesinscritLe >= since30));
+            var nbDelta = totalBefore30 == 0 ? 0m : Math.Round((decimal)(nbEtudiants - totalBefore30) / totalBefore30 * 100m, 1);
 
             // ── Sparkline + side stats (Phase 1 task 1.6) ────────────────────
             // Cumulative student count at the end of each of the last 14 weeks,
             // oldest first so the bars render left→right naturally on the UI.
             // One DB roundtrip (vs 14 CountAsync calls) — sort once, then
             // binary-search each weekEnd cutoff in memory.
-            var creeLeDates = await activeBase
-                .Select(e => e.CreeLe)
+            var enrollmentDates = await allBase
+                .Select(e => new { e.CreeLe, e.DesinscritLe })
                 .ToListAsync();
-            creeLeDates.Sort();
             var sparkPoints = new List<int>();
             for (int w = 13; w >= 0; w--)
             {
                 var weekEnd = DateTime.UtcNow.Date.AddDays(-w * 7);
-                int lo = 0, hi = creeLeDates.Count;
-                while (lo < hi)
-                {
-                    var mid = (lo + hi) >> 1;
-                    if (creeLeDates[mid] < weekEnd) lo = mid + 1;
-                    else hi = mid;
-                }
-                sparkPoints.Add(lo);
+                sparkPoints.Add(enrollmentDates.Count(e =>
+                    e.CreeLe < weekEnd && (e.DesinscritLe == null || e.DesinscritLe >= weekEnd)));
             }
             var nouveaux = await activeBase.CountAsync(e => e.CreeLe >= weekAgo);
             var retraits = await allBase.CountAsync(e => e.DesinscritLe != null && e.DesinscritLe >= weekAgo);

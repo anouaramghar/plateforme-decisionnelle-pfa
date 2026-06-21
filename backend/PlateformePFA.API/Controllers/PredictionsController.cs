@@ -135,6 +135,7 @@ namespace PlateformePFA.API.Controllers
             // Per-student snapshot: moyenne + absence hours + filière + niveau.
             var students = await _context.Etudiants
                 .AsNoTracking()
+                .Where(e => e.DesinscritLe == null)
                 .Select(e => new
                 {
                     e.Id,
@@ -210,7 +211,7 @@ namespace PlateformePFA.API.Controllers
             var rawRuns = await _context.PredictionsML
                 .AsNoTracking()
                 .Where(p => p.ScoreRisque.HasValue)
-                .Join(_context.Etudiants,
+                .Join(_context.Etudiants.Where(e => e.DesinscritLe == null),
                     p => p.EtudiantId,
                     e => e.Id,
                     (p, e) => new { p.CreeLe, p.ScoreRisque, p.Niveau, FiliereId = e.FiliereId })
@@ -256,6 +257,7 @@ namespace PlateformePFA.API.Controllers
             var query = _context.Etudiants
                 .Include(e => e.Notes)
                 .Include(e => e.Absences)
+                .Where(e => e.DesinscritLe == null)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(request.FiliereCode))
@@ -430,7 +432,9 @@ namespace PlateformePFA.API.Controllers
             page     = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var query = _context.PredictionsML.AsNoTracking().AsQueryable();
+            var query = _context.PredictionsML.AsNoTracking()
+                .Where(p => p.Etudiant.DesinscritLe == null)
+                .AsQueryable();
             if (etudiantId.HasValue) query = query.Where(p => p.EtudiantId == etudiantId.Value);
             if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
 
@@ -451,7 +455,7 @@ namespace PlateformePFA.API.Controllers
         {
             var prediction = await _context.PredictionsML
                 .Include(p => p.Etudiant)
-                .FirstOrDefaultAsync(p => p.Id == id);
+                .FirstOrDefaultAsync(p => p.Id == id && p.Etudiant.DesinscritLe == null);
 
             if (prediction == null) return NotFound(new { message = "Prédiction introuvable." });
             return prediction;
@@ -464,7 +468,7 @@ namespace PlateformePFA.API.Controllers
             return await _context.PredictionsML
                 .AsNoTracking()
                 .Include(p => p.Etudiant)
-                .Where(p => p.EtudiantId == etudiantId)
+                .Where(p => p.EtudiantId == etudiantId && p.Etudiant.DesinscritLe == null)
                 .OrderByDescending(p => p.CreeLe)
                 .Take(200)
                 .ToListAsync();
@@ -478,7 +482,7 @@ namespace PlateformePFA.API.Controllers
                 .AsNoTracking()
                 .Include(e => e.Notes)
                 .Include(e => e.Absences)
-                .FirstOrDefaultAsync(e => e.Id == etudiantId, ct);
+                .FirstOrDefaultAsync(e => e.Id == etudiantId && e.DesinscritLe == null, ct);
 
             if (etudiant is null) return NotFound();
 
@@ -537,7 +541,7 @@ namespace PlateformePFA.API.Controllers
             var etudiant = await _context.Etudiants
                 .Include(e => e.Notes)
                 .Include(e => e.Absences)
-                .FirstOrDefaultAsync(e => e.Id == etudiantId);
+                .FirstOrDefaultAsync(e => e.Id == etudiantId && e.DesinscritLe == null);
 
             if (etudiant == null) return NotFound(new { message = "Étudiant introuvable." });
 
