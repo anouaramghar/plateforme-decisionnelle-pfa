@@ -123,4 +123,22 @@ namespace PlateformePFA.API.DTOs.Etudiants
         [RegularExpression(Validation.AnneePattern, ErrorMessage = Validation.AnneeError)]
         public string Annee { get; set; } = string.Empty;
     }
+
+    public class ImportEtudiantRowDto
+    {
+        public int RowNumber { get; set; }
+        public string Matricule { get; set; } = string.Empty;
+        public string Nom { get; set; } = string.Empty;
+        public string Prenom { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public string FiliereCode { get; set; } = string.Empty;
+        public string Niveau { get; set; } = string.Empty;
+        public string Annee { get; set; } = string.Empty;
+    }
+
+    public record ImportEtudiantErrorDto(int RowNumber, string Field, string Message);
+
+    public record ImportEtudiantsResultDto(
+        int Imported,
+        IReadOnlyList<ImportEtudiantErrorDto> Errors);
 }

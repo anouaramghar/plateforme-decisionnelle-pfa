@@ -6,6 +6,8 @@ using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.DTOs.Etudiants;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
+using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 
 namespace PlateformePFA.API.Controllers
 {
@@ -220,6 +222,83 @@ namespace PlateformePFA.API.Controllers
                 .FirstAsync();
 
             return CreatedAtAction(nameof(GetEtudiant), new { id = etudiant.Id }, created);
+        }
+
+        [Authorize(Roles = "Admin,Responsable")]
+        [HttpPost("import")]
+        public async Task<ActionResult<ImportEtudiantsResultDto>> ImportEtudiants(
+            [FromBody] List<ImportEtudiantRowDto> rows)
+        {
+            var errors = new List<ImportEtudiantErrorDto>();
+            if (rows.Count == 0)
+            {
+                errors.Add(new ImportEtudiantErrorDto(0, "file", "Le fichier ne contient aucune ligne."));
+                return BadRequest(new ImportEtudiantsResultDto(0, errors));
+            }
+
+            var filieres = await _context.Filieres.AsNoTracking().ToListAsync();
+            var filiereByCode = filieres.ToDictionary(f => f.Code, StringComparer.OrdinalIgnoreCase);
+            var existingMatricules = (await _context.Etudiants.AsNoTracking()
+                .Select(e => e.Matricule)
+                .ToListAsync()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var levels = new HashSet<string>(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }, StringComparer.OrdinalIgnoreCase);
+            var batchMatricules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var emailValidator = new EmailAddressAttribute();
+
+            for (var index = 0; index < rows.Count; index++)
+            {
+                var row = rows[index];
+                var rowNumber = row.RowNumber > 0 ? row.RowNumber : index + 2;
+                row.Matricule = row.Matricule.Trim();
+                row.Nom = row.Nom.Trim();
+                row.Prenom = row.Prenom.Trim();
+                row.Email = string.IsNullOrWhiteSpace(row.Email) ? null : row.Email.Trim();
+                row.FiliereCode = row.FiliereCode.Trim();
+                row.Niveau = row.Niveau.Trim().ToUpperInvariant();
+                row.Annee = row.Annee.Trim();
+
+                void Required(string value, string field) { if (string.IsNullOrWhiteSpace(value)) errors.Add(new(rowNumber, field, "Champ obligatoire.")); }
+                Required(row.Matricule, "matricule");
+                Required(row.Nom, "nom");
+                Required(row.Prenom, "prenom");
+                Required(row.FiliereCode, "filiereCode");
+                Required(row.Niveau, "niveau");
+                Required(row.Annee, "annee");
+
+                if (!string.IsNullOrWhiteSpace(row.Matricule) && !batchMatricules.Add(row.Matricule))
+                    errors.Add(new(rowNumber, "matricule", "Matricule dupliqué dans le fichier."));
+                if (existingMatricules.Contains(row.Matricule))
+                    errors.Add(new(rowNumber, "matricule", "Matricule déjà enregistré."));
+                if (!string.IsNullOrWhiteSpace(row.FiliereCode) && !filiereByCode.ContainsKey(row.FiliereCode))
+                    errors.Add(new(rowNumber, "filiereCode", "Filière introuvable."));
+                if (!string.IsNullOrWhiteSpace(row.Niveau) && !levels.Contains(row.Niveau))
+                    errors.Add(new(rowNumber, "niveau", "Niveau invalide."));
+                if (!string.IsNullOrWhiteSpace(row.Annee) && !Regex.IsMatch(row.Annee, Validation.AnneePattern))
+                    errors.Add(new(rowNumber, "annee", Validation.AnneeError));
+                if (row.Email != null && !emailValidator.IsValid(row.Email))
+                    errors.Add(new(rowNumber, "email", "Adresse email invalide."));
+            }
+
+            if (errors.Count > 0)
+                return BadRequest(new ImportEtudiantsResultDto(0, errors));
+
+            var students = rows.Select(row => new Etudiant
+            {
+                Matricule = row.Matricule,
+                Nom = row.Nom,
+                Prenom = row.Prenom,
+                Email = row.Email,
+                FiliereId = filiereByCode[row.FiliereCode].Id,
+                Niveau = row.Niveau,
+                Annee = row.Annee,
+                CreeLe = DateTime.UtcNow,
+            }).ToList();
+
+            _context.Etudiants.AddRange(students);
+            await _context.SaveChangesAsync();
+            return Ok(new ImportEtudiantsResultDto(
+                students.Count,
+                Array.Empty<ImportEtudiantErrorDto>()));
         }
 
         // 4. UPDATE (PUT)

@@ -188,6 +188,42 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
         verifyContext.Etudiants.Single(e => e.Id == studentId).DesinscritLe.Should().Be(firstWithdrawal);
     }
 
+    [Fact]
+    public async Task ImportEtudiants_creates_complete_valid_batch()
+    {
+        var client = await CreateAdminClientAsync();
+        var response = await client.PostAsJsonAsync("/api/etudiants/import", new[]
+        {
+            new { rowNumber = 2, matricule = "E-IMPORT-001", nom = "Import", prenom = "One", email = "one@test.com", filiereCode = "GI", niveau = "CI1", annee = "2025/2026" },
+            new { rowNumber = 3, matricule = "E-IMPORT-002", nom = "Import", prenom = "Two", email = "two@test.com", filiereCode = "GI", niveau = "CI2", annee = "2025/2026" },
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ImportResult>();
+        result!.Imported.Should().Be(2);
+        result.Errors.Should().BeEmpty();
+        using var context = _factory.CreateContext();
+        context.Etudiants.Count(e => e.Matricule == "E-IMPORT-001" || e.Matricule == "E-IMPORT-002").Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ImportEtudiants_rejects_entire_batch_when_any_row_is_invalid()
+    {
+        var client = await CreateAdminClientAsync();
+        var response = await client.PostAsJsonAsync("/api/etudiants/import", new[]
+        {
+            new { rowNumber = 2, matricule = "E-IMPORT-ROLLBACK", nom = "Valid", prenom = "Row", email = "valid@test.com", filiereCode = "GI", niveau = "CI1", annee = "2025/2026" },
+            new { rowNumber = 3, matricule = "E10001", nom = "Duplicate", prenom = "Row", email = "duplicate@test.com", filiereCode = "GI", niveau = "CI1", annee = "2025/2026" },
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var result = await response.Content.ReadFromJsonAsync<ImportResult>();
+        result!.Imported.Should().Be(0);
+        result.Errors.Should().Contain(e => e.RowNumber == 3 && e.Field == "matricule");
+        using var context = _factory.CreateContext();
+        context.Etudiants.Should().NotContain(e => e.Matricule == "E-IMPORT-ROLLBACK");
+    }
+
     private int CreateWithdrawnStudent(string matricule)
     {
         using var context = _factory.CreateContext();
@@ -219,4 +255,6 @@ public class EtudiantsControllerTests : IClassFixture<TestWebFactory>
 
     private record EtudiantWithStats(string Matricule, decimal Moyenne, decimal ScoreRisque);
     private record NoteRow(int ModuleId, string Code, string Nom);
+    private record ImportError(int RowNumber, string Field, string Message);
+    private record ImportResult(int Imported, List<ImportError> Errors);
 }
