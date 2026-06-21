@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Icon } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
 import { Avatar } from '../components/ui/Avatar'
+import { PasswordInput } from '../components/ui/PasswordInput'
 import { api } from '../services/api'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -362,9 +363,7 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Mot de passe temporaire</span>
-          <input
-            className="input"
-            type="password"
+          <PasswordInput
             placeholder="Min. 12 caractères"
             value={form.motDePasse}
             onChange={set('motDePasse')}

@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useAuth } from '../context/AuthContext'
 import { Field } from '../components/ui/Field'
 import { Icon } from '../components/ui/Icon'
+import { PasswordInput } from '../components/ui/PasswordInput'
 
 const schema = z.object({
   email: z.string().email('Email invalide'),
@@ -211,11 +212,9 @@ export default function Login() {
               required
               error={errors.password?.message}
             >
-              <input
+              <PasswordInput
                 {...register('password')}
-                type="password"
                 autoComplete="current-password"
-                className="input"
               />
             </Field>
             {/* No "Remember me" checkbox: tokens are intentionally kept in memory
