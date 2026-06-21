@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -73,10 +74,16 @@ export default function Students() {
     refetchInterval: 60_000,
   })
 
+  const navigate = useNavigate()
+  const csvRef = useRef<HTMLInputElement>(null)
+
   const [q, setQ] = useState('')
   const [niveau, setNiveau] = useState('Tous')
   const [risque, setRisque] = useState('Tous')
   const [filiere, setFiliere] = useState('Tous')
+  const [statut, setStatut] = useState('Tous')
+  const [showExtra, setShowExtra] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<EtudiantRow | null>(null)
   const [page, setPage] = useState(1)
   const [pendingAlert, setPendingAlert] = useState<{
@@ -90,17 +97,68 @@ export default function Students() {
         if (filiere !== 'Tous' && e.filiereCode !== filiere) return false
         if (niveau !== 'Tous' && e.niveau !== niveau) return false
         if (risque !== 'Tous' && e.risque !== risque) return false
+        if (statut !== 'Tous' && e.statut !== statut) return false
         if (q && !(e.nomComplet.toLowerCase().includes(q.toLowerCase()) || e.matricule.toLowerCase().includes(q.toLowerCase())))
           return false
         return true
       }),
-    [all, filiere, niveau, risque, q],
+    [all, filiere, niveau, risque, statut, q],
   )
-  // Reset to page 1 whenever filters change, otherwise the user can land on
-  // an empty page (e.g. page 3 of a result set that now only has 1 page).
   useEffect(() => {
     setPage(1)
-  }, [filiere, niveau, risque, q])
+  }, [filiere, niveau, risque, statut, q])
+
+  const handleExport = () => {
+    const rows = filtered.map(e => ({
+      Matricule: e.matricule,
+      Nom: e.nom,
+      Prénom: e.prenom,
+      Filière: e.filiereCode,
+      Niveau: e.niveau,
+      Moyenne: e.moyenne,
+      Absences: `${e.absences}h`,
+      'Modules validés': `${e.modulesValides}/${e.modulesTotal}`,
+      'Score risque': `${Math.round(e.scoreRisque * 100)}%`,
+      Statut: e.statut,
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Étudiants')
+    XLSX.writeFile(wb, `etudiants-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      if (lines.length < 2) return
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase())
+      const filRes = await api.get<{ items: { id: number; code: string }[] }>('/filieres?pageSize=50')
+      const filMap = Object.fromEntries(filRes.data.items.map(f => [f.code.toLowerCase(), f.id]))
+      for (const line of lines.slice(1)) {
+        const cols = line.split(',').map(c => c.trim())
+        const row = Object.fromEntries(header.map((h, i) => [h, cols[i] ?? '']))
+        const filiereId = filMap[(row.filierecode ?? row.filiere ?? '').toLowerCase()]
+        if (!filiereId || !row.matricule) continue
+        await api.post('/etudiants', {
+          matricule: row.matricule,
+          nom: row.nom ?? '',
+          prenom: row.prenom ?? '',
+          email: row.email ?? '',
+          niveau: row.niveau ?? 'CP1',
+          annee: row.annee ?? '2025/2026',
+          filiereId,
+        })
+      }
+      refetch()
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
+  }
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
   const slice = filtered.slice((page - 1) * PAGE, page * PAGE)
 
@@ -153,15 +211,19 @@ export default function Students() {
           <h1 className="text-[22px] font-semibold tracking-tight">Étudiants</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm">
+          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />
+          <button className="btn btn-sm" onClick={() => csvRef.current?.click()} disabled={importing}>
             <Icon name="upload" size={13} />
-            Importer CSV
+            {importing ? 'Import…' : 'Importer CSV'}
           </button>
-          <button className="btn btn-sm">
+          <button className="btn btn-sm" onClick={handleExport}>
             <Icon name="download" size={13} />
             Exporter
           </button>
-          <button className="btn btn-sm btn-accent">
+          <button
+            className="btn btn-sm btn-accent"
+            onClick={() => navigate('/admin', { state: { tab: 'etudiants', openCreate: true } })}
+          >
             <Icon name="plus" size={13} strokeWidth={2.2} />
             Inscrire
           </button>
@@ -186,17 +248,25 @@ export default function Students() {
         <Select value={filiere} onChange={setFiliere} options={FILIERES} label="Filière" />
         <Select value={niveau} onChange={setNiveau} options={NIVEAUX} label="Niveau" />
         <Select value={risque} onChange={setRisque} options={RISQUES} label="Risque" />
-        <button className="btn btn-sm btn-ghost">
+        {showExtra && (
+          <Select value={statut} onChange={setStatut} options={['Tous', 'Régulier', 'Suivi', 'En difficulté']} label="Statut" />
+        )}
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={() => setShowExtra(v => !v)}
+          style={{ color: showExtra ? 'var(--accent-700)' : undefined }}
+        >
           <Icon name="filter" size={13} />
           Plus de filtres
         </button>
-        {(q || filiere !== 'Tous' || niveau !== 'Tous' || risque !== 'Tous') && (
+        {(q || filiere !== 'Tous' || niveau !== 'Tous' || risque !== 'Tous' || statut !== 'Tous') && (
           <button
             onClick={() => {
               setQ('')
               setFiliere('Tous')
               setNiveau('Tous')
               setRisque('Tous')
+              setStatut('Tous')
             }}
             className="btn btn-sm btn-ghost"
             style={{ color: 'var(--accent-700)' }}

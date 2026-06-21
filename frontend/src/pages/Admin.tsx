@@ -143,7 +143,7 @@ export default function Admin() {
       </div>
 
       {tab === 'users'     && <UsersTab />}
-      {tab === 'etudiants' && <EtudiantsTab />}
+      {tab === 'etudiants' && <EtudiantsTab initialOpenCreate={!!(location.state as { openCreate?: boolean } | null)?.openCreate} />}
       {tab === 'dw'        && <DwTab />}
     </div>
   )
@@ -388,12 +388,12 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
 const NIVEAUX = ['CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 const ANNEE_RE = /^\d{4}\/\d{4}$/
 
-function EtudiantsTab() {
+function EtudiantsTab({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const { user } = useAuth()
   const isAdmin = user?.role === 'Admin'
   const queryClient = useQueryClient()
 
-  const [showCreate, setShowCreate]         = useState(false)
+  const [showCreate, setShowCreate]         = useState(initialOpenCreate)
   const [editingStudent, setEditingStudent] = useState<EtudiantRow | null>(null)
   const [deletingId, setDeletingId]         = useState<number | null>(null)
   const [search, setSearch]                 = useState('')
