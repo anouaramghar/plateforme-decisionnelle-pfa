@@ -337,7 +337,7 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         <input
           className="input"
           type="email"
-          placeholder="m.aitali@eniad.dz"
+          placeholder="m.aitali@eniad.ma"
           value={form.email}
           onChange={set('email')}
           required
@@ -723,7 +723,7 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Email (optionnel)</span>
-          <input className="input" type="email" placeholder="a.benali@eniad.dz" value={form.email} onChange={set('email')} />
+          <input className="input" type="email" placeholder="a.benali@eniad.ma" value={form.email} onChange={set('email')} />
         </label>
       </div>
 

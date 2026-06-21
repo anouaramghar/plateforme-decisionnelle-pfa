@@ -197,7 +197,7 @@ export default function Login() {
                 {...register('email')}
                 type="email"
                 autoComplete="email"
-                placeholder="prenom.nom@eniad.dz"
+                placeholder="prenom.nom@eniad.ma"
                 className="input"
               />
             </Field>
