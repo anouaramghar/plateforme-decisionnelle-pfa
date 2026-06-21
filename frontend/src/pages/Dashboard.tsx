@@ -419,12 +419,7 @@ export default function Dashboard() {
           <SectionHeader
             title="Moyennes par filière"
             subtitle="Comparaison /20 — semestre courant"
-            right={
-              <>
-                <Pill tone="neutral" dot>Moyenne</Pill>
-                <button className="btn btn-sm btn-ghost"><Icon name="more" size={14} /></button>
-              </>
-            }
+            right={<Pill tone="neutral" dot>Moyenne</Pill>}
           />
           <ChartBars data={notesByFil} height={232} />
         </div>
