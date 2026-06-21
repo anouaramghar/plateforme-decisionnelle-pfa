@@ -261,15 +261,13 @@ namespace PlateformePFA.API.Controllers
                 prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
             var prevActiveAlerts = await prevAlertsQuery.CountAsync();
 
-            // Student count trend: % growth in CreeLe last 30 days vs the prior 30 days.
+            // Student count trend: % growth of total enrolled students vs 30 days ago.
             var since30 = DateTime.UtcNow.AddDays(-30);
-            var since60 = DateTime.UtcNow.AddDays(-60);
             var etudiantsBase = _context.Etudiants.AsNoTracking();
             if (isFiltered)
                 etudiantsBase = etudiantsBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
-            var newLast30 = await etudiantsBase.CountAsync(e => e.CreeLe >= since30);
-            var newPrev30 = await etudiantsBase.CountAsync(e => e.CreeLe < since30 && e.CreeLe >= since60);
-            var nbDelta = newPrev30 == 0 ? 0m : Math.Round((decimal)(newLast30 - newPrev30) / newPrev30 * 100m, 1);
+            var totalBefore30 = await etudiantsBase.CountAsync(e => e.CreeLe < since30);
+            var nbDelta = totalBefore30 == 0 ? 0m : Math.Round((decimal)(nbEtudiants - totalBefore30) / totalBefore30 * 100m, 1);
 
             // ── Sparkline + side stats (Phase 1 task 1.6) ────────────────────
             // Cumulative student count at the end of each of the last 14 weeks,
