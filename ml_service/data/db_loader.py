@@ -87,8 +87,16 @@ def load_risk_data() -> pd.DataFrame | None:
         # Clip taux_absence to [0, 1]
         df["taux_absence"] = df["taux_absence"].clip(0, 1)
 
-        # Label: at_risk = 1 if average grade < 10
-        df["at_risk"] = (df["moyenne_generale"] < 10).astype(int)
+        # Multi-factor at_risk label — closer to real academic risk than a single cutoff:
+        #   1. Clearly failing:  moyenne < 10          (fails outright)
+        #   2. Borderline + absence: 10 ≤ moyenne < 12.5 AND taux > 0.12
+        #      (fragile passers who also miss many classes stay at risk)
+        # This 2D boundary forces XGBoost to learn from BOTH features and output
+        # intermediate probabilities (20–80%) in the grey zone, not binary 1%/98%.
+        df["at_risk"] = (
+            (df["moyenne_generale"] < 10) |
+            ((df["moyenne_generale"] < 12.5) & (df["taux_absence"] > 0.12))
+        ).astype(int)
 
         # Drop Matricule (not a feature)
         df = df.drop(columns=["Matricule"])
