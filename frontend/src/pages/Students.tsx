@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
@@ -383,12 +383,29 @@ export default function Students() {
       </div>
       )}
 
-      {selected && <StudentDrawer student={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <StudentDrawer
+          student={selected}
+          onClose={() => setSelected(null)}
+          onAlert={(severite, message) => setPendingAlert({ student: selected, severite, message })}
+        />
+      )}
     </div>
   )
 }
 
-function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: () => void }) {
+function StudentDrawer({
+  student,
+  onClose,
+  onAlert,
+}: {
+  student: EtudiantRow
+  onClose: () => void
+  onAlert?: (severite: string, message: string) => void
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ['etudiant-notes', student.id],
     queryFn: () => fetchStudentNotes(student.id),
@@ -399,6 +416,66 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
     queryFn: () => fetchShap(student.id),
     retry: false,
   })
+
+  // ── Note form ──────────────────────────────────────────────────────────────
+  const [showNoteForm, setShowNoteForm] = useState(false)
+  const [noteForm, setNoteForm] = useState({
+    moduleId: 0, noteTD: '', noteTP: '', noteExamen: '', noteFinal: '', semestre: 'S1', annee: '2025/2026',
+  })
+  const [savingNote, setSavingNote]   = useState(false)
+  const [noteSuccess, setNoteSuccess] = useState(false)
+
+  const submitNote = async () => {
+    if (!noteForm.moduleId) return
+    setSavingNote(true)
+    try {
+      await api.post('/notes', {
+        etudiantId:  student.id,
+        moduleId:    noteForm.moduleId,
+        noteTD:      noteForm.noteTD      ? parseFloat(noteForm.noteTD)      : null,
+        noteTP:      noteForm.noteTP      ? parseFloat(noteForm.noteTP)      : null,
+        noteExamen:  noteForm.noteExamen  ? parseFloat(noteForm.noteExamen)  : null,
+        noteFinal:   noteForm.noteFinal   ? parseFloat(noteForm.noteFinal)   : null,
+        semestre:    noteForm.semestre,
+        annee:       noteForm.annee,
+      })
+      queryClient.invalidateQueries({ queryKey: ['etudiant-notes', student.id] })
+      queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
+      setShowNoteForm(false)
+      setNoteSuccess(true)
+      setTimeout(() => setNoteSuccess(false), 3000)
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
+  // ── Alert actions ──────────────────────────────────────────────────────────
+  const [sendingEntretien, setSendingEntretien] = useState(false)
+  const [entretienSent, setEntretienSent]       = useState(false)
+
+  const handleEnvoyerCoordination = () => {
+    onAlert?.(
+      'eleve',
+      `${student.nomComplet} (${student.filiereCode} ${student.niveau}) — score ML ${Math.round(student.scoreRisque * 100)}%, moyenne ${student.moyenne.toFixed(2)}/20. Suivi requis.`,
+    )
+    onClose()
+  }
+
+  const handlePlanifierEntretien = async () => {
+    setSendingEntretien(true)
+    try {
+      await api.post('/alertes', {
+        etudiantId: student.id,
+        type:       'RisqueEchec',
+        niveau:     'Eleve',
+        message:    `Entretien à planifier — ${student.nomComplet} · ${student.filiereCode} ${student.niveau} · Score ML : ${Math.round(student.scoreRisque * 100)}%`,
+      })
+      setEntretienSent(true)
+      setTimeout(() => setEntretienSent(false), 3000)
+    } finally {
+      setSendingEntretien(false)
+    }
+  }
 
   const moyenne = student.moyenne
   const riskColor =
@@ -569,12 +646,64 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
               title="Notes par module"
               subtitle={`${student.niveau} — ${student.filiereIntitule}`}
               right={
-                <button className="btn btn-sm">
+                <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
                   <Icon name="plus" size={12} />
-                  Saisir
+                  {showNoteForm ? 'Fermer' : 'Saisir'}
                 </button>
               }
             />
+            {noteSuccess && (
+              <div className="mb-2 px-3 py-2 rounded-lg text-[12.5px] font-medium" style={{ background: 'color-mix(in oklch, var(--ok) 12%, transparent)', color: 'var(--ok)' }}>
+                Note enregistrée avec succès.
+              </div>
+            )}
+            {showNoteForm && (
+              <div className="mb-3 p-4 rounded-xl border space-y-3" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="cap mb-1">Module</div>
+                    {notes.length > 0 ? (
+                      <select
+                        className="input"
+                        value={noteForm.moduleId}
+                        onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) }))}
+                      >
+                        <option value={0}>Choisir un module…</option>
+                        {notes.map(n => (
+                          <option key={n.moduleId} value={n.moduleId}>{n.code} — {n.nom}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input className="input" type="number" placeholder="ID du module" value={noteForm.moduleId || ''}
+                        onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) || 0 }))} />
+                    )}
+                  </div>
+                  <div>
+                    <div className="cap mb-1">Semestre</div>
+                    <select className="input" value={noteForm.semestre} onChange={e => setNoteForm(f => ({ ...f, semestre: e.target.value }))}>
+                      <option value="S1">S1</option>
+                      <option value="S2">S2</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['noteTD', 'noteTP', 'noteExamen', 'noteFinal'] as const).map((field, i) => (
+                    <div key={field}>
+                      <div className="cap mb-1 text-[11px]">{['CC', 'TP', 'Examen', 'Finale'][i]}</div>
+                      <input className="input" type="number" min={0} max={20} step={0.01} placeholder="/20"
+                        value={noteForm[field]}
+                        onChange={e => setNoteForm(f => ({ ...f, [field]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button className="btn btn-sm" onClick={() => setShowNoteForm(false)}>Annuler</button>
+                  <button className="btn btn-sm btn-accent" onClick={submitNote} disabled={savingNote || !noteForm.moduleId}>
+                    {savingNote ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="card overflow-hidden">
               <table className="tbl">
                 <thead>
@@ -693,13 +822,24 @@ function StudentDrawer({ student, onClose }: { student: EtudiantRow; onClose: ()
           className="p-4 flex items-center justify-between"
           style={{ borderTop: '1px solid var(--border)', background: 'var(--surface-2)' }}
         >
-          <button className="btn btn-sm">
+          <button
+            className="btn btn-sm"
+            onClick={() => { navigate('/admin', { state: { tab: 'etudiants' } }); onClose() }}
+          >
             <Icon name="ext" size={12} />
             Ouvrir la fiche complète
           </button>
           <div className="flex items-center gap-2">
-            <button className="btn btn-sm">Envoyer à la coordination</button>
-            <button className="btn btn-sm btn-accent">Planifier un entretien</button>
+            <button className="btn btn-sm" onClick={handleEnvoyerCoordination}>
+              Envoyer à la coordination
+            </button>
+            <button
+              className="btn btn-sm btn-accent"
+              onClick={handlePlanifierEntretien}
+              disabled={sendingEntretien}
+            >
+              {entretienSent ? 'Alerte créée ✓' : sendingEntretien ? 'Envoi…' : 'Planifier un entretien'}
+            </button>
           </div>
         </div>
       </div>
