@@ -1,14 +1,16 @@
-import { useState, type InputHTMLAttributes } from 'react'
+import { useState, forwardRef, type InputHTMLAttributes } from 'react'
 import { Icon } from './Icon'
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>
 
-export function PasswordInput({ className, style, ...rest }: Props) {
+export const PasswordInput = forwardRef<HTMLInputElement, Props>(
+  function PasswordInput({ className, style, ...rest }, ref) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
       <input
         {...rest}
+        ref={ref}
         type={show ? 'text' : 'password'}
         className={`input ${className ?? ''}`}
         style={{ paddingRight: '2.5rem', ...style }}
@@ -36,4 +38,4 @@ export function PasswordInput({ className, style, ...rest }: Props) {
       </button>
     </div>
   )
-}
+})
