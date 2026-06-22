@@ -18,8 +18,8 @@ import { parseStudentCsv } from '../services/studentImport'
 import type { StudentImportResult } from '../services/studentImport'
 import { canCreateAlerts, canEnterNotes, canManageStudents } from '../auth/roles'
 import { useAuth } from '../context/AuthContext'
-import { ConfirmCard } from '../components/copilot/ConfirmCard'
-import type { ConfirmData } from '../components/copilot/ConfirmCard'
+
+
 
 // Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
 const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
@@ -217,57 +217,6 @@ export default function Students() {
     },
   })
 
-  useCopilotAction({
-    name: 'draft_alert',
-    description:
-      'Propose creating an alert for a student at risk. This only drafts the alert — ' +
-      'the user must click "Confirmer" in the UI before anything is saved. ' +
-      'Severity values: high, medium, low.',
-    parameters: [
-      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
-      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
-      { name: 'message', type: 'string', description: 'Alert message content', required: true },
-    ],
-    renderAndWaitForResponse: ({ args, status, respond }: { args: { matricule?: string; severity?: string; message?: string }; status: string; respond?: (r: unknown) => void }) => {
-      const student = all.find(s => s.matricule.toLowerCase() === (args.matricule ?? '').toLowerCase())
-      
-      const confirmData: ConfirmData = {
-        draftId: 0,
-        preview: {
-          student_name: student?.nomComplet ?? args.matricule ?? '',
-          matricule: args.matricule ?? '',
-          severity: args.severity ?? 'medium',
-          message: args.message ?? '',
-        },
-        tool: 'draft_alert',
-        state: status === 'complete' ? 'confirmed' : 'pending',
-      }
-
-      const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
-      const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
-
-      return (
-        <ConfirmCard
-          data={confirmData}
-          onConfirm={async () => {
-            const severite = VALID_SEVERITES[args.severity ?? 'medium']
-            if (!severite || !student) {
-              respond?.({ confirmed: false })
-              return
-            }
-            await api.post('/alertes', {
-              etudiantId: student.id,
-              type: 'RisqueEchec',
-              niveau: NIVEAU_MAP[severite] ?? 'Moyen',
-              message: args.message ?? '',
-            })
-            respond?.({ confirmed: true })
-          }}
-          onDismiss={() => respond?.({ confirmed: false })}
-        />
-      )
-    },
-  })
 
   async function confirmAlert() {
     if (!pendingAlert) return

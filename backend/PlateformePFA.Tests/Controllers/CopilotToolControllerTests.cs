@@ -265,4 +265,63 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
     }
+
+    // ── draft lifecycle tests ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Confirm_draft_creates_alert_and_marks_sent()
+    {
+        // Create a draft first
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+        var draftRes = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "high", message_fr = "Test confirm." } });
+        var draftBody = await draftRes.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var draftId = draftBody.GetProperty("data").GetProperty("draft_id").GetInt32();
+
+        // Confirm it
+        var confirmRes = await client.PostAsync($"/api/copilot/drafts/{draftId}/confirm", null);
+        confirmRes.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Verify alert was created and draft is sent
+        using var ctx = _factory.CreateContext();
+        ctx.AlertDrafts.Single(d => d.Id == draftId).Status.Should().Be("sent");
+        ctx.Alertes.Should().Contain(a => a.EtudiantId == ctx.Etudiants.First(e => e.Matricule == "E10001").Id);
+    }
+
+    [Fact]
+    public async Task Cancel_draft_marks_cancelled()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+        var draftRes = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "low", message_fr = "Test cancel." } });
+        var draftBody = await draftRes.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var draftId = draftBody.GetProperty("data").GetProperty("draft_id").GetInt32();
+
+        var cancelRes = await client.PostAsync($"/api/copilot/drafts/{draftId}/cancel", null);
+        cancelRes.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var ctx = _factory.CreateContext();
+        ctx.AlertDrafts.Single(d => d.Id == draftId).Status.Should().Be("cancelled");
+    }
+
+    [Fact]
+    public async Task Confirm_already_sent_draft_returns_conflict()
+    {
+        var client = await AuthedClientAsync();
+        client.DefaultRequestHeaders.Add("X-Internal-Token", InternalToken);
+        var draftRes = await client.PostAsJsonAsync(
+            "/api/copilot/tool/draft_alert",
+            new { args = new { matricule = "E10001", severity = "medium", message_fr = "Test idempotent." } });
+        var draftBody = await draftRes.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var draftId = draftBody.GetProperty("data").GetProperty("draft_id").GetInt32();
+
+        // Confirm twice
+        await client.PostAsync($"/api/copilot/drafts/{draftId}/confirm", null);
+        var secondConfirm = await client.PostAsync($"/api/copilot/drafts/{draftId}/confirm", null);
+        secondConfirm.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
 }
