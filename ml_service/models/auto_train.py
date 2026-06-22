@@ -73,17 +73,19 @@ def _ensure_forecast_model() -> None:
         return
 
     from data.db_loader import load_forecast_data
-    from models.train_regression import generate_data, train, save
+    from models.train_regression import generate_data, train, save_with_metadata
 
     df = load_forecast_data()
     if df is not None:
         logger.info("Training forecast model on REAL DW data (%d records)...", len(df))
+        data_source = "dw"
     else:
         logger.info("Training forecast model on SYNTHETIC data (%d samples)...", _N_SAMPLES)
         df = generate_data(_N_SAMPLES, _RANDOM_SEED)
+        data_source = "synthetic"
 
     pipeline = train(df)
-    save(pipeline)
+    save_with_metadata(pipeline, getattr(pipeline, "X_test", None), getattr(pipeline, "y_test", None), data_source=data_source)
     logger.info("forecast_model trained and saved.")
 
 

@@ -41,17 +41,97 @@ def _get_connection_string() -> str | None:
     return conn_str
 
 
+def _compute_period_key(annee: str, semestre: str) -> float:
+    """Converts Annee (e.g. 2025/2026) and Semestre (S1/S2) to a sortable float."""
+    match = re.search(r"\d{4}", annee)
+    if not match:
+        return 0.0
+    year = float(match.group())
+    sem_val = 0.1 if "S1" in str(semestre).upper() or "1" in str(semestre) else 0.2
+    return year + sem_val
+
+
+def _process_raw_risk_data(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Processes aggregated student-period data to create features and future targets for risk model."""
+    if len(df) < 30:
+        logger.warning("DW has only %d students — too few for reliable training. "
+                       "Falling back to synthetic data.", len(df))
+        return None
+
+    # Clip taux_absence to [0, 1]
+    df["taux_absence"] = df["taux_absence"].clip(0, 1)
+
+    # Convert Annee and Semestre to period_key
+    df["period_key"] = df.apply(lambda row: _compute_period_key(str(row["Annee"]), str(row["Semestre"])), axis=1)
+
+    # Sort by student and period
+    df = df.sort_values(["EtudiantId", "period_key"])
+
+    # Define failed in current period
+    df["failed"] = (df["moyenne_generale"] < 10.0).astype(int)
+
+    # Shift failed backward by -1 per student (so prior period predicts next-period failure)
+    df["future_failed"] = df.groupby("EtudiantId")["failed"].shift(-1)
+
+    # Drop last period because it has no future label
+    df = df.dropna(subset=["future_failed"]).copy()
+
+    # Define at_risk from future_failed (no noise, no random label flips)
+    df["at_risk"] = df["future_failed"].astype(int)
+
+    # Keep only target columns
+    cols_to_keep = ["EtudiantId", "period_key", "moyenne_generale", "taux_absence", "nb_modules", "at_risk"]
+    df = df[cols_to_keep]
+
+    # Verify we still have both classes
+    if df["at_risk"].nunique() < 2:
+        logger.warning("DW data has only one class after temporal lagging — falling back to synthetic.")
+        return None
+
+    logger.info("Loaded and processed %d student-periods from DW for risk training "
+                "(%.1f%% at risk).", len(df), df["at_risk"].mean() * 100)
+    return df
+
+
+def _process_raw_forecast_data(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Processes aggregated student-period data to create features and future targets for regression model."""
+    if len(df) < 30:
+        logger.warning("DW has only %d student-periods — too few. "
+                       "Falling back to synthetic data.", len(df))
+        return None
+
+    # Clip taux_absence to [0, 1]
+    df["taux_absence"] = df["taux_absence"].clip(0, 1)
+
+    # Convert Annee and Semestre to period_key
+    df["period_key"] = df.apply(lambda row: _compute_period_key(str(row["Annee"]), str(row["Semestre"])), axis=1)
+
+    # Sort by student and period
+    df = df.sort_values(["EtudiantId", "period_key"])
+
+    # Shift moyenne_generale backward by -1 per student (prior period predicts next-period moyenne)
+    df["future_moyenne"] = df.groupby("EtudiantId")["moyenne_generale"].shift(-1)
+
+    # Drop last period because it has no future label
+    df = df.dropna(subset=["future_moyenne"]).copy()
+
+    # Rename current moyenne to moyenne_actuelle, and future moyenne to note_finale
+    df = df.rename(columns={
+        "moyenne_generale": "moyenne_actuelle",
+        "future_moyenne": "note_finale"
+    })
+
+    # Keep only target columns
+    cols_to_keep = ["EtudiantId", "period_key", "moyenne_actuelle", "taux_absence", "nb_modules", "note_finale"]
+    df = df[cols_to_keep]
+
+    logger.info("Loaded and processed %d student-periods from DW for forecast training.", len(df))
+    return df
+
+
 def load_risk_data() -> pd.DataFrame | None:
     """
     Loads training data for the risk classifier from PFA_DW.
-
-    Aggregates per student:
-      - moyenne_generale: AVG(NoteFinale) across all modules
-      - taux_absence:     total NbAbsences / estimated scheduled hours
-      - nb_modules:       COUNT of distinct modules
-      - at_risk:          1 if moyenne < 10, else 0 (label)
-
-    Returns None if DW is unreachable or has insufficient data (< 30 rows).
     """
     conn_str = _get_connection_string()
     if conn_str is None:
@@ -62,6 +142,9 @@ def load_risk_data() -> pd.DataFrame | None:
 
         query = """
             SELECT
+                fn.EtudiantKey AS EtudiantId,
+                dt.Annee,
+                dt.Semestre,
                 de.Matricule,
                 AVG(fn.NoteFinale)                          AS moyenne_generale,
                 SUM(fn.NbAbsences) * 1.0
@@ -69,57 +152,16 @@ def load_risk_data() -> pd.DataFrame | None:
                 COUNT(DISTINCT fn.ModuleKey)                AS nb_modules
             FROM      FaitNotes   fn
             JOIN      DimEtudiant de ON de.EtudiantKey = fn.EtudiantKey
+            JOIN      DimTemps    dt ON dt.TempsKey = fn.TempsKey
             WHERE     fn.NoteFinale IS NOT NULL
-            GROUP BY  de.EtudiantKey, de.Matricule
+            GROUP BY  fn.EtudiantKey, de.Matricule, dt.Annee, dt.Semestre
             HAVING    COUNT(DISTINCT fn.ModuleKey) >= 1
         """
 
-        # closing() guarantees conn.close() runs even if pd.read_sql raises —
-        # pyodbc's own __exit__ only commits/rolls back, it doesn't close.
         with closing(pyodbc.connect(conn_str)) as conn:
             df = pd.read_sql(query, conn)
 
-        if len(df) < 30:
-            logger.warning("DW has only %d students — too few for reliable training. "
-                           "Falling back to synthetic data.", len(df))
-            return None
-
-        # Clip taux_absence to [0, 1]
-        df["taux_absence"] = df["taux_absence"].clip(0, 1)
-
-        # Multi-factor at_risk label:
-        #   1. Clearly failing:  moyenne < 10
-        #   2. Borderline + absence: moyenne 10-12.5 AND taux > 8%
-        df["at_risk"] = (
-            (df["moyenne_generale"] < 10) |
-            ((df["moyenne_generale"] < 12.5) & (df["taux_absence"] > 0.08))
-        ).astype(int)
-
-        # Label noise (7 %, deterministic seed): simulates real-world uncertainty —
-        # some barely-passing students are still at risk; some who failed recovered.
-        # Without noise XGBoost can perfectly memorise the deterministic boundary
-        # and output binary 1 %/98 % probabilities.  Noise forces the model to
-        # hedge its predictions and output values like 25 %, 55 %, 80 %.
-        import numpy as _np
-        _rng = _np.random.default_rng(42)
-        _flip = _rng.random(len(df)) < 0.07
-        df["at_risk"] = (df["at_risk"].astype(bool) ^ _flip).astype(int)
-
-        # Drop Matricule (not a feature)
-        df = df.drop(columns=["Matricule"])
-
-        # A classifier needs both classes — fall back if data is single-class.
-        n_classes = df["at_risk"].nunique()
-        if n_classes < 2:
-            logger.warning("DW data has only one class (all students %s risk) "
-                           "— cannot train a binary classifier. "
-                           "Falling back to synthetic data.",
-                           "at" if df["at_risk"].iloc[0] == 1 else "not at")
-            return None
-
-        logger.info("Loaded %d students from DW for risk training "
-                     "(%.1f%% at risk).", len(df), df["at_risk"].mean() * 100)
-        return df
+        return _process_raw_risk_data(df)
 
     except Exception as e:
         logger.warning("Could not load data from DW: %s — falling back to synthetic.", _safe_error(e))
@@ -129,29 +171,19 @@ def load_risk_data() -> pd.DataFrame | None:
 def load_clustering_data() -> pd.DataFrame | None:
     """
     Loads training data for K-Means clustering from PFA_DW.
-
-    Same aggregation as risk but without the label (unsupervised).
-    Returns: DataFrame with [moyenne_generale, taux_absence, nb_modules]
     """
     df = load_risk_data()
     if df is None:
         return None
 
-    # Drop the label column — clustering is unsupervised
-    return df.drop(columns=["at_risk"])
+    # Drop columns not used in clustering (label and identifiers)
+    cols_to_drop = [c for c in ["at_risk", "EtudiantId", "period_key"] if c in df.columns]
+    return df.drop(columns=cols_to_drop)
 
 
 def load_forecast_data() -> pd.DataFrame | None:
     """
     Loads training data for grade forecasting from PFA_DW.
-
-    For each (student, module, semester), returns:
-      - moyenne_actuelle: the student's overall average at that point
-      - taux_absence:     absence rate for that module
-      - nb_modules:       how many modules the student is enrolled in
-      - note_finale:      the actual final grade (regression target)
-
-    Returns None if DW is unreachable or has insufficient data.
     """
     conn_str = _get_connection_string()
     if conn_str is None:
@@ -160,32 +192,28 @@ def load_forecast_data() -> pd.DataFrame | None:
     try:
         import pyodbc
 
-        # Window functions instead of two correlated subqueries per row.
-        # Old plan was O(N²) — for ~7 800 rows that meant ~15 600 inner scans of
-        # FaitNotes. Window AVG/COUNT runs once per partition.
         query = """
             SELECT
-                fn.NoteFinale                                                 AS note_finale,
-                fn.NbAbsences * 1.0 / 32.0                                    AS taux_absence,
-                AVG(CAST(fn.NoteFinale AS FLOAT))     OVER (PARTITION BY fn.EtudiantKey) AS moyenne_actuelle,
-                COUNT(fn.ModuleKey)          OVER (PARTITION BY fn.EtudiantKey) AS nb_modules
-            FROM FaitNotes fn
-            WHERE fn.NoteFinale IS NOT NULL
+                fn.EtudiantKey AS EtudiantId,
+                dt.Annee,
+                dt.Semestre,
+                de.Matricule,
+                AVG(fn.NoteFinale)                          AS moyenne_generale,
+                SUM(fn.NbAbsences) * 1.0
+                    / NULLIF(COUNT(DISTINCT fn.ModuleKey) * 32, 0) AS taux_absence,
+                COUNT(DISTINCT fn.ModuleKey)                AS nb_modules
+            FROM      FaitNotes   fn
+            JOIN      DimEtudiant de ON de.EtudiantKey = fn.EtudiantKey
+            JOIN      DimTemps    dt ON dt.TempsKey = fn.TempsKey
+            WHERE     fn.NoteFinale IS NOT NULL
+            GROUP BY  fn.EtudiantKey, de.Matricule, dt.Annee, dt.Semestre
+            HAVING    COUNT(DISTINCT fn.ModuleKey) >= 1
         """
 
         with closing(pyodbc.connect(conn_str)) as conn:
             df = pd.read_sql(query, conn)
 
-        if len(df) < 30:
-            logger.warning("DW has only %d grade records — too few. "
-                           "Falling back to synthetic data.", len(df))
-            return None
-
-        df["taux_absence"] = df["taux_absence"].clip(0, 1)
-        df = df.dropna()
-
-        logger.info("Loaded %d grade records from DW for forecast training.", len(df))
-        return df
+        return _process_raw_forecast_data(df)
 
     except Exception as e:
         logger.warning("Could not load forecast data from DW: %s — falling back to synthetic.", _safe_error(e))
