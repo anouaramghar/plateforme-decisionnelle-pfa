@@ -6,6 +6,9 @@ import Dashboard from './pages/Dashboard'
 import Students from './pages/Students'
 import StudentProfile from './pages/StudentProfile'
 import Alerts from './pages/Alerts'
+import Triage from './pages/Triage'
+import Cases from './pages/Cases'
+import CaseDetail from './pages/CaseDetail'
 import Reports from './pages/Reports'
 import Predictions from './pages/Predictions'
 import Admin from './pages/Admin'
@@ -37,6 +40,9 @@ export default function App() {
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
           <Route path="alerts" element={<RoleRoute roles={['Admin', 'Responsable']}><Alerts /></RoleRoute>} />
+          <Route path="triage" element={<RoleRoute roles={['Admin', 'Responsable']}><Triage /></RoleRoute>} />
+          <Route path="cases" element={<RoleRoute roles={['Admin', 'Responsable']}><Cases /></RoleRoute>} />
+          <Route path="cases/:id" element={<RoleRoute roles={['Admin', 'Responsable']}><CaseDetail /></RoleRoute>} />
           <Route path="predictions" element={<Predictions />} />
           <Route path="reports" element={<Reports />} />
           <Route path="admin" element={<RoleRoute roles={['Admin', 'Responsable']}><Admin /></RoleRoute>} />

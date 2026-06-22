@@ -64,6 +64,12 @@ export function Sidebar() {
     { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
     { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: etudiantsCount },
     { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
+    ...(mayAccessAlerts
+      ? [
+          { to: '/triage', label: 'Triage',          icon: 'filter' as IconName },
+          { to: '/cases',  label: "Cas d'intervention", icon: 'bookmark' as IconName },
+        ]
+      : []),
     ...(user?.role !== 'Enseignant'
       ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }]
       : []),

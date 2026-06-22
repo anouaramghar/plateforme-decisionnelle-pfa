@@ -149,6 +149,10 @@ namespace PlateformePFA.API.Controllers
             var from = c.Etat;
             var to   = dto.Etat;
 
+            // Convenience: starting an unassigned case assigns the actor as owner,
+            // so the frontend's "Démarrer" needs no separate assignment step.
+            if (c.OwnerId == null && to == CaseWorkflowState.InProgress) c.OwnerId = userId;
+
             var facts = new CaseWorkflow.CaseFacts(
                 HasOwner:   c.OwnerId.HasValue,
                 HasOutcome: !string.IsNullOrWhiteSpace(dto.Outcome ?? c.Outcome)
