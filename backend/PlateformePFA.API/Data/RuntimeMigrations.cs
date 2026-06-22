@@ -367,6 +367,51 @@ namespace PlateformePFA.API.Data
                                    WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'MotifTriage')
                     ALTER TABLE Alertes ADD MotifTriage NVARCHAR(500) NULL;
             ");
+
+            // 15. CaseTasks — actionable items on a case.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTasks', 'U') IS NULL
+                CREATE TABLE CaseTasks (
+                    Id                 INT IDENTITY(1,1) PRIMARY KEY,
+                    CaseId             INT           NOT NULL REFERENCES InterventionCases(Id),
+                    Titre              NVARCHAR(300) NOT NULL,
+                    AssigneeId         INT NULL REFERENCES Utilisateurs(Id),
+                    DueDate            DATETIME2     NULL,
+                    Done               BIT           NOT NULL DEFAULT 0,
+                    DoneLe             DATETIME2     NULL,
+                    CompletionEvidence NVARCHAR(500) NULL,
+                    CreeLe             DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    CreeParId          INT NULL REFERENCES Utilisateurs(Id)
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTasks', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_CaseTasks_CaseId_Done'
+                                     AND object_id = OBJECT_ID('dbo.CaseTasks'))
+                    CREATE INDEX IX_CaseTasks_CaseId_Done ON CaseTasks(CaseId, Done);
+            ");
+
+            // 16. CaseNotes — internal notes (IsPrivate = Admin/Responsable-only).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseNotes', 'U') IS NULL
+                CREATE TABLE CaseNotes (
+                    Id        INT IDENTITY(1,1) PRIMARY KEY,
+                    CaseId    INT           NOT NULL REFERENCES InterventionCases(Id),
+                    Contenu   NVARCHAR(2000) NOT NULL,
+                    IsPrivate BIT           NOT NULL DEFAULT 0,
+                    AuteurId  INT NULL REFERENCES Utilisateurs(Id),
+                    AuteurNom NVARCHAR(200) NOT NULL DEFAULT 'Système',
+                    CreeLe    DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseNotes', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_CaseNotes_CaseId'
+                                     AND object_id = OBJECT_ID('dbo.CaseNotes'))
+                    CREATE INDEX IX_CaseNotes_CaseId ON CaseNotes(CaseId);
+            ");
         }
     }
 }

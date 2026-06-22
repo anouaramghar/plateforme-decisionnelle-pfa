@@ -185,5 +185,113 @@ namespace PlateformePFA.API.Controllers
             _logger.LogInformation("Case transition : Id={Id}, {From} → {To}", c.Id, from, to);
             return NoContent();
         }
+
+        // ── Tasks ─────────────────────────────────────────────────────────────
+
+        // GET: api/intervention-cases/5/tasks
+        [HttpGet("{id}/tasks")]
+        public async Task<ActionResult<IEnumerable<CaseTask>>> GetTasks(int id)
+        {
+            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+                return NotFound(new { message = "Cas introuvable." });
+
+            return await _context.CaseTasks.AsNoTracking()
+                .Where(t => t.CaseId == id)
+                .OrderBy(t => t.Done).ThenBy(t => t.DueDate)
+                .ToListAsync();
+        }
+
+        // POST: api/intervention-cases/5/tasks
+        [HttpPost("{id}/tasks")]
+        public async Task<ActionResult<CaseTask>> CreateTask(int id, CreateTaskDto dto)
+        {
+            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+                return NotFound(new { message = "Cas introuvable." });
+
+            var (userId, userName) = CurrentUser();
+            var task = new CaseTask
+            {
+                CaseId     = id,
+                Titre      = dto.Titre,
+                AssigneeId = dto.AssigneeId,
+                DueDate    = dto.DueDate,
+                CreeParId  = userId,
+            };
+            _context.CaseTasks.Add(task);
+            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = id, Action = "TaskAdded", Description = dto.Titre,
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(GetTasks), new { id }, task);
+        }
+
+        // PATCH: api/intervention-cases/5/tasks/9/complete
+        [HttpPatch("{id}/tasks/{taskId}/complete")]
+        public async Task<IActionResult> CompleteTask(int id, int taskId, CompleteTaskDto dto)
+        {
+            var task = await _context.CaseTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.CaseId == id);
+            if (task == null) return NotFound(new { message = "Tâche introuvable." });
+            if (task.Done) return BadRequest(new { message = "Tâche déjà terminée." });
+
+            var (userId, userName) = CurrentUser();
+            task.Done               = true;
+            task.DoneLe             = DateTime.UtcNow;
+            task.CompletionEvidence = dto.CompletionEvidence;
+
+            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = id, Action = "TaskCompleted", Description = task.Titre,
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        // ── Notes ─────────────────────────────────────────────────────────────
+
+        // GET: api/intervention-cases/5/notes
+        [HttpGet("{id}/notes")]
+        public async Task<ActionResult<IEnumerable<CaseNote>>> GetNotes(int id)
+        {
+            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+                return NotFound(new { message = "Cas introuvable." });
+
+            // ponytail: controller is Admin/Responsable only, so all notes are
+            // visible here. The IsPrivate filter belongs in the teacher-access
+            // slice — add `.Where(n => !n.IsPrivate)` for non-privileged callers then.
+            return await _context.CaseNotes.AsNoTracking()
+                .Where(n => n.CaseId == id)
+                .OrderByDescending(n => n.CreeLe)
+                .ToListAsync();
+        }
+
+        // POST: api/intervention-cases/5/notes
+        [HttpPost("{id}/notes")]
+        public async Task<ActionResult<CaseNote>> CreateNote(int id, CreateNoteDto dto)
+        {
+            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+                return NotFound(new { message = "Cas introuvable." });
+
+            var (userId, userName) = CurrentUser();
+            var note = new CaseNote
+            {
+                CaseId    = id,
+                Contenu   = dto.Contenu,
+                IsPrivate = dto.IsPrivate,
+                AuteurId  = userId,
+                AuteurNom = userName,
+            };
+            _context.CaseNotes.Add(note);
+            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = id, Action = "NoteAdded",
+                Description = dto.IsPrivate ? "Note privée ajoutée." : "Note ajoutée.",
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(GetNotes), new { id }, note);
+        }
     }
 }

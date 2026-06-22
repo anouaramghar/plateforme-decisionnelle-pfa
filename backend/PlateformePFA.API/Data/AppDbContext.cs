@@ -25,6 +25,8 @@ namespace PlateformePFA.API.Data
         // ── Intervention cases (Release 1) ────────────────────────────────────
         public DbSet<InterventionCase>  InterventionCases  { get; set; }
         public DbSet<CaseTimelineEvent> CaseTimelineEvents { get; set; }
+        public DbSet<CaseTask>          CaseTasks          { get; set; }
+        public DbSet<CaseNote>          CaseNotes          { get; set; }
 
         // ── Copilot ──────────────────────────────────────────────────────────
         public DbSet<AlertDraft>          AlertDrafts          { get; set; }
@@ -103,6 +105,11 @@ namespace PlateformePFA.API.Data
                 .HasOne(t => t.Case)
                 .WithMany(c => c.Timeline)
                 .HasForeignKey(t => t.CaseId);
+
+            modelBuilder.Entity<CaseTask>()
+                .HasIndex(t => new { t.CaseId, t.Done });
+            modelBuilder.Entity<CaseNote>()
+                .HasIndex(n => n.CaseId);
 
             // ── Copilot ──────────────────────────────────────────────────────
             modelBuilder.Entity<AlertDraft>()
