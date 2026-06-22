@@ -15,6 +15,18 @@ namespace PlateformePFA.API.Data
     {
         public static void Apply(AppDbContext context)
         {
+            // 0. Utilisateurs.ModuleId: teacher → module scoping column added with the
+            //    read-scope work. The EF model maps it and AuthService selects it on
+            //    every login, but init.sql never created it — so existing volumes (and
+            //    fresh deploys) throw "Invalid column name 'ModuleId'" at login until
+            //    this runs. Nullable FK to Modules; null = unrestricted (Admin/Responsable).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Utilisateurs', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Utilisateurs') AND name = 'ModuleId')
+                    ALTER TABLE Utilisateurs ADD ModuleId INT NULL REFERENCES Modules(Id);
+            ");
+
             // 1. Predictions: backfill columns added after the first init.sql release.
             context.Database.ExecuteSqlRaw(@"
                 IF OBJECT_ID('dbo.Predictions', 'U') IS NOT NULL
@@ -270,6 +282,82 @@ namespace PlateformePFA.API.Data
                     UPDATE dbo.SchemaState SET Version = 1, UpdatedAt = GETUTCDATE() WHERE Component = 'core';
                 ELSE
                     INSERT INTO dbo.SchemaState (Component, Version) VALUES ('core', 1);
+            ");
+
+            // 11. Intervention cases (Release 1) — owned, auditable interventions.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NULL
+                CREATE TABLE InterventionCases (
+                    Id                INT IDENTITY(1,1) PRIMARY KEY,
+                    EtudiantId        INT           NOT NULL REFERENCES Etudiants(Id),
+                    FiliereId         INT           NOT NULL,
+                    Motif             NVARCHAR(200) NOT NULL,
+                    Priorite          NVARCHAR(20)  NOT NULL DEFAULT 'Medium',
+                    Etat              NVARCHAR(20)  NOT NULL DEFAULT 'Open',
+                    OwnerId           INT NULL REFERENCES Utilisateurs(Id),
+                    DueDate           DATETIME2     NULL,
+                    EscaladeLe        DATETIME2     NULL,
+                    Outcome           NVARCHAR(40)  NULL,
+                    ResolutionSummary NVARCHAR(1000) NULL,
+                    FollowUpDate      DATETIME2     NULL,
+                    CreeLe            DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    CreeParId         INT NULL REFERENCES Utilisateurs(Id),
+                    ClotureLe         DATETIME2     NULL
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_InterventionCases_Etat'
+                                     AND object_id = OBJECT_ID('dbo.InterventionCases'))
+                    CREATE INDEX IX_InterventionCases_Etat ON InterventionCases(Etat, CreeLe DESC);
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_InterventionCases_Etat'
+                                     AND parent_object_id = OBJECT_ID('dbo.InterventionCases'))
+                    ALTER TABLE InterventionCases
+                        ADD CONSTRAINT CK_InterventionCases_Etat
+                        CHECK (Etat IN ('Open','InProgress','WaitingStudent','Monitoring','Escalated','Resolved','Closed'));
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_InterventionCases_Priorite'
+                                     AND parent_object_id = OBJECT_ID('dbo.InterventionCases'))
+                    ALTER TABLE InterventionCases
+                        ADD CONSTRAINT CK_InterventionCases_Priorite
+                        CHECK (Priorite IN ('Critical','High','Medium','Low'));
+            ");
+
+            // 12. CaseTimelineEvents — append-only audit trail per case.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTimelineEvents', 'U') IS NULL
+                CREATE TABLE CaseTimelineEvents (
+                    Id             INT IDENTITY(1,1) PRIMARY KEY,
+                    CaseId         INT           NOT NULL REFERENCES InterventionCases(Id),
+                    Action         NVARCHAR(40)  NOT NULL,
+                    Description    NVARCHAR(500) NULL,
+                    UtilisateurId  INT NULL REFERENCES Utilisateurs(Id),
+                    UtilisateurNom NVARCHAR(200) NOT NULL DEFAULT 'Système',
+                    CreeLe         DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTimelineEvents', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_CaseTimelineEvents_CaseId'
+                                     AND object_id = OBJECT_ID('dbo.CaseTimelineEvents'))
+                    CREATE INDEX IX_CaseTimelineEvents_CaseId ON CaseTimelineEvents(CaseId, CreeLe DESC);
+            ");
+
+            // 13. Alertes.CaseId — links an evidence signal to its intervention case.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Alertes', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'CaseId')
+                    ALTER TABLE Alertes ADD CaseId INT NULL REFERENCES InterventionCases(Id);
             ");
         }
     }

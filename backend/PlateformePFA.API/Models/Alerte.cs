@@ -29,6 +29,10 @@ namespace PlateformePFA.API.Models
         // Audit: which Utilisateur clicked "Résoudre".
         public int? ResolueeParId { get; set; }
 
+        // The signal/triage link: set when this alert is converted to or linked
+        // with an intervention case. Null = still an un-triaged evidence signal.
+        public int? CaseId { get; set; }
+
         [JsonIgnore] public Etudiant Etudiant { get; set; } = null!;
         [JsonIgnore] public Module? Module { get; set; }
         [JsonIgnore] public Utilisateur? ResolueePar { get; set; }

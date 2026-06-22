@@ -22,6 +22,10 @@ namespace PlateformePFA.API.Data
         // ── Schema readiness (mirrors dbo.SchemaState written by init.sql) ─────
         public DbSet<SchemaState> SchemaStates => Set<SchemaState>();
 
+        // ── Intervention cases (Release 1) ────────────────────────────────────
+        public DbSet<InterventionCase>  InterventionCases  { get; set; }
+        public DbSet<CaseTimelineEvent> CaseTimelineEvents { get; set; }
+
         // ── Copilot ──────────────────────────────────────────────────────────
         public DbSet<AlertDraft>          AlertDrafts          { get; set; }
 
@@ -93,6 +97,12 @@ namespace PlateformePFA.API.Data
                 .WithMany()
                 .HasForeignKey(u => u.ModuleId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // ── Intervention cases ────────────────────────────────────────────
+            modelBuilder.Entity<CaseTimelineEvent>()
+                .HasOne(t => t.Case)
+                .WithMany(c => c.Timeline)
+                .HasForeignKey(t => t.CaseId);
 
             // ── Copilot ──────────────────────────────────────────────────────
             modelBuilder.Entity<AlertDraft>()
