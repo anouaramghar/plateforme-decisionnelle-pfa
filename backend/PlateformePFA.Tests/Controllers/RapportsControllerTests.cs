@@ -84,5 +84,101 @@ public class RapportsControllerTests : IClassFixture<TestWebFactory>
         csv.Should().NotContain("2 étudiants évalués");
     }
 
+    [Fact]
+    public async Task Teacher_cannot_generate_report_for_other_module_or_TOUS()
+    {
+        int modAId;
+        using (var context = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(context);
+            modAId = seeded.Module.Id;
+
+            SeedTeacher("teacher_rep1@eniad.ma", "TeacherPass123!", modAId);
+        }
+
+        var client = await CreateTeacherClientAsync("teacher_rep1@eniad.ma", "TeacherPass123!");
+
+        // Try to generate report for other/TOUS
+        var responseTous = await client.PostAsJsonAsync("/api/rapports", new
+        {
+            templateId = "perf-globale",
+            format = "PDF",
+            filiereCode = "TOUS",
+            periode = "S2 2025/2026",
+        });
+        responseTous.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var responseOther = await client.PostAsJsonAsync("/api/rapports", new
+        {
+            templateId = "perf-globale",
+            format = "PDF",
+            filiereCode = "GE",
+            periode = "S2 2025/2026",
+        });
+        responseOther.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Teacher_cannot_download_another_users_report()
+    {
+        int modAId;
+        int rapportId;
+        using (var context = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(context);
+            modAId = seeded.Module.Id;
+
+            var otherRapport = new Rapport
+            {
+                TemplateId = "perf-globale",
+                Titre = "Admin Report",
+                Format = "PDF",
+                FiliereCode = "TOUS",
+                AuteurId = 999, // Some other user
+                AuteurNom = "Admin User",
+                Contenu = new byte[] { 1, 2, 3 },
+                Taille = 3,
+                CreeLe = DateTime.UtcNow,
+            };
+            context.Rapports.Add(otherRapport);
+            context.SaveChanges();
+            rapportId = otherRapport.Id;
+
+            SeedTeacher("teacher_rep2@eniad.ma", "TeacherPass123!", modAId);
+        }
+
+        var client = await CreateTeacherClientAsync("teacher_rep2@eniad.ma", "TeacherPass123!");
+
+        var response = await client.GetAsync($"/api/rapports/{rapportId}/download");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private void SeedTeacher(string email, string password, int moduleId)
+    {
+        using var ctx = _factory.CreateContext();
+        if (!ctx.Utilisateurs.Any(u => u.Email == email))
+        {
+            ctx.Utilisateurs.Add(new Utilisateur
+            {
+                Email = email,
+                Nom = "Teacher",
+                Prenom = "Test",
+                MotDePasseHash = BCrypt.Net.BCrypt.HashPassword(password),
+                Role = "Enseignant",
+                ModuleId = moduleId,
+                EstActif = true,
+            });
+            ctx.SaveChanges();
+        }
+    }
+
+    private async Task<HttpClient> CreateTeacherClientAsync(string email, string password)
+    {
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetTokenAsync(client, email, password);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
     private record RapportMeta(int Id, string Format, int Taille);
 }

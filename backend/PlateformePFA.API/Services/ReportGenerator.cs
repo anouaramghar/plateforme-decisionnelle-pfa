@@ -28,10 +28,10 @@ namespace PlateformePFA.API.Services
         /// <summary>Result of a generation pass.</summary>
         public record Result(string Title, byte[] Bytes, string ContentType);
 
-        public async Task<Result> GenerateAsync(string templateId, string format, string filiereCode, string periode)
+        public async Task<Result> GenerateAsync(string templateId, string format, string filiereCode, string periode, int? moduleId = null)
         {
             // Each template owns its own builder; format selects the encoder.
-            var data = await GatherDataAsync(filiereCode, periode);
+            var data = await GatherDataAsync(filiereCode, periode, moduleId);
 
             var (defaultTitle, sections) = templateId switch
             {
@@ -82,7 +82,7 @@ namespace PlateformePFA.API.Services
         private record AbsenceRow(string Etudiant, string Module, int Heures, bool Justifiee, DateTime Date);
         private record AlerteRow(string Etudiant, string Type, string Niveau, string? Message, bool Resolue, DateTime CreeLe);
 
-        private async Task<Snapshot> GatherDataAsync(string filiereCode, string periode)
+        private async Task<Snapshot> GatherDataAsync(string filiereCode, string periode, int? moduleId = null)
         {
             // Parse the period selector ("Semestre 2 · 2025/2026" → annee=2025/2026, sem=S2).
             var (annee, semestre) = ParsePeriode(periode);
@@ -98,6 +98,11 @@ namespace PlateformePFA.API.Services
                 etudiantQuery = etudiantQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiereCode);
             }
 
+            if (moduleId.HasValue)
+            {
+                etudiantQuery = etudiantQuery.Where(e => (e.Notes != null && e.Notes.Any(n => n.ModuleId == moduleId.Value)) || (e.Absences != null && e.Absences.Any(a => a.ModuleId == moduleId.Value)));
+            }
+
             var rawStudents = await etudiantQuery
                 .Select(e => new
                 {
@@ -108,7 +113,7 @@ namespace PlateformePFA.API.Services
                     Filiere = e.Filiere != null ? e.Filiere.Code : string.Empty,
                     e.Niveau,
                     Notes = e.Notes!
-                        .Where(n => n.Annee == annee && (semestre == null || n.Semestre == semestre))
+                        .Where(n => n.Annee == annee && (semestre == null || n.Semestre == semestre) && (moduleId == null || n.ModuleId == moduleId.Value))
                         .Select(n => new
                         {
                             n.NoteFinal, n.NoteTD, n.NoteTP, n.NoteExamen,
@@ -117,7 +122,7 @@ namespace PlateformePFA.API.Services
                     // Absences have no semester column — bracket by the
                     // semester's calendar-date range instead.
                     Absences = e.Absences!
-                        .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                        .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd && (moduleId == null || a.ModuleId == moduleId.Value))
                         .Select(a => new
                         {
                             a.NombreHeures, a.Justifiee, a.DateAbsence,
@@ -151,7 +156,7 @@ namespace PlateformePFA.API.Services
             var studentIds = etudiants.Select(e => e.Id).ToHashSet();
             var alertes = await _context.Alertes
                 .AsNoTracking()
-                .Where(a => studentIds.Contains(a.EtudiantId))
+                .Where(a => studentIds.Contains(a.EtudiantId) && (moduleId == null || a.ModuleId == moduleId.Value))
                 .OrderByDescending(a => a.CreeLe)
                 .Take(500)
                 .Select(a => new

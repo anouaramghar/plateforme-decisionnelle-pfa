@@ -17,12 +17,14 @@ namespace PlateformePFA.API.Controllers
         private readonly AppDbContext _context;
         private readonly IAlerteService _alerteService;
         private readonly ILogger<NotesController> _logger;
+        private readonly IAcademicAccessService _academicAccess;
 
-        public NotesController(AppDbContext context, IAlerteService alerteService, ILogger<NotesController> logger)
+        public NotesController(AppDbContext context, IAlerteService alerteService, ILogger<NotesController> logger, IAcademicAccessService academicAccess)
         {
             _context       = context;
             _alerteService = alerteService;
             _logger        = logger;
+            _academicAccess = academicAccess;
         }
 
         // GET all (paginated)
@@ -34,7 +36,13 @@ namespace PlateformePFA.API.Controllers
             page     = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var query = _context.Notes.AsNoTracking().OrderByDescending(n => n.CreeLe);
+            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var query = _context.Notes.AsNoTracking();
+            if (assignedModuleId.HasValue)
+            {
+                query = query.Where(n => n.ModuleId == assignedModuleId.Value);
+            }
+            query = query.OrderByDescending(n => n.CreeLe);
             var total = await query.CountAsync();
             var items = await query
                 .Include(n => n.Etudiant)
@@ -56,16 +64,27 @@ namespace PlateformePFA.API.Controllers
 
             if (note == null) return NotFound();
 
+            if (!await _academicAccess.CanAccessModuleAsync(User, note.ModuleId))
+                return Forbid();
+
             return note;
         }
 
         [HttpGet("etudiant/{etudiantId}")]
         public async Task<ActionResult<IEnumerable<Note>>> GetNotesByEtudiant(int etudiantId)
         {
-            return await _context.Notes
+            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var query = _context.Notes
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
-                .Where(n => n.EtudiantId == etudiantId)
+                .Where(n => n.EtudiantId == etudiantId);
+
+            if (assignedModuleId.HasValue)
+            {
+                query = query.Where(n => n.ModuleId == assignedModuleId.Value);
+            }
+
+            return await query
                 .OrderByDescending(n => n.Annee).ThenBy(n => n.Semestre)
                 .Take(500)           // safety cap — one student's full note history
                 .ToListAsync();
@@ -74,6 +93,9 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("module/{moduleId}")]
         public async Task<ActionResult<IEnumerable<Note>>> GetNotesByModule(int moduleId)
         {
+            if (!await _academicAccess.CanAccessModuleAsync(User, moduleId))
+                return Forbid();
+
             return await _context.Notes
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
@@ -93,6 +115,10 @@ namespace PlateformePFA.API.Controllers
                 return NotFound(new { message = "Etudiant actif introuvable." });
             if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
                 return NotFound(new { message = "Module introuvable." });
+
+            if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
+                return Forbid();
+
             if (await _context.Notes.AnyAsync(n =>
                     n.EtudiantId == dto.EtudiantId && n.ModuleId == dto.ModuleId
                     && n.Annee == dto.Annee && n.Semestre == dto.Semestre))
@@ -135,6 +161,9 @@ namespace PlateformePFA.API.Controllers
             if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
                 return NotFound(new { message = "Module introuvable." });
 
+            if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
+                return Forbid();
+
             var note = await _context.Notes.SingleOrDefaultAsync(n =>
                 n.EtudiantId == dto.EtudiantId
                 && n.ModuleId == dto.ModuleId
@@ -172,6 +201,9 @@ namespace PlateformePFA.API.Controllers
         {
             var note = await _context.Notes.FindAsync(id);
             if (note == null) return NotFound();
+
+            if (!await _academicAccess.CanAccessModuleAsync(User, note.ModuleId))
+                return Forbid();
 
             note.NoteExamen = dto.NoteExamen;
             note.NoteTD     = dto.NoteTD;

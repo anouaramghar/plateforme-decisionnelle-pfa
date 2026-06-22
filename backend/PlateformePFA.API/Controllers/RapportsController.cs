@@ -18,6 +18,7 @@ namespace PlateformePFA.API.Controllers
         private readonly ReportGenerator  _generator;
         private readonly ILogger<RapportsController> _logger;
         private readonly IAuditService    _audit;
+        private readonly IAcademicAccessService _academicAccess;
 
         // Static catalog — kept here so the frontend just sends a templateId.
         private static readonly Dictionary<string, string> Templates = new()
@@ -34,12 +35,14 @@ namespace PlateformePFA.API.Controllers
             AppDbContext context,
             ReportGenerator generator,
             ILogger<RapportsController> logger,
-            IAuditService audit)
+            IAuditService audit,
+            IAcademicAccessService academicAccess)
         {
             _context   = context;
             _generator = generator;
             _logger    = logger;
             _audit     = audit;
+            _academicAccess = academicAccess;
         }
 
         // GET /api/rapports — recent reports (metadata only).
@@ -47,8 +50,16 @@ namespace PlateformePFA.API.Controllers
         public async Task<ActionResult<List<RapportDto>>> List([FromQuery] int limit = 50)
         {
             limit = Math.Clamp(limit, 1, 200);
-            var items = await _context.Rapports
-                .AsNoTracking()
+            var query = _context.Rapports.AsNoTracking();
+            if (User.IsInRole("Enseignant"))
+            {
+                var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (int.TryParse(userIdClaim, out var userId))
+                {
+                    query = query.Where(r => r.AuteurId == userId);
+                }
+            }
+            var items = await query
                 .OrderByDescending(r => r.CreeLe)
                 .Take(limit)
                 .Select(r => new RapportDto
@@ -79,11 +90,37 @@ namespace PlateformePFA.API.Controllers
 
             try
             {
+                var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+                if (User.IsInRole("Enseignant"))
+                {
+                    if (!assignedModuleId.HasValue)
+                    {
+                        return Forbid();
+                    }
+
+                    var module = await _context.Modules
+                        .Include(m => m.Filiere)
+                        .FirstOrDefaultAsync(m => m.Id == assignedModuleId.Value);
+
+                    if (module == null || module.Filiere == null)
+                    {
+                        return Forbid();
+                    }
+
+                    var userFiliereCode = module.Filiere.Code;
+
+                    if (string.IsNullOrWhiteSpace(dto.FiliereCode) || dto.FiliereCode == "TOUS" || dto.FiliereCode != userFiliereCode)
+                    {
+                        return Forbid();
+                    }
+                }
+
                 var result = await _generator.GenerateAsync(
                     dto.TemplateId,
                     dto.Format,
                     dto.FiliereCode,
-                    dto.Periode);
+                    dto.Periode,
+                    assignedModuleId);
 
                 var (auteurId, auteurNom) = ResolveAuteur();
 
@@ -148,6 +185,15 @@ namespace PlateformePFA.API.Controllers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Id == id);
             if (rapport == null) return NotFound();
+
+            if (!User.IsInRole("Admin") && !User.IsInRole("Responsable"))
+            {
+                var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || rapport.AuteurId != userId)
+                {
+                    return Forbid();
+                }
+            }
 
             var contentType = rapport.Format switch
             {

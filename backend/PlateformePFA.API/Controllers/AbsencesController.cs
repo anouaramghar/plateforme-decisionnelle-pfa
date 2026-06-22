@@ -17,12 +17,14 @@ namespace PlateformePFA.API.Controllers
         private readonly AppDbContext _context;
         private readonly IAlerteService _alerteService;
         private readonly ILogger<AbsencesController> _logger;
+        private readonly IAcademicAccessService _academicAccess;
 
-        public AbsencesController(AppDbContext context, IAlerteService alerteService, ILogger<AbsencesController> logger)
+        public AbsencesController(AppDbContext context, IAlerteService alerteService, ILogger<AbsencesController> logger, IAcademicAccessService academicAccess)
         {
             _context       = context;
             _alerteService = alerteService;
             _logger        = logger;
+            _academicAccess = academicAccess;
         }
 
         // GET: api/absences (paginated)
@@ -31,10 +33,13 @@ namespace PlateformePFA.API.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            page     = Math.Max(page, 1);
-            pageSize = Math.Clamp(pageSize, 1, 100);
-
-            var query = _context.Absences.AsNoTracking().OrderByDescending(a => a.DateAbsence);
+            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var query = _context.Absences.AsNoTracking();
+            if (assignedModuleId.HasValue)
+            {
+                query = query.Where(a => a.ModuleId == assignedModuleId.Value);
+            }
+            query = query.OrderByDescending(a => a.DateAbsence);
             var total = await query.CountAsync();
             var items = await query
                 .Include(a => a.Etudiant)
@@ -56,6 +61,10 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (absence == null) return NotFound(new { message = "Absence introuvable." });
+
+            if (!await _academicAccess.CanAccessModuleAsync(User, absence.ModuleId))
+                return Forbid();
+
             return absence;
         }
 
@@ -63,10 +72,18 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("etudiant/{etudiantId}")]
         public async Task<ActionResult<IEnumerable<Absence>>> GetAbsencesByEtudiant(int etudiantId)
         {
-            return await _context.Absences
+            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var query = _context.Absences
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
-                .Where(a => a.EtudiantId == etudiantId)
+                .Where(a => a.EtudiantId == etudiantId);
+
+            if (assignedModuleId.HasValue)
+            {
+                query = query.Where(a => a.ModuleId == assignedModuleId.Value);
+            }
+
+            return await query
                 .OrderByDescending(a => a.DateAbsence)
                 .Take(500)           // safety cap — no student should ever exceed this
                 .ToListAsync();
@@ -76,6 +93,9 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("module/{moduleId}")]
         public async Task<ActionResult<IEnumerable<Absence>>> GetAbsencesByModule(int moduleId)
         {
+            if (!await _academicAccess.CanAccessModuleAsync(User, moduleId))
+                return Forbid();
+
             return await _context.Absences
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
@@ -95,6 +115,9 @@ namespace PlateformePFA.API.Controllers
                 return NotFound(new { message = "Etudiant actif introuvable." });
             if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
                 return NotFound(new { message = "Module introuvable." });
+
+            if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
+                return Forbid();
 
             var absence = new Absence
             {
@@ -125,6 +148,9 @@ namespace PlateformePFA.API.Controllers
         {
             var absence = await _context.Absences.FindAsync(id);
             if (absence == null) return NotFound(new { message = "Absence introuvable." });
+
+            if (!await _academicAccess.CanAccessModuleAsync(User, absence.ModuleId))
+                return Forbid();
 
             absence.NombreHeures = dto.NombreHeures;
             absence.Justifiee    = dto.Justifiee;

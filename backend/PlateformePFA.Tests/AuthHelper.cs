@@ -17,4 +17,16 @@ public static class AuthHelper
         var body = await res.Content.ReadFromJsonAsync<LoginResponse>();
         return body!.Token;
     }
+
+    public static async Task<string> GetTokenAsync(HttpClient client, string email, string password)
+    {
+        var res = await client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = email,
+            motDePasse = password,
+        });
+        res.EnsureSuccessStatusCode();
+        var body = await res.Content.ReadFromJsonAsync<LoginResponse>();
+        return body!.Token;
+    }
 }
