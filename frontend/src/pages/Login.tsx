@@ -72,11 +72,11 @@ export default function Login() {
           }}
         />
 
-        <div className="relative z-10 flex items-center gap-3">
+        <div className="relative z-10 flex justify-start">
           <img
             src="/eniad-logo.png"
             alt="ENIAD"
-            style={{ height: 52, width: 'auto', objectFit: 'contain' }}
+            style={{ height: 110, width: 'auto', objectFit: 'contain' }}
           />
         </div>
 
