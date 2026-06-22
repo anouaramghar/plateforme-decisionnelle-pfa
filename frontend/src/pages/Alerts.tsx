@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
@@ -76,11 +75,8 @@ export default function Alerts() {
   const resolveMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`, {}),
     onSuccess: async (_res, id) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['alertes'] }),
-        queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] }),
-        queryClient.invalidateQueries({ queryKey: ['sidebar', 'alertes-unresolved'] }),
-      ])
+      // Prefix match: invalidating ['alertes'] also refreshes the badge count.
+      await queryClient.invalidateQueries({ queryKey: ['alertes'] })
       const alerte = all.find(a => a.id === id)
       if (alerte) {
         const nom = alerte.etudiant
@@ -97,11 +93,7 @@ export default function Alerts() {
   const resolveAllMutation = useMutation({
     mutationFn: (ids: number[]) => api.patch('/alertes/batch-resolve', { ids }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['alertes'] }),
-        queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] }),
-        queryClient.invalidateQueries({ queryKey: ['sidebar', 'alertes-unresolved'] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: ['alertes'] })
     },
   })
 
@@ -115,7 +107,9 @@ export default function Alerts() {
   // Export the currently-filtered alerts to an .xlsx workbook. CLAUDE.md
   // designates xlsx as the Excel export library for this project; this is
   // the alerts feature's deliverable from the responsability split.
-  const handleExport = () => {
+  const handleExport = async () => {
+    // Lazy-load SheetJS so the (large) xlsx lib only ships when a user exports.
+    const XLSX = await import('xlsx')
     const rows = filtered.map(a => ({
       ID:        a.id,
       Type:      ALERT_TYPES[a.type as AlertType]?.label ?? a.type,

@@ -224,12 +224,13 @@ html.dark .pill-accent { color: var(--accent-300); }
 }
 .btn-primary:hover { background: var(--text-2); }
 .btn-accent {
-  background: var(--accent-600);
+  /* accent-700 (not 600) so the white label clears WCAG AA 4.5:1 at 12px */
+  background: var(--accent-700);
   color: #fff;
-  border-color: var(--accent-700);
+  border-color: var(--accent-800);
   box-shadow: 0 1px 0 rgba(0, 0, 0, .04), inset 0 1px 0 rgba(255, 255, 255, .12);
 }
-.btn-accent:hover { background: var(--accent-500); }
+.btn-accent:hover { background: var(--accent-600); }
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-sm { height: 26px; padding: 0 8px;  font-size: 12px; }
@@ -342,6 +343,52 @@ html.dark .pill-accent { color: var(--accent-300); }
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-500) 18%, transparent);
   border-color: var(--accent-500);
+}
+
+/* Keyboard focus — branded ring on every interactive surface. :focus-visible
+   so it only shows for keyboard nav, never on mouse click. The app is
+   keyboard-first, so this is non-negotiable. */
+.btn:focus-visible,
+.nav-item:focus-visible,
+a:focus-visible,
+button:focus-visible,
+[role='option']:focus-visible,
+[role='switch']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* inputs already carry their own focus ring (.input:focus) */
+.input:focus-visible { outline: none; }
+
+/* Touch targets — meet the 44px minimum on coarse pointers (phones/tablets)
+   without inflating the dense desktop UI. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 40px; }
+  .nav-item { min-height: 40px; }
+}
+
+/* Respect reduced-motion: neutralize the pulsing dots, shimmer, slide-ins,
+   and chart sweeps for vestibular-sensitive users. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Mobile: the app is authored desktop-first on 12-col grids. Under 640px,
+   stack every grid to a single column and let wide tables scroll instead of
+   overflowing the viewport. One central rule beats per-page breakpoints.
+   ponytail: single-column under sm; richer tablet breakpoints if mobile use grows. */
+@media (max-width: 639px) {
+  .app-content [class*='grid-cols-'] { grid-template-columns: 1fr !important; }
+  .app-content .card:has(table.tbl) { overflow-x: auto; }
+  .app-content table.tbl { min-width: 540px; }
 }
 
 /* skeleton */

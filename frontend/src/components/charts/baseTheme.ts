@@ -10,6 +10,11 @@ export function isDark(): boolean {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
 export function baseTheme(): ApexOptions {
   return {
     chart: {
@@ -17,7 +22,7 @@ export function baseTheme(): ApexOptions {
       foreColor: readCssVar('--text-3', '#78716c'),
       toolbar: { show: false },
       zoom: { enabled: false },
-      animations: { enabled: true, speed: 320 },
+      animations: { enabled: !prefersReducedMotion(), speed: 320 },
     },
     grid: {
       borderColor: readCssVar('--border', '#e7e5e4'),

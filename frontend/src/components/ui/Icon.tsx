@@ -43,6 +43,7 @@ const ICONS: Record<string, ReactElement> = {
   edit:      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 113 3L12 15l-4 1 1-4z" />,
   trash:     <path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />,
   copilot:   <path d="M12 2a10 10 0 100 20 10 10 0 000-20zM8 11.5a4 4 0 008 0M9 9h.01M15 9h.01" />,
+  menu:      <path d="M3 6h18M3 12h18M3 18h18" />,
 }
 
 export type IconName = keyof typeof ICONS

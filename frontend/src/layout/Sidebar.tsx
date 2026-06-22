@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useFiliere } from '../context/FiliereContext'
 import { api } from '../services/api'
+import { useUnresolvedAlertCount } from '../services/useUnresolvedAlertCount'
 
 const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
 
@@ -18,8 +19,6 @@ interface NavEntry {
   badgeTone?: 'bad' | 'warn' | 'neutral'
 }
 
-interface PaginatedResult<T> { items: T[]; total: number }
-interface AlerteRow { resolue: boolean }
 interface EtudiantRow { id: number }
 
 const SECONDARY: NavEntry[] = [
@@ -48,17 +47,8 @@ export function Sidebar() {
   }, [])
 
   // Live badge counts. Gated on `token` so we don't fire unauthenticated calls
-  // before login. Cheap polling — same cadence the Alerts page already uses.
-  const { data: alertesData } = useQuery({
-    queryKey: ['sidebar', 'alertes-unresolved'],
-    queryFn: async () => {
-      const res = await api.get<PaginatedResult<AlerteRow>>('/alertes?pageSize=200')
-      return res.data.items.filter(a => !a.resolue).length
-    },
-    enabled: !!token && mayAccessAlerts,
-    refetchInterval: 30_000,
-    staleTime: 25_000,
-  })
+  // before login. Alert count is shared with the topbar (one poll, not two).
+  const { data: alertesData } = useUnresolvedAlertCount(!!token && mayAccessAlerts)
   const { data: etudiantsCount } = useQuery({
     queryKey: ['sidebar', 'etudiants-count'],
     queryFn: async () => {

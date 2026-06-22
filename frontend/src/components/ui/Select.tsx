@@ -11,6 +11,7 @@ export function Select({ value, onChange, options, label }: SelectProps) {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
+        aria-label={label}
         className="input pr-7"
         style={{ height: 30, paddingLeft: label ? 70 : 10, fontSize: 12.5 }}
       >

@@ -12,8 +12,6 @@ import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
 import { api } from '../services/api'
 import { useFiliere } from '../context/FiliereContext'
 
-const SPARK = [22, 28, 30, 26, 32, 38, 42, 40, 46, 52, 48, 55, 62, 58]
-
 interface ModelMetrics {
   auc?: number
   f1?: number
@@ -375,9 +373,15 @@ export default function Dashboard() {
               <div className="flex-1">
                 <div className="sparkbar" style={{ height: 38 }}>
                   {(() => {
-                    const series = data.etudiantsParSemaine.length > 0
-                      ? data.etudiantsParSemaine
-                      : SPARK
+                    const series = data.etudiantsParSemaine
+                    // No invented data: if there's no real history, show nothing.
+                    if (series.length === 0) {
+                      return (
+                        <div className="cap self-center" style={{ color: 'var(--text-4)' }}>
+                          Pas encore d'historique
+                        </div>
+                      )
+                    }
                     const lo = Math.min(...series)
                     const hi = Math.max(...series)
                     const range = Math.max(1, hi - lo)
@@ -573,7 +577,11 @@ export default function Dashboard() {
                     <RiskBar score={e.scoreRisque} />
                   </td>
                   <td>
-                    <button className="btn btn-sm btn-ghost" onClick={ev => { ev.stopPropagation(); navigate(`/students?q=${encodeURIComponent(e.matricule)}`) }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      aria-label={`Voir la fiche de ${e.nomComplet}`}
+                      onClick={ev => { ev.stopPropagation(); navigate(`/students?q=${encodeURIComponent(e.matricule)}`) }}
+                    >
                       <Icon name="chevRight" size={13} />
                     </button>
                   </td>

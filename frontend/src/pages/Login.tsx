@@ -189,9 +189,9 @@ export default function Login() {
             <Field
               label="Mot de passe"
               hint={
-                <a className="hover:underline" style={{ color: 'var(--accent-600)' }}>
+                <button type="button" className="hover:underline" style={{ color: 'var(--accent-600)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
                   Mot de passe oublié&nbsp;?
-                </a>
+                </button>
               }
               required
               error={errors.password?.message}
@@ -218,7 +218,7 @@ export default function Login() {
 
           <div className="mt-5 flex items-center gap-3">
             <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-            <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+            <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
               OU
             </span>
             <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
@@ -240,9 +240,9 @@ export default function Login() {
 
           <p className="mt-6 text-[11.5px] text-center" style={{ color: 'var(--text-3)' }}>
             Pas de compte ?{' '}
-            <a className="hover:underline" style={{ color: 'var(--accent-600)', fontWeight: 500 }}>
+            <button type="button" className="hover:underline" style={{ color: 'var(--accent-600)', fontWeight: 500, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
               Demander un accès au responsable
-            </a>
+            </button>
           </p>
         </form>
       </div>

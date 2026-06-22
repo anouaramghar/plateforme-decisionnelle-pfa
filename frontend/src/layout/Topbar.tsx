@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
+import { useUnresolvedAlertCount } from '../services/useUnresolvedAlertCount'
 import { canCreateStudent, canRunBatchPredictions } from '../auth/roles'
 
 const BREADCRUMBS: Record<string, [string, string]> = {
@@ -20,6 +20,7 @@ const BREADCRUMBS: Record<string, [string, string]> = {
 interface TopbarProps {
   onCommandOpen: () => void
   onCopilotOpen: () => void
+  onMenuOpen?: () => void
   copilotActive?: boolean
 }
 
@@ -30,7 +31,7 @@ interface NouveauItem {
   adminOnly?: boolean
 }
 
-export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarProps) {
+export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, copilotActive }: TopbarProps) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -43,19 +44,8 @@ export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarPr
   const [syncLoading, setSyncLoading]   = useState(false)
   const nouveauRef = useRef<HTMLDivElement>(null)
 
-  // Unresolved alert count for bell badge
-  const { data: alertCount = 0 } = useQuery({
-    queryKey: ['topbar', 'alertes-unresolved'],
-    queryFn: async () => {
-      const res = await api.get<{ items: { resolue: boolean }[]; total: number }>(
-        '/alertes?pageSize=200'
-      )
-      return res.data.items.filter(a => !a.resolue).length
-    },
-    enabled: !!token && mayAccessAlerts,
-    refetchInterval: 30_000,
-    staleTime: 25_000,
-  })
+  // Unresolved alert count for bell badge (shared poll with the sidebar)
+  const { data: alertCount = 0 } = useUnresolvedAlertCount(!!token && mayAccessAlerts)
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -120,6 +110,13 @@ export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarPr
     >
       {/* Breadcrumb */}
       <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onMenuOpen}
+          className="btn btn-sm btn-ghost lg:hidden"
+          aria-label="Ouvrir le menu de navigation"
+        >
+          <Icon name="menu" size={16} />
+        </button>
         <div className="flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-3)' }}>
           {breadcrumb.map((c, i) => (
             <span key={c} className="flex items-center gap-2">

@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { CopilotSidebar, useCopilotChatConfiguration } from '@copilotkit/react-core/v2'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandPalette } from './CommandPalette'
+import { Icon } from '../components/ui/Icon'
 import { useAuth } from '../context/AuthContext'
 
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
+  const { pathname } = useLocation()
   const { copilotActive } = useAuth()
   const chatConfig = useCopilotChatConfiguration()
   const [localOpen, setLocalOpen] = useState(false)
+
+  // Close the mobile nav drawer whenever the route changes.
+  useEffect(() => { setNavOpen(false) }, [pathname])
 
   const copilotOpen = copilotActive ? (chatConfig?.isModalOpen ?? false) : localOpen
   const setCopilotOpen = useCallback((open: boolean | ((o: boolean) => boolean)) => {
@@ -51,15 +57,31 @@ export function AppShell() {
 
   return (
     <div className="vh-full flex" style={{ background: 'var(--bg)' }}>
-      <Sidebar />
+      {/* Mobile drawer backdrop */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: 'rgba(12,10,9,0.42)' }}
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      {/* Sidebar: static on desktop, off-canvas drawer under lg */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${
+          navOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <Sidebar />
+      </div>
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
           onCommandOpen={() => setCmdOpen(true)}
           onCopilotOpen={() => setCopilotOpen(o => !o)}
+          onMenuOpen={() => setNavOpen(true)}
           copilotActive={copilotOpen}
         />
         <div className="flex-1 overflow-y-auto scroll-thin">
-          <div className="px-8 py-7 max-w-[1480px] mx-auto">
+          <div className="app-content px-4 sm:px-6 lg:px-8 py-5 lg:py-7 max-w-[1480px] mx-auto">
             <Outlet />
           </div>
         </div>
@@ -75,19 +97,26 @@ export function AppShell() {
           }}
         />
       ) : copilotOpen ? (
-        <div className="copilot-panel fixed right-0 top-0 bottom-0 w-80 bg-white border-l shadow-lg flex flex-col z-50">
-          <div className="p-4 border-b flex justify-between items-center">
+        <div
+          className="copilot-panel fixed right-0 top-0 bottom-0 w-80 flex flex-col z-50"
+          style={{ background: 'var(--surface)', borderLeft: '1px solid var(--border)', color: 'var(--text)' }}
+        >
+          <div className="p-4 flex justify-between items-center" style={{ borderBottom: '1px solid var(--border)' }}>
             <h3 className="font-semibold text-lg">ENIAD Copilot</h3>
-            <button onClick={() => setCopilotOpen(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            <button
+              onClick={() => setCopilotOpen(false)}
+              className="btn btn-sm btn-ghost"
+              aria-label="Fermer le panneau Copilot"
+            >
+              <Icon name="x" size={14} />
+            </button>
           </div>
           <div className="flex-1 p-6 flex flex-col items-center justify-center text-center">
-            <div className="text-amber-500 mb-4">
-              <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+            <div className="mb-4" style={{ color: 'var(--accent-500)' }}>
+              <Icon name="alert" size={40} />
             </div>
-            <p className="text-gray-900 font-medium mb-1">Copilot indisponible</p>
-            <p className="text-gray-500 text-sm">
+            <p className="font-medium mb-1">Copilot indisponible</p>
+            <p className="text-sm" style={{ color: 'var(--text-3)' }}>
               La session de chat sécurisée n'a pas pu être établie. Les fonctionnalités d'intelligence artificielle sont temporairement désactivées.
             </p>
           </div>
