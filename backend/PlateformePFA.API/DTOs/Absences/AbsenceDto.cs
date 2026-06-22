@@ -30,5 +30,7 @@ namespace PlateformePFA.API.DTOs.Absences
 
         [Required]
         public DateTime DateAbsence { get; set; }
+
+        public string RowVersion { get; set; } = string.Empty;
     }
 }

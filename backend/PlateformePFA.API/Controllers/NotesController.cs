@@ -107,14 +107,22 @@ namespace PlateformePFA.API.Controllers
 
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPost]
-        public async Task<ActionResult<Note>> PostNote(CreateNoteDto dto)
+        public async Task<ActionResult<Note>> PostNote(CreateNoteDto dto, CancellationToken ct = default)
         {
             // Validate FKs + uniqueness up front so a bad reference or a duplicate
             // returns 404/409 instead of letting SQL throw an unhandled 500.
-            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null))
+            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null, ct))
                 return NotFound(new { message = "Etudiant actif introuvable." });
-            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId, ct))
                 return NotFound(new { message = "Module introuvable." });
+
+            var compatible = await _context.Etudiants
+                .Where(e => e.Id == dto.EtudiantId && e.DesinscritLe == null)
+                .Join(_context.Modules.Where(m => m.Id == dto.ModuleId),
+                      e => e.FiliereId, m => m.FiliereId, (e, m) => new { e, m })
+                .AnyAsync(x => x.e.Niveau == x.m.Niveau, ct);
+            if (!compatible)
+                return BadRequest(new { message = "L'étudiant et le module doivent appartenir à la même filière et au même niveau." });
 
             if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
                 return Forbid();
@@ -151,15 +159,23 @@ namespace PlateformePFA.API.Controllers
 
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPut("upsert")]
-        public async Task<ActionResult<UpsertNoteResultDto>> UpsertNote(UpsertNoteDto dto)
+        public async Task<ActionResult<UpsertNoteResultDto>> UpsertNote(UpsertNoteDto dto, CancellationToken ct = default)
         {
             var studentExists = await _context.Etudiants
-                .AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null);
+                .AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null, ct);
             if (!studentExists)
                 return NotFound(new { message = "Etudiant actif introuvable." });
 
-            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId, ct))
                 return NotFound(new { message = "Module introuvable." });
+
+            var compatible = await _context.Etudiants
+                .Where(e => e.Id == dto.EtudiantId && e.DesinscritLe == null)
+                .Join(_context.Modules.Where(m => m.Id == dto.ModuleId),
+                      e => e.FiliereId, m => m.FiliereId, (e, m) => new { e, m })
+                .AnyAsync(x => x.e.Niveau == x.m.Niveau, ct);
+            if (!compatible)
+                return BadRequest(new { message = "L'étudiant et le module doivent appartenir à la même filière et au même niveau." });
 
             if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
                 return Forbid();
@@ -168,7 +184,7 @@ namespace PlateformePFA.API.Controllers
                 n.EtudiantId == dto.EtudiantId
                 && n.ModuleId == dto.ModuleId
                 && n.Annee == dto.Annee
-                && n.Semestre == dto.Semestre);
+                && n.Semestre == dto.Semestre, ct);
 
             var created = note == null;
             note ??= new Note
@@ -186,7 +202,20 @@ namespace PlateformePFA.API.Controllers
             note.NoteFinal = dto.NoteFinal;
 
             if (created) _context.Notes.Add(note);
-            await _context.SaveChangesAsync();
+            else if (!string.IsNullOrEmpty(dto.RowVersion))
+            {
+                _context.Entry(note).Property(n => n.RowVersion).OriginalValue = Convert.FromBase64String(dto.RowVersion);
+            }
+
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Conflict(new { message = "La ressource a été modifiée par un autre utilisateur." });
+            }
+
             await _alerteService.CheckNoteAlertAsync(note.EtudiantId, note.ModuleId);
 
             var result = new UpsertNoteResultDto { Id = note.Id, Created = created };
@@ -197,10 +226,18 @@ namespace PlateformePFA.API.Controllers
 
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPut("{id:int}")]
-        public async Task<IActionResult> PutNote(int id, UpdateNoteDto dto)
+        public async Task<IActionResult> PutNote(int id, UpdateNoteDto dto, CancellationToken ct = default)
         {
-            var note = await _context.Notes.FindAsync(id);
+            var note = await _context.Notes.FindAsync(new object[] { id }, ct);
             if (note == null) return NotFound();
+
+            var compatible = await _context.Etudiants
+                .Where(e => e.Id == note.EtudiantId && e.DesinscritLe == null)
+                .Join(_context.Modules.Where(m => m.Id == note.ModuleId),
+                      e => e.FiliereId, m => m.FiliereId, (e, m) => new { e, m })
+                .AnyAsync(x => x.e.Niveau == x.m.Niveau, ct);
+            if (!compatible)
+                return BadRequest(new { message = "L'étudiant et le module doivent appartenir à la même filière et au même niveau." });
 
             if (!await _academicAccess.CanAccessModuleAsync(User, note.ModuleId))
                 return Forbid();
@@ -212,14 +249,18 @@ namespace PlateformePFA.API.Controllers
             note.Annee      = dto.Annee;
             note.Semestre   = dto.Semestre;
 
+            if (!string.IsNullOrEmpty(dto.RowVersion))
+            {
+                _context.Entry(note).Property(n => n.RowVersion).OriginalValue = Convert.FromBase64String(dto.RowVersion);
+            }
+
             try
             {
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(ct);
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!await _context.Notes.AnyAsync(n => n.Id == id)) return NotFound();
-                else throw;
+                return Conflict(new { message = "La ressource a été modifiée par un autre utilisateur." });
             }
 
             // Re-check alert after grade update

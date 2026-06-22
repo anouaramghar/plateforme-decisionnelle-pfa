@@ -108,13 +108,21 @@ namespace PlateformePFA.API.Controllers
         // POST: api/absences
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPost]
-        public async Task<ActionResult<Absence>> PostAbsence(CreateAbsenceDto dto)
+        public async Task<ActionResult<Absence>> PostAbsence(CreateAbsenceDto dto, CancellationToken ct = default)
         {
             // Validate FKs up front so a bad reference returns 404 instead of a 500.
-            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null))
+            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null, ct))
                 return NotFound(new { message = "Etudiant actif introuvable." });
-            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId))
+            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId, ct))
                 return NotFound(new { message = "Module introuvable." });
+
+            var compatible = await _context.Etudiants
+                .Where(e => e.Id == dto.EtudiantId && e.DesinscritLe == null)
+                .Join(_context.Modules.Where(m => m.Id == dto.ModuleId),
+                      e => e.FiliereId, m => m.FiliereId, (e, m) => new { e, m })
+                .AnyAsync(x => x.e.Niveau == x.m.Niveau, ct);
+            if (!compatible)
+                return BadRequest(new { message = "L'étudiant et le module doivent appartenir à la même filière et au même niveau." });
 
             if (!await _academicAccess.CanAccessModuleAsync(User, dto.ModuleId))
                 return Forbid();
@@ -130,7 +138,7 @@ namespace PlateformePFA.API.Controllers
             };
 
             _context.Absences.Add(absence);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(ct);
 
             _logger.LogInformation("Absence enregistrée : EtudiantId={EtudiantId}, ModuleId={ModuleId}, Heures={H}",
                 absence.EtudiantId, absence.ModuleId, absence.NombreHeures);
@@ -144,10 +152,18 @@ namespace PlateformePFA.API.Controllers
         // PUT: api/absences/5
         [Authorize(Roles = "Admin,Enseignant")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutAbsence(int id, UpdateAbsenceDto dto)
+        public async Task<IActionResult> PutAbsence(int id, UpdateAbsenceDto dto, CancellationToken ct = default)
         {
-            var absence = await _context.Absences.FindAsync(id);
+            var absence = await _context.Absences.FindAsync(new object[] { id }, ct);
             if (absence == null) return NotFound(new { message = "Absence introuvable." });
+
+            var compatible = await _context.Etudiants
+                .Where(e => e.Id == absence.EtudiantId && e.DesinscritLe == null)
+                .Join(_context.Modules.Where(m => m.Id == absence.ModuleId),
+                      e => e.FiliereId, m => m.FiliereId, (e, m) => new { e, m })
+                .AnyAsync(x => x.e.Niveau == x.m.Niveau, ct);
+            if (!compatible)
+                return BadRequest(new { message = "L'étudiant et le module doivent appartenir à la même filière et au même niveau." });
 
             if (!await _academicAccess.CanAccessModuleAsync(User, absence.ModuleId))
                 return Forbid();
@@ -156,11 +172,15 @@ namespace PlateformePFA.API.Controllers
             absence.Justifiee    = dto.Justifiee;
             absence.DateAbsence  = dto.DateAbsence;
 
-            try { await _context.SaveChangesAsync(); }
+            if (!string.IsNullOrEmpty(dto.RowVersion))
+            {
+                _context.Entry(absence).Property(a => a.RowVersion).OriginalValue = Convert.FromBase64String(dto.RowVersion);
+            }
+
+            try { await _context.SaveChangesAsync(ct); }
             catch (DbUpdateConcurrencyException)
             {
-                if (!await _context.Absences.AnyAsync(a => a.Id == id)) return NotFound();
-                else throw;
+                return Conflict(new { message = "La ressource a été modifiée par un autre utilisateur." });
             }
 
             // Re-check alert after absence update

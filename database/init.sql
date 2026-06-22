@@ -79,6 +79,7 @@ CREATE TABLE Notes (
     Annee      NVARCHAR(9)  NOT NULL,
     Semestre   NVARCHAR(5)  NOT NULL,
     CreeLe     DATETIME2    NOT NULL DEFAULT GETUTCDATE(),
+    RowVersion ROWVERSION   NOT NULL,
     UNIQUE (EtudiantId, ModuleId, Annee, Semestre)
 );
 GO
@@ -92,7 +93,8 @@ CREATE TABLE Absences (
     NombreHeures INT       NOT NULL DEFAULT 1,
     Justifiee    BIT       NOT NULL DEFAULT 0,
     DateAbsence  DATE      NOT NULL,
-    CreeLe       DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    CreeLe       DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    RowVersion   ROWVERSION NOT NULL
 );
 GO
 

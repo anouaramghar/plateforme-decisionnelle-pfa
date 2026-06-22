@@ -290,6 +290,84 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
         modBResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task Note_creation_fails_if_student_and_module_mismatched()
+    {
+        int studentId;
+        int mismatchedModuleId;
+        using (var ctx = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(ctx);
+            studentId = seeded.Etudiant.Id;
+            
+            var otherFil = new Filiere { Code = "IA", Intitule = "Intelligence Artificielle" };
+            ctx.Filieres.Add(otherFil);
+            ctx.SaveChanges();
+
+            var otherMod = new Module
+            {
+                Code = "IA01", Nom = "Machine Learning",
+                FiliereId = otherFil.Id, Niveau = "CI1",
+                Coefficient = 4m, Semestre = "S1"
+            };
+            ctx.Modules.Add(otherMod);
+            ctx.SaveChanges();
+            mismatchedModuleId = otherMod.Id;
+        }
+
+        var client = await CreateAdminClientAsync();
+        var response = await client.PostAsJsonAsync("/api/notes", new
+        {
+            etudiantId = studentId,
+            moduleId = mismatchedModuleId,
+            noteFinal = 12m,
+            annee = "2025/2026",
+            semestre = "S1"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("filière").And.Contain("niveau");
+    }
+
+    [Fact]
+    public async Task Note_update_fails_if_concurrency_token_stale()
+    {
+        var client = await CreateAdminClientAsync();
+        int noteId;
+        string base64RowVersion;
+        using (var ctx = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(ctx);
+            var note = ctx.Notes.First();
+            noteId = note.Id;
+            
+            // Seed initial rowversion
+            note.RowVersion = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+            ctx.SaveChanges();
+            base64RowVersion = Convert.ToBase64String(note.RowVersion);
+        }
+
+        // Simulate a concurrent DB edit modifying the row version
+        using (var ctx2 = _factory.CreateContext())
+        {
+            var noteInDb = ctx2.Notes.Find(noteId);
+            noteInDb!.NoteFinal = 18m;
+            noteInDb.RowVersion = new byte[] { 8, 7, 6, 5, 4, 3, 2, 1 };
+            ctx2.SaveChanges();
+        }
+
+        var response = await client.PutAsJsonAsync($"/api/notes/{noteId}", new
+        {
+            noteFinal = 15m,
+            annee = "2025/2026",
+            semestre = "S2",
+            rowVersion = base64RowVersion // Stale row version
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     private void SeedTeacher(string email, string password, int moduleId)
     {
         using var ctx = _factory.CreateContext();

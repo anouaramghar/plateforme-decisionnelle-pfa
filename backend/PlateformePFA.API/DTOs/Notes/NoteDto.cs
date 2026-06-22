@@ -17,6 +17,7 @@ namespace PlateformePFA.API.DTOs.Notes
         public decimal? NoteFinal   { get; set; }
         public string   Annee       { get; set; } = string.Empty;
         public string   Semestre    { get; set; } = string.Empty;
+        public string   RowVersion  { get; set; } = string.Empty;
     }
 
     public class CreateNoteDto
@@ -50,6 +51,8 @@ namespace PlateformePFA.API.DTOs.Notes
         [MaxLength(5)]
         [RegularExpression(Validation.SemestrePattern, ErrorMessage = Validation.SemestreError)]
         public string Semestre { get; set; } = string.Empty;
+
+        public string RowVersion { get; set; } = string.Empty;
     }
 
     public class UpdateNoteDto
@@ -75,6 +78,8 @@ namespace PlateformePFA.API.DTOs.Notes
         [MaxLength(5)]
         [RegularExpression(Validation.SemestrePattern, ErrorMessage = Validation.SemestreError)]
         public string Semestre { get; set; } = string.Empty;
+
+        public string RowVersion { get; set; } = string.Empty;
     }
 
     public class UpsertNoteDto : CreateNoteDto

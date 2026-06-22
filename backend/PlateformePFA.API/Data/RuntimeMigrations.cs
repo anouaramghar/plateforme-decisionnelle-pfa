@@ -236,6 +236,21 @@ namespace PlateformePFA.API.Data
                                    WHERE object_id = OBJECT_ID('dbo.Etudiants') AND name = 'DesinscritLe')
                     ALTER TABLE Etudiants ADD DesinscritLe DATETIME2 NULL;
             ");
+
+            // 9. Notes & Absences: Add RowVersion column
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Notes', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Notes') AND name = 'RowVersion')
+                    ALTER TABLE Notes ADD RowVersion ROWVERSION NOT NULL;
+            ");
+
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Absences', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Absences') AND name = 'RowVersion')
+                    ALTER TABLE Absences ADD RowVersion ROWVERSION NOT NULL;
+            ");
         }
     }
 }

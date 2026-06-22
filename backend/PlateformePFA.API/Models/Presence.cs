@@ -21,6 +21,9 @@ namespace PlateformePFA.API.Models
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 
+        [Timestamp]
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
         [JsonIgnore] public Etudiant Etudiant { get; set; } = null!;
         [JsonIgnore] public Module   Module   { get; set; } = null!;
     }
