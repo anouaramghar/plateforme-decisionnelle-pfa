@@ -18,6 +18,7 @@ interface AuthUser {
 interface AuthContextValue {
   token: string | null
   user: AuthUser | null
+  copilotActive: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [, setRefresh] = useState<string | null>(null)
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [copilotActive, setCopilotActive] = useState<boolean>(false)
   const queryClient = useQueryClient()
 
   // Wire the axios layer to React state.
@@ -45,9 +47,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Best-effort server-side revocation — don't block the UI on its result.
       api.post('/auth/logout', { refreshToken: rt }).catch(() => {})
     }
+    api.delete('/copilot/session', { withCredentials: true }).catch(() => {})
     setToken(null)
     setRefresh(null)
     setUser(null)
+    setCopilotActive(false)
     setAuthToken(null)
     setRefreshToken(null)
     queryClient.clear()
@@ -60,7 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(null)
       setRefresh(null)
       setUser(null)
+      setCopilotActive(false)
       queryClient.clear()
+      api.delete('/copilot/session', { withCredentials: true }).catch(() => {})
     })
     setOnTokenRefreshed((newToken, newRefresh) => {
       setToken(newToken)
@@ -80,10 +86,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(jwt)
     setRefresh(refresh)
     setUser({ email: userEmail, role, nom: nomComplet })
+
+    try {
+      await api.post('/copilot/session', {}, { withCredentials: true })
+      setCopilotActive(true)
+    } catch (err) {
+      console.warn('Copilot session creation failed:', err)
+      setCopilotActive(false)
+    }
   }, [])
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, copilotActive, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

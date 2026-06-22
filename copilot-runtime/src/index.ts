@@ -59,34 +59,26 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-import jwt from "jsonwebtoken";
+import { parseCookies, verifyCopilotToken } from "./auth.js";
 
-// Capture JWT per-request, verify its signature, and run tool handlers within ALS.
+// Capture JWT per-request from httpOnly cookie, verify its signature, and run tool handlers within ALS.
 app.use("/api/copilotkit", (req, res, next) => {
   if (req.method === "OPTIONS") return next();
 
-  const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-  const secret = process.env.JWT_SECRET;
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies.pfa_copilot_session;
 
-  // CopilotKit v2's discovery (/info) and streaming agent requests do NOT carry
-  // the client's custom `headers`, so requiring a JWT on every request breaks the
-  // client (401 → "Agent not found"). Verify the token WHEN one is present
-  // (rejects tampering) and capture it for backend tool forwarding; otherwise let
-  // the request through.
-  // ponytail: dev-grade gate. The real security boundary is the backend tool
-  // route ([Authorize] user JWT + internal token). For production, authenticate
-  // the CopilotKit stream via an httpOnly cookie or a signed query param instead.
-  if (token && secret) {
-    try {
-      const opts: jwt.VerifyOptions = { algorithms: ["HS256"] };
-      if (process.env.JWT_ISSUER) opts.issuer = process.env.JWT_ISSUER;
-      if (process.env.JWT_AUDIENCE) opts.audience = process.env.JWT_AUDIENCE;
-      jwt.verify(token, secret, opts);
-    } catch (err: any) {
-      console.error("JWT validation error:", err.message);
-      return res.status(401).json({ error: "Invalid token signature" });
-    }
+  if (!token) {
+    return res.status(401).json({ error: "Missing session cookie" });
   }
+
+  try {
+    verifyCopilotToken(token);
+  } catch (err: any) {
+    console.error("JWT validation error:", err.message);
+    return res.status(401).json({ error: "Invalid or expired session cookie" });
+  }
+
   authStore.run(token, () => next());
 });
 

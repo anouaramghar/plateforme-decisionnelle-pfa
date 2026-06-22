@@ -6,7 +6,7 @@ import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
-import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
+import { upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -115,7 +115,6 @@ export default function Enseignant() {
     queryFn: () => fetchNotes(activeStudent!.id),
     enabled: !!activeStudent,
   })
-  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules })
 
   const { data: absences = [] } = useQuery({
     queryKey: ['etudiant-absences', activeStudent?.id],
