@@ -112,7 +112,24 @@ namespace PlateformePFA.API.Services
                 .Where(a => a.EtudiantId == etudiantId && !a.Justifiee)
                 .SumAsync(a => a.NombreHeures);
 
-            if (totalHeures <= SeuilAbsenceH) return;
+            if (totalHeures <= SeuilAbsenceH)
+            {
+                var toResolve = await _context.Alertes
+                    .FirstOrDefaultAsync(a =>
+                        a.EtudiantId == etudiantId
+                        && a.Type    == "AbsenceExcessive"
+                        && !a.Resolue);
+                if (toResolve != null)
+                {
+                    toResolve.Resolue = true;
+                    toResolve.ResolueeLe = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Alerte AbsenceExcessive résolue automatiquement : EtudiantId={E}",
+                        etudiantId);
+                }
+                return;
+            }
 
             var niveau = totalHeures > 40 ? "Critique"
                        : totalHeures > 30 ? "Eleve"

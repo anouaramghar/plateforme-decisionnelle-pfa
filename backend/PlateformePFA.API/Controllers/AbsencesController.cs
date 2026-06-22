@@ -199,6 +199,10 @@ namespace PlateformePFA.API.Controllers
 
             _context.Absences.Remove(absence);
             await _context.SaveChangesAsync();
+
+            // Re-evaluate alert status after deleting absence
+            await _alerteService.CheckAbsenceAlertAsync(absence.EtudiantId);
+
             return NoContent();
         }
     }

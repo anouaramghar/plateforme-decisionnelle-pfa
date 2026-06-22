@@ -256,6 +256,65 @@ public class AbsencesControllerTests : IClassFixture<TestWebFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    [Fact]
+    public async Task DeleteAbsence_resolves_alert_when_unjustified_hours_drop_below_or_equal_to_threshold()
+    {
+        int absenceId;
+        int studentId;
+        int alertId;
+        
+        using (var ctx = _factory.CreateContext())
+        {
+            var seeded = SampleData.SeedOne(ctx);
+            studentId = seeded.Etudiant.Id;
+            
+            // Seed a 22h unjustified absence
+            var absence = new Absence
+            {
+                EtudiantId = studentId,
+                ModuleId = seeded.Module.Id,
+                NombreHeures = 22,
+                Justifiee = false,
+                DateAbsence = DateTime.UtcNow.AddDays(-2),
+                CreeLe = DateTime.UtcNow
+            };
+            ctx.Absences.Add(absence);
+            
+            // Seed an active AbsenceExcessive alert
+            var alert = new Alerte
+            {
+                EtudiantId = studentId,
+                Type = "AbsenceExcessive",
+                Niveau = "Moyen",
+                Message = "Total absences non justifiées : 22h",
+                Resolue = false,
+                CreeLe = DateTime.UtcNow
+            };
+            ctx.Alertes.Add(alert);
+            ctx.SaveChanges();
+            
+            absenceId = absence.Id;
+            alertId = alert.Id;
+        }
+        
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetAdminTokenAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        
+        // Delete the absence via endpoint
+        var response = await client.DeleteAsync($"/api/absences/{absenceId}");
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        
+        // Verify the alert is resolved in the DB
+        using (var ctx = _factory.CreateContext())
+        {
+            var updatedAlert = ctx.Alertes.Find(alertId);
+            updatedAlert.Should().NotBeNull();
+            updatedAlert!.Resolue.Should().BeTrue();
+            updatedAlert.ResolueeLe.Should().NotBeNull();
+        }
+    }
+
     private void SeedTeacher(string email, string password, int moduleId)
     {
         using var ctx = _factory.CreateContext();

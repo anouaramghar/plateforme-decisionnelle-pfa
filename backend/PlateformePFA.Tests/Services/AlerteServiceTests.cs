@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
@@ -77,6 +78,51 @@ public class AlerteServiceTests : IClassFixture<TestWebFactory>
         result.notes.Should().Be(1);
         context.Alertes.Single(a => a.EtudiantId == resolvedStudent.Id).Resolue.Should().BeTrue();
         context.Alertes.Should().ContainSingle(a => a.EtudiantId == createdStudent.Id && !a.Resolue);
+    }
+
+    [Fact]
+    public async Task CheckAbsenceAlertAsync_resolves_alert_when_unjustified_hours_drop_below_or_equal_to_threshold()
+    {
+        using var context = _factory.CreateContext();
+        var seeded = SampleData.SeedOne(context);
+        var student = AddStudent(context, seeded.Filiere.Id, "E-ABS-RESOLVE");
+        
+        // Seed active AbsenceExcessive alert (22 hours unjustified)
+        var absence = new Absence
+        {
+            EtudiantId = student.Id,
+            ModuleId = seeded.Module.Id,
+            NombreHeures = 22,
+            Justifiee = false,
+            DateAbsence = DateTime.UtcNow.AddDays(-2),
+            CreeLe = DateTime.UtcNow
+        };
+        context.Absences.Add(absence);
+        
+        var alert = new Alerte
+        {
+            EtudiantId = student.Id,
+            Type = "AbsenceExcessive",
+            Niveau = "Moyen",
+            Message = "Total absences non justifiées : 22h",
+            Resolue = false,
+            CreeLe = DateTime.UtcNow
+        };
+        context.Alertes.Add(alert);
+        await context.SaveChangesAsync();
+        
+        // Update absence so unjustified hours drop to <= 20
+        absence.NombreHeures = 15;
+        await context.SaveChangesAsync();
+        
+        var service = new AlerteService(context, NullLogger<AlerteService>.Instance);
+        await service.CheckAbsenceAlertAsync(student.Id);
+        
+        // Assert
+        var updatedAlert = await context.Alertes.FirstOrDefaultAsync(a => a.Id == alert.Id);
+        updatedAlert.Should().NotBeNull();
+        updatedAlert!.Resolue.Should().BeTrue();
+        updatedAlert.ResolueeLe.Should().NotBeNull();
     }
 
     private static Etudiant AddStudent(
