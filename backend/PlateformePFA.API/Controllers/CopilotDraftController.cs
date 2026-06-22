@@ -17,11 +17,11 @@ namespace PlateformePFA.API.Controllers
     /// Auth: same role gate as the rest of the Copilot surface — Admin or Responsable.
     /// No X-Internal-Token required: these are direct user actions, not agent tool calls.
     ///
-    /// Implementation note: EF Core InMemory does NOT support ExecuteUpdateAsync
-    /// (it is a relational-only bulk-update API). To stay compatible with the
-    /// InMemory test provider we use the traditional fetch → mutate → SaveChanges
-    /// pattern inside a transaction.  On SQL Server a transaction + row-level
-    /// locking gives equivalent idempotency guarantees.
+    /// Implementation note: confirm CLAIMS the draft with a conditional update
+    /// (ExecuteUpdateAsync on SQL Server) so concurrent confirmations cannot
+    /// both create an Alerte — only one request flips pending_user_confirm.
+    /// EF Core InMemory lacks ExecuteUpdateAsync, so the test path emulates the
+    /// same conditional claim with fetch → mutate inside the transaction.
     /// </summary>
     [ApiController]
     [Route("api/copilot/drafts")]
@@ -51,24 +51,56 @@ namespace PlateformePFA.API.Controllers
             var userId = GetUserId();
             if (userId is null) return Unauthorized();
 
+            var now = DateTime.UtcNow;
+
             await using var tx = await _db.Database.BeginTransactionAsync(ct);
             try
             {
-                // Fetch the draft — track it so SaveChanges picks up mutations.
-                var draft = await _db.AlertDrafts.FindAsync(new object[] { id }, ct);
+                // Atomically CLAIM the draft: flip pending_user_confirm -> sent
+                // ONLY if it is still pending and unexpired. Under concurrency
+                // exactly one request updates a row; the loser updates 0 and
+                // gets 409. This closes the read-then-write race where two
+                // simultaneous confirms both passed the pending check and each
+                // created an Alerte.
+                int claimed;
+                if (_db.Database.IsRelational())
+                {
+                    claimed = await _db.AlertDrafts
+                        .Where(d => d.Id == id
+                            && d.Status == "pending_user_confirm"
+                            && d.ExpiresAt > now)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(d => d.Status, "sent")
+                            .SetProperty(d => d.SentAt, now), ct);
+                }
+                else
+                {
+                    // EF Core InMemory (tests) has no ExecuteUpdateAsync and no
+                    // real concurrency; emulate the conditional claim.
+                    var pending = await _db.AlertDrafts.FindAsync(new object[] { id }, ct);
+                    if (pending is not null
+                        && pending.Status == "pending_user_confirm"
+                        && pending.ExpiresAt > now)
+                    {
+                        pending.Status = "sent";
+                        pending.SentAt = now;
+                        await _db.SaveChangesAsync(ct);
+                        claimed = 1;
+                    }
+                    else
+                    {
+                        claimed = 0;
+                    }
+                }
 
-                // Idempotency: only act when the draft is still pending AND not expired.
-                if (draft is null
-                    || draft.Status != "pending_user_confirm"
-                    || draft.ExpiresAt <= DateTime.UtcNow)
+                if (claimed != 1)
                 {
                     await tx.RollbackAsync(ct);
                     return Conflict(new { message = "Draft is expired, cancelled, or already confirmed." });
                 }
 
-                // Mark the draft as sent.
-                draft.Status = "sent";
-                draft.SentAt = DateTime.UtcNow;
+                // Re-read the claimed draft for the fields needed to build the Alerte.
+                var draft = await _db.AlertDrafts.AsNoTracking().FirstAsync(d => d.Id == id, ct);
 
                 // Map severity → Niveau (matches the Alerte.Niveau domain values).
                 var niveau = draft.Severity switch

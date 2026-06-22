@@ -131,14 +131,61 @@ function EnseignantRestricted() {
   )
 }
 
+// Renders the persisted draft returned by the backend `draft_alert` tool and
+// promotes/cancels it through the server-side draft lifecycle. The draft_id is
+// real (the backend already wrote a pending_user_confirm row) so confirm/cancel
+// hit /copilot/drafts/{id}/{confirm|cancel} — never the Admin-only /alertes.
+function DraftAlertCard({ result }: { result: string }) {
+  const [state, setState] = useState<'pending' | 'confirmed' | 'dismissed'>('pending')
+
+  let parsed: {
+    ok?: boolean
+    data?: { draft_id: number; student_name?: string; matricule?: string; severity?: string; message?: string; expires_at?: string }
+  } | null = null
+  try { parsed = JSON.parse(result) } catch { parsed = null }
+
+  if (!parsed?.ok || !parsed.data) {
+    return (
+      <div className="px-3 py-2 rounded-lg text-[12px] cap" style={{ background: 'var(--surface-2)', color: 'var(--bad)', border: '1px solid var(--border)' }}>
+        Échec de la préparation du brouillon d'alerte.
+      </div>
+    )
+  }
+
+  const d = parsed.data
+  const confirmData: ConfirmData = {
+    draftId: d.draft_id,
+    preview: {
+      student_name: d.student_name,
+      matricule: d.matricule,
+      severity: d.severity,
+      message: d.message,
+      expires_at: d.expires_at,
+    },
+    tool: 'draft_alert',
+    state,
+  }
+
+  return (
+    <ConfirmCard
+      data={confirmData}
+      onConfirm={async () => {
+        await api.post(`/copilot/drafts/${d.draft_id}/confirm`)
+        setState('confirmed')
+      }}
+      onDismiss={async () => {
+        try { await api.post(`/copilot/drafts/${d.draft_id}/cancel`) } catch { /* draft may already be expired/finalized */ }
+        setState('dismissed')
+      }}
+    />
+  )
+}
+
 export default function Predictions() {
   const { user } = useAuth()
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
   const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
-  const [pendingAlert, setPendingAlert] = useState<{
-    student: { id: number; nomComplet: string; matricule: string }; severite: string; message: string
-  } | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -203,55 +250,23 @@ export default function Predictions() {
     },
   })
 
+  // Render-only. The runtime `draft_alert` tool persists the draft server-side
+  // and returns the real draft_id; we must NOT register a handler here (that
+  // would shadow the backend tool, fabricate a fake id, and bypass the
+  // persisted-draft lifecycle). We only render its result and drive
+  // confirm/cancel through the /copilot/drafts endpoints.
   useCopilotAction({
     name: 'draft_alert',
-    description:
-      'Propose creating an alert for a student at risk. This only drafts the alert — ' +
-      'the user must click "Confirmer" in the UI before anything is saved. ' +
-      'Severity values: high, medium, low.',
-    parameters: [
-      { name: 'matricule', type: 'string', description: 'Student matricule', required: true },
-      { name: 'severity', type: 'string', description: 'Alert severity: high, medium, or low', required: true },
-      { name: 'message', type: 'string', description: 'Alert message content', required: true },
-    ],
-    renderAndWaitForResponse: ({ args, status, respond }: { args: { matricule?: string; severity?: string; message?: string }; status: string; respond?: (r: unknown) => void }) => {
-      const student = data?.topARisque.find(s => s.matricule.toLowerCase() === (args.matricule ?? '').toLowerCase())
-      
-      const confirmData: ConfirmData = {
-        draftId: 0,
-        preview: {
-          student_name: student?.nomComplet ?? args.matricule ?? '',
-          matricule: args.matricule ?? '',
-          severity: args.severity ?? 'medium',
-          message: args.message ?? '',
-        },
-        tool: 'draft_alert',
-        state: status === 'complete' ? 'confirmed' : 'pending',
+    available: 'disabled',
+    render: ({ status, result }: { status: string; result?: string }) => {
+      if (status !== 'complete' || !result) {
+        return (
+          <div className="px-3 py-2 rounded-lg text-[12px] cap" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+            Préparation du brouillon d'alerte…
+          </div>
+        )
       }
-
-      const VALID_SEVERITES: Record<string, string> = { high: 'eleve', medium: 'modere', low: 'faible' }
-      const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
-
-      return (
-        <ConfirmCard
-          data={confirmData}
-          onConfirm={async () => {
-            const severite = VALID_SEVERITES[args.severity ?? 'medium']
-            if (!severite || !student) {
-              respond?.({ confirmed: false })
-              return
-            }
-            await api.post('/alertes', {
-              etudiantId: student.id,
-              type: 'RisqueEchec',
-              niveau: NIVEAU_MAP[severite] ?? 'Moyen',
-              message: args.message ?? '',
-            })
-            respond?.({ confirmed: true })
-          }}
-          onDismiss={() => respond?.({ confirmed: false })}
-        />
-      )
+      return <DraftAlertCard result={result} />
     },
   })
 
@@ -290,42 +305,10 @@ export default function Predictions() {
   const evaluesPct = (n: number) =>
     kpis.evalues > 0 ? `(${Math.round((n / kpis.evalues) * 100)}%)` : ''
 
-  async function confirmAlert() {
-    if (!pendingAlert) return
-    const NIVEAU_MAP: Record<string, string> = { eleve: 'Eleve', modere: 'Moyen', faible: 'Faible' }
-    await api.post('/alertes', {
-      etudiantId: pendingAlert.student.id,
-      type: 'RisqueEchec',
-      niveau: NIVEAU_MAP[pendingAlert.severite] ?? 'Moyen',
-      message: pendingAlert.message,
-    })
-    setPendingAlert(null)
-  }
-
   const trainedAt = ml?.risk?.trainedAt ?? ml?.trainedAt
 
   return (
     <div className="space-y-4">
-      {pendingAlert && (
-        <div
-          className="card p-4 flex items-start gap-4"
-          style={{ borderColor: 'var(--warn)', background: 'color-mix(in oklch, var(--warn) 8%, transparent)' }}
-        >
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold mb-0.5">Brouillon d'alerte — confirmation requise</div>
-            <div className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
-              <span className="font-medium">{pendingAlert.student.nomComplet}</span>
-              {' · '}sévérité <span className="font-medium">{pendingAlert.severite}</span>
-            </div>
-            <div className="text-[12px] mt-1" style={{ color: 'var(--text-3)' }}>{pendingAlert.message}</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button className="btn btn-sm" onClick={() => setPendingAlert(null)}>Annuler</button>
-            <button className="btn btn-sm btn-primary" onClick={confirmAlert}>Confirmer l'envoi</button>
-          </div>
-        </div>
-      )}
-
       {(ml?.risk?.dataSource === 'synthetic' || ml?.forecast?.dataSource === 'synthetic' || ml?.dataSource === 'synthetic') && (
         <div
           className="card p-3 text-[12.5px] flex items-center gap-3 mb-4"

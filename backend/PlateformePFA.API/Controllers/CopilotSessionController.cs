@@ -17,12 +17,10 @@ namespace PlateformePFA.API.Controllers
     public class CopilotSessionController : ControllerBase
     {
         private readonly IConfiguration _configuration;
-        private readonly IWebHostEnvironment _env;
 
-        public CopilotSessionController(IConfiguration configuration, IWebHostEnvironment env)
+        public CopilotSessionController(IConfiguration configuration)
         {
             _configuration = configuration;
-            _env = env;
         }
 
         [HttpPost]
@@ -62,7 +60,12 @@ namespace PlateformePFA.API.Controllers
             Response.Cookies.Append("pfa_copilot_session", tokenString, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = !_env.EnvironmentName.Equals("Development", StringComparison.OrdinalIgnoreCase),
+                // Secure follows the actual request scheme (honors nginx's
+                // X-Forwarded-Proto via UseForwardedHeaders). A Secure cookie
+                // over plain HTTP would never be sent back by the browser, so
+                // keying this off the environment name silently breaks Copilot
+                // in the documented HTTP-behind-nginx deployment.
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Strict,
                 Path = "/api/copilotkit",
                 MaxAge = TimeSpan.FromMinutes(15)
@@ -77,7 +80,12 @@ namespace PlateformePFA.API.Controllers
             Response.Cookies.Append("pfa_copilot_session", "", new CookieOptions
             {
                 HttpOnly = true,
-                Secure = !_env.EnvironmentName.Equals("Development", StringComparison.OrdinalIgnoreCase),
+                // Secure follows the actual request scheme (honors nginx's
+                // X-Forwarded-Proto via UseForwardedHeaders). A Secure cookie
+                // over plain HTTP would never be sent back by the browser, so
+                // keying this off the environment name silently breaks Copilot
+                // in the documented HTTP-behind-nginx deployment.
+                Secure = Request.IsHttps,
                 SameSite = SameSiteMode.Strict,
                 Path = "/api/copilotkit",
                 Expires = DateTimeOffset.UtcNow.AddDays(-1)
