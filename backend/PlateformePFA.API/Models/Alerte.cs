@@ -33,6 +33,11 @@ namespace PlateformePFA.API.Models
         // with an intervention case. Null = still an un-triaged evidence signal.
         public int? CaseId { get; set; }
 
+        // Mandatory reason captured when a signal is dismissed (Resolue=true
+        // without a case). Lets the triage queue distinguish Dismissed from New.
+        [MaxLength(500)]
+        public string? MotifTriage { get; set; }
+
         [JsonIgnore] public Etudiant Etudiant { get; set; } = null!;
         [JsonIgnore] public Module? Module { get; set; }
         [JsonIgnore] public Utilisateur? ResolueePar { get; set; }

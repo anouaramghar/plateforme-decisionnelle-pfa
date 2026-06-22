@@ -359,6 +359,14 @@ namespace PlateformePFA.API.Data
                                    WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'CaseId')
                     ALTER TABLE Alertes ADD CaseId INT NULL REFERENCES InterventionCases(Id);
             ");
+
+            // 14. Alertes.MotifTriage — dismiss reason (mandatory on dismiss).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.Alertes', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                                   WHERE object_id = OBJECT_ID('dbo.Alertes') AND name = 'MotifTriage')
+                    ALTER TABLE Alertes ADD MotifTriage NVARCHAR(500) NULL;
+            ");
         }
     }
 }
