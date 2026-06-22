@@ -19,6 +19,9 @@ namespace PlateformePFA.API.Data
         public DbSet<Rapport>      Rapports      { get; set; }
         public DbSet<AuditEntry>   AuditEntries  { get; set; }
 
+        // ── Schema readiness (mirrors dbo.SchemaState written by init.sql) ─────
+        public DbSet<SchemaState> SchemaStates => Set<SchemaState>();
+
         // ── Copilot ──────────────────────────────────────────────────────────
         public DbSet<AlertDraft>          AlertDrafts          { get; set; }
 

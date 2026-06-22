@@ -5,15 +5,26 @@
 -- Idempotent UPSERT: safe to run repeatedly.
 -- Call via: POST /api/admin/sync-dw  (AdminController)
 --
--- All four MERGEs run inside a single transaction so a partial
--- sync never leaves the DW in an inconsistent state.
+-- All four MERGEs run inside a single transaction protected by
+-- an exclusive application lock so concurrent ETL runs are
+-- serialised rather than racing each other.  If a run is
+-- already in progress the lock attempt returns immediately
+-- (timeout = 0) and error 51002 is thrown — AdminController
+-- converts this to HTTP 409 Conflict.
 -- ============================================================
 
-USE PFA_DW;
-GO
-
+SET XACT_ABORT ON;
 BEGIN TRANSACTION;
-BEGIN TRY
+DECLARE @lock_result INT;
+EXEC @lock_result = sys.sp_getapplock
+    @Resource    = 'PFA_DW_ETL',
+    @LockMode    = 'Exclusive',
+    @LockOwner   = 'Transaction',
+    @LockTimeout = 0;
+IF @lock_result < 0
+    THROW 51002, 'ETL already running', 1;
+
+USE PFA_DW;
 
 -- ─── 1. Sync DimEtudiant ─────────────────────────────────────
 MERGE DimEtudiant AS target
@@ -114,10 +125,4 @@ WHEN NOT MATCHED THEN
     VALUES (src.EtudiantKey, src.ModuleKey, src.TempsKey,
             src.NoteFinale, src.NbAbsences, src.ScoreRisque, src.Cluster);
 
-    COMMIT TRANSACTION;
-END TRY
-BEGIN CATCH
-    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-    THROW;
-END CATCH
-GO
+COMMIT TRANSACTION;

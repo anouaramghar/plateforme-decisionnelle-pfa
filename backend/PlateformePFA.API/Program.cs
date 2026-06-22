@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
+using PlateformePFA.API.Health;
 using PlateformePFA.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using QuestPDF.Infrastructure;
@@ -132,6 +135,11 @@ builder.Services.AddScoped<IAcademicAccessService, AcademicAccessService>();
 
 builder.Services.AddHttpClient("MLService");
 
+// Readiness health check — returns Healthy only after the full schema is
+// initialised (dbo.SchemaState marker written at the end of init.sql).
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseReadyHealthCheck>("database_ready", tags: new[] { "ready" });
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -186,7 +194,14 @@ if (app.Environment.IsDevelopment())
 // AllowAnonymous is explicit so that any future global `RequireAuthorization()`
 // default policy (e.g. fallback policy on AddAuthorization) doesn't accidentally
 // 401 the healthcheck — that would brick the container under Docker's gate.
+// Liveness probe — always answers 200 if the process is alive.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+
+// Readiness probe — 200 only when database is reachable AND schema is ready.
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+}).WithMetadata(new Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute());
 
 app.UseAuthentication();
 app.UseAuthorization();

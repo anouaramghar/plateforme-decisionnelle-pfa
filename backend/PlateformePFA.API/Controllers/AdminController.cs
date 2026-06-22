@@ -61,6 +61,11 @@ public class AdminController : ControllerBase
             _logger.LogInformation("DW sync completed successfully at {Time}", DateTime.UtcNow);
             return Ok(new { message = "Synchronisation DW terminée.", timestamp = DateTime.UtcNow });
         }
+        catch (SqlException ex) when (ex.Number == 51002 || ex.Message.Contains("ETL already running"))
+        {
+            _logger.LogWarning("DW sync skipped: ETL lock held by another session at {Time}", DateTime.UtcNow);
+            return Conflict(new { message = "ETL synchronization is already in progress. Try again later." });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "DW sync failed");

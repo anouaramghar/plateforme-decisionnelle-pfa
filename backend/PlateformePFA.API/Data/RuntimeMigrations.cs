@@ -251,6 +251,26 @@ namespace PlateformePFA.API.Data
                                    WHERE object_id = OBJECT_ID('dbo.Absences') AND name = 'RowVersion')
                     ALTER TABLE Absences ADD RowVersion ROWVERSION NOT NULL;
             ");
+
+            // 10. SchemaState — readiness marker table.
+            //     Added here so volumes created before this table existed get it
+            //     on the next backend startup without a manual SQL run.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.SchemaState', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.SchemaState (
+                        Component NVARCHAR(50) NOT NULL PRIMARY KEY,
+                        Version   INT          NOT NULL,
+                        UpdatedAt DATETIME     NOT NULL DEFAULT GETUTCDATE()
+                    );
+                END
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF EXISTS (SELECT 1 FROM dbo.SchemaState WHERE Component = 'core')
+                    UPDATE dbo.SchemaState SET Version = 1, UpdatedAt = GETUTCDATE() WHERE Component = 'core';
+                ELSE
+                    INSERT INTO dbo.SchemaState (Component, Version) VALUES ('core', 1);
+            ");
         }
     }
 }

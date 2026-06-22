@@ -58,6 +58,29 @@ CREATE TABLE FaitNotes (
 );
 GO
 
+-- Unique grain constraint on FaitNotes
+-- Idempotent: checks for existing index before creating.
+-- Guards against the ETL inserting duplicate rows for the same
+-- (student, module, period) grain — which would silently double-count.
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID('dbo.FaitNotes')
+      AND name = 'UX_FaitNotes_Grain'
+)
+BEGIN
+    -- Abort if duplicates already exist — they must be repaired first.
+    IF EXISTS (
+        SELECT 1 FROM dbo.FaitNotes
+        GROUP BY EtudiantKey, ModuleKey, TempsKey
+        HAVING COUNT(*) > 1
+    )
+        THROW 51001, 'Duplicate FaitNotes grain must be repaired before migration', 1;
+
+    CREATE UNIQUE INDEX UX_FaitNotes_Grain
+        ON dbo.FaitNotes(EtudiantKey, ModuleKey, TempsKey);
+END
+GO
+
 -- ─── Read access for the application login ───────────────────
 USE PFA_DW;
 GO

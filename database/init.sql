@@ -258,3 +258,24 @@ GO
 -- NOTE: No admin user seeded here. Create the first admin account via
 -- the backend registration endpoint (which writes a real bcrypt hash),
 -- or run a one-shot script with a freshly generated hash.
+
+-- ─── Schema readiness marker ──────────────────────────────────
+-- Written at the very end of init.sql so it is set only after
+-- every table has been created. The DB healthcheck queries this
+-- table to distinguish "SQL Server reachable" from "schema ready".
+IF OBJECT_ID('dbo.SchemaState', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SchemaState (
+        Component NVARCHAR(50) NOT NULL PRIMARY KEY,
+        Version   INT          NOT NULL,
+        UpdatedAt DATETIME     NOT NULL DEFAULT GETUTCDATE()
+    );
+END
+GO
+
+-- Mark core schema as complete (insert or update)
+IF EXISTS (SELECT 1 FROM dbo.SchemaState WHERE Component = 'core')
+    UPDATE dbo.SchemaState SET Version = 1, UpdatedAt = GETUTCDATE() WHERE Component = 'core';
+ELSE
+    INSERT INTO dbo.SchemaState (Component, Version) VALUES ('core', 1);
+GO
