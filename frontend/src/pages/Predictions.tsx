@@ -21,7 +21,7 @@ const NIVEAUX  = ['Toutes', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 type Risque = 'faible' | 'modere' | 'eleve'
 
 interface PredictionsSummary {
-  kpis: { evalues: number; risqueEleve: number; risqueModere: number; auc: number }
+  kpis: { evalues: number; risqueEleve: number; risqueModere: number; auc: number; mlScored: number }
   scatter: { x: number; y: number; r: Risque }[]
   topARisque: {
     id: number
@@ -414,6 +414,20 @@ export default function Predictions() {
           </div>
         </div>
       </div>
+
+      {kpis.evalues > 0 && kpis.mlScored < kpis.evalues && (
+        <div
+          className="card p-3 text-[12.5px] flex items-center gap-3"
+          style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+        >
+          <Icon name="alert" size={14} />
+          <span>
+            {kpis.mlScored === 0
+              ? 'Aucun score ML pour cette cohorte — les scores affichés sont une estimation heuristique (moyenne + absences). Lancez une prédiction batch pour scorer avec le modèle XGBoost.'
+              : `${kpis.mlScored}/${kpis.evalues} étudiants scorés par le modèle ML ; le reste utilise une estimation heuristique. Lancez un batch pour scorer toute la cohorte.`}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-3">
         <KpiCard label="Étudiants évalués" value={kpis.evalues} hint="Cohorte courante" />

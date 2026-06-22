@@ -14,6 +14,11 @@ namespace PlateformePFA.API.DTOs.Predictions
         public int RisqueEleve { get; set; }
         public int RisqueModere { get; set; }
         public decimal Auc { get; set; }
+
+        // How many of the Evalues students carry a real ML score (vs a heuristic
+        // placeholder). Lets the UI be honest: scores aren't all "XGBoost" until
+        // a batch has run. 0 = nobody scored by ML yet.
+        public int MlScored { get; set; }
     }
 
     public class ScatterPointDto

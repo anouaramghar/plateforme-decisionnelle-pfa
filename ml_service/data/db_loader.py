@@ -20,6 +20,12 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Scheduled sessions per module per semester — turns an absence-hour count into a
+# rate. ponytail: single school-wide constant; if modules ever differ in volume,
+# carry it on DimModule and divide per-module. Keep in sync with the backend's
+# AcademicPeriod.SessionsPerModule.
+SESSIONS_PER_MODULE = 32
+
 # Matches PWD=... / Password=... up to the next ; or end-of-string. Used to
 # scrub the DB password out of pyodbc exception messages — pyodbc tends to
 # echo the full connection string back in its error text, and we do not want
@@ -140,7 +146,7 @@ def load_risk_data() -> pd.DataFrame | None:
     try:
         import pyodbc
 
-        query = """
+        query = f"""
             SELECT
                 fn.EtudiantKey AS EtudiantId,
                 dt.Annee,
@@ -148,7 +154,7 @@ def load_risk_data() -> pd.DataFrame | None:
                 de.Matricule,
                 AVG(fn.NoteFinale)                          AS moyenne_generale,
                 SUM(fn.NbAbsences) * 1.0
-                    / NULLIF(COUNT(DISTINCT fn.ModuleKey) * 32, 0) AS taux_absence,
+                    / NULLIF(COUNT(DISTINCT fn.ModuleKey) * {SESSIONS_PER_MODULE}, 0) AS taux_absence,
                 COUNT(DISTINCT fn.ModuleKey)                AS nb_modules
             FROM      FaitNotes   fn
             JOIN      DimEtudiant de ON de.EtudiantKey = fn.EtudiantKey
@@ -192,7 +198,7 @@ def load_forecast_data() -> pd.DataFrame | None:
     try:
         import pyodbc
 
-        query = """
+        query = f"""
             SELECT
                 fn.EtudiantKey AS EtudiantId,
                 dt.Annee,
@@ -200,7 +206,7 @@ def load_forecast_data() -> pd.DataFrame | None:
                 de.Matricule,
                 AVG(fn.NoteFinale)                          AS moyenne_generale,
                 SUM(fn.NbAbsences) * 1.0
-                    / NULLIF(COUNT(DISTINCT fn.ModuleKey) * 32, 0) AS taux_absence,
+                    / NULLIF(COUNT(DISTINCT fn.ModuleKey) * {SESSIONS_PER_MODULE}, 0) AS taux_absence,
                 COUNT(DISTINCT fn.ModuleKey)                AS nb_modules
             FROM      FaitNotes   fn
             JOIN      DimEtudiant de ON de.EtudiantKey = fn.EtudiantKey

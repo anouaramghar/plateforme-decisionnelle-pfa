@@ -4,6 +4,13 @@ namespace PlateformePFA.API.Helpers
 {
     public static class AcademicPeriod
     {
+        // Scheduled sessions per module per semester. Used to turn an absence-hour
+        // count into a rate (absenceHours / (nbModules * SessionsPerModule)).
+        // ponytail: single school-wide constant; if modules ever differ in volume,
+        // move this onto the Module row (e.g. a VolumeHoraire column) and read it
+        // per-module. Keep in sync with ml_service/data/db_loader.SESSIONS_PER_MODULE.
+        public const double SessionsPerModule = 32.0;
+
         public static (DateTime Start, DateTime End) SemesterDateRange(string annee, string? semestre)
         {
             var parts = annee.Split('/');

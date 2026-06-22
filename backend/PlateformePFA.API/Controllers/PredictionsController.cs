@@ -191,6 +191,8 @@ namespace PlateformePFA.API.Controllers
                 RisqueEleve = enriched.Count(s => s.Score >= 0.65m),
                 RisqueModere = enriched.Count(s => s.Score >= 0.35m && s.Score < 0.65m),
                 Auc = liveAuc,
+                // latestPredictions is keyed by the students who have a real ML score.
+                MlScored = enriched.Count(s => latestPredictions.ContainsKey(s.Id)),
             };
 
             var topARisque = enriched
@@ -304,7 +306,7 @@ namespace PlateformePFA.API.Controllers
                     .ToList();
 
                 decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
-                double scheduledHours = nbModules * 32.0;
+                double scheduledHours = nbModules * AcademicPeriod.SessionsPerModule;
                 int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
                 double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 
@@ -524,7 +526,7 @@ namespace PlateformePFA.API.Controllers
                 return UnprocessableEntity("Données insuffisantes pour l'explication SHAP.");
 
             decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
-            double scheduledHours   = nbModules * 32.0;
+            double scheduledHours   = nbModules * AcademicPeriod.SessionsPerModule;
             int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
             double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
 
@@ -612,7 +614,7 @@ namespace PlateformePFA.API.Controllers
                 .ToList();
 
             decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
-            double scheduledHours = nbModules * 32.0;
+            double scheduledHours = nbModules * AcademicPeriod.SessionsPerModule;
             int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
             double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 

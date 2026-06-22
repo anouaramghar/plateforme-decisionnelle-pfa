@@ -10,14 +10,21 @@ Plateforme décisionnelle ENIAD 2025/2026 — a BI & predictive-analytics platfo
 
 ```
 Internet → nginx:80 (pfa_public)
+                ├─ /api/copilotkit → copilot-runtime:4000 (pfa_public)
                 ├─ /api/*  → backend:8080  (pfa_public + pfa_internal_db + pfa_internal_ml)
                 └─ /*      → frontend:8080 (pfa_public)
 
-backend:8080 → ml-service:8000  (pfa_internal_ml, internal=true)
-backend:8080 → db:1433          (pfa_internal_db, internal=true)
+backend:8080        → ml-service:8000   (pfa_internal_ml, internal=true)
+backend:8080        → db:1433           (pfa_internal_db, internal=true)
+copilot-runtime:4000 → backend:8080     (pfa_public; forwards tool calls)
+copilot-runtime:4000 → NVIDIA NIM       (outbound internet — external LLM)
 ```
 
 Three isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`. The ML service and database are unreachable from the public internet by design (`internal: true`).
+
+**copilot-runtime** (Node/Express + CopilotKit) is an **optional** AI-assistant sidecar — never a startup gate, so the BI platform stays up if it's down. It calls an external LLM (NVIDIA NIM, `meta/llama-3.3-70b-instruct`). **Privacy note:** student data surfaced by Copilot tools (names, grades, risk levels) leaves the cluster to NVIDIA — treat this as a deliberate data-protection decision before using real student records. Copilot tools never run raw NL→SQL: `query_dw` maps keywords to fixed parameterized queries on a read-only DW login.
+
+**On the "predictive" model:** the risk classifier is an early-warning model — current-period grade/absence/module-count predicting *next-period* failure (defined as `moyenne < 10`). Grade dominates; it is closer to a learned threshold than hidden-pattern discovery. The seed AUC looks high because synthetic S1/S2 share one per-student profile — do not present it as evidence of real-world predictive power. Most students show a heuristic placeholder score ([RiskScorer](backend/PlateformePFA.API/Services/RiskScorer.cs)) until a batch prediction runs; the Predictions page discloses how many scores are ML-backed.
 
 ## Commands
 
