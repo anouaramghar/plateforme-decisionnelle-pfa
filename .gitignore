@@ -28,7 +28,7 @@ venv/
 ml_service/saved_models/*.pkl
 ml_service/saved_models/*.joblib
 ml_service/saved_models/*.parquet
-ml_service/saved_models/metadata.json
+ml_service/saved_models/*metadata.json
 
 # OS
 .DS_Store

@@ -302,6 +302,8 @@ export default function Predictions() {
     setPendingAlert(null)
   }
 
+  const trainedAt = ml?.risk?.trainedAt ?? ml?.trainedAt
+
   return (
     <div className="space-y-4">
       {pendingAlert && (
@@ -340,8 +342,8 @@ export default function Predictions() {
         <div>
           <div className="cap mb-1">
             Modèle XGBoost {ml?.risk?.modelVersion ?? ml?.modelVersion ?? '…'} · AUC {ml?.risk?.auc?.toFixed(2) ?? ml?.auc?.toFixed(2) ?? '—'}
-            {(ml?.risk?.trainedAt || ml?.trainedAt)
-              ? ` · ré-entraîné ${new Date(ml?.risk?.trainedAt ?? ml?.trainedAt!).toLocaleDateString('fr-FR')}`
+            {trainedAt
+              ? ` · ré-entraîné ${new Date(trainedAt).toLocaleDateString('fr-FR')}`
               : ''}
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight">Prédictions ML</h1>

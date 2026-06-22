@@ -149,6 +149,16 @@ See `.env.example` for the full annotated list. Required at minimum:
 - `ML_INTERNAL_TOKEN`, `AGENT_INTERNAL_TOKEN`
 - `NVIDIA_NIM_API_KEY` (for Copilot)
 
+### Operations
+
+- **Copilot sessions:** the chat stream is gated by a short-lived (15 min) `pfa_copilot_session` HTTP-only cookie (`SameSite=Strict`, path `/api/copilotkit`). The frontend mints it via `POST /api/copilot/session` after login and clears it via `DELETE /api/copilot/session` on logout. The runtime rejects any inference request without a verified cookie (401); only `GET /health` is anonymous.
+- **Liveness vs readiness:** `/health` is liveness only. `/ready` reports `Database.CanConnectAsync()` **plus** the `dbo.SchemaState` core marker — the backend Docker healthcheck and nginx startup gate target `/ready`, so traffic is only admitted after schema provisioning completes.
+- **DB initialization:** `database/entrypoint.sh` runs `init.sql`, `init_dw.sql`, and `copilot_readonly.sql` (all idempotent, `-b`) on **every** boot — existing or partial volumes are re-applied, not skipped. The `dbo.SchemaState` row is written only after every script succeeds; the Compose DB healthcheck requires it.
+- **Model provenance:** `/api/predictions/metrics` carries `data_source` (`dw` | `synthetic`), `split_strategy`, `trained_at`, and evaluated periods. When `data_source === 'synthetic'`, the Predictions page shows a non-dismissible demo-data warning — synthetic metrics are not production validation.
+- **Retraining prerequisites:** honest training needs real `PFA_DW` data (run the ETL first). Risk labels are the *next-period* observed outcome and forecasts use *prior-period* features only; evaluation holds out the latest period (or `GroupShuffleSplit` by student when only one period exists). Without DW data the service falls back to clearly-labelled synthetic training.
+- **ETL conflict response:** `POST /api/admin/sync-dw` takes an exclusive app-lock and runs as one transaction. A concurrent call returns **HTTP 409** rather than producing duplicate `FaitNotes` grain rows.
+- **Container architecture:** the ML image derives the Microsoft ODBC repo arch from `dpkg --print-architecture`, so it builds on both `amd64` and `arm64` hosts. If a target lacks an `msodbcsql18` package, pin `platform: linux/amd64` for `ml-service` in Compose.
+
 ---
 
 ## Project Status (2026-05-30)

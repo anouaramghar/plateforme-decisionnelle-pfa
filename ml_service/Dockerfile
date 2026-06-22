@@ -4,11 +4,12 @@ WORKDIR /app
 
 # Install Microsoft ODBC 18 driver for SQL Server connectivity to PFA_DW.
 # Required by pyodbc to query the Data Warehouse for real training data.
-RUN apt-get update \
+RUN arch="$(dpkg --print-architecture)" \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
         curl gnupg2 apt-transport-https unixodbc-dev \
  && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
- && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
+ && echo "deb [arch=${arch} signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
         > /etc/apt/sources.list.d/mssql-release.list \
  && apt-get update \
  && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 libgssapi-krb5-2 \
