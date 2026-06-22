@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using PlateformePFA.API.DTOs.Common;
 using PlateformePFA.API.Models;
 using PlateformePFA.Tests.Fixtures;
 using Xunit;
@@ -366,6 +367,37 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Unassigned_teacher_sees_no_notes()
+    {
+        // SampleData.SeedOne (in the ctor) created a note in module GI01. A
+        // teacher with no module assignment must see NOTHING, not everything.
+        using (var ctx = _factory.CreateContext())
+        {
+            if (!ctx.Utilisateurs.Any(u => u.Email == "teacher_noassign@eniad.ma"))
+            {
+                ctx.Utilisateurs.Add(new Utilisateur
+                {
+                    Email = "teacher_noassign@eniad.ma",
+                    Nom = "Teacher", Prenom = "NoModule",
+                    MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("TeacherPass123!"),
+                    Role = "Enseignant",
+                    ModuleId = null,
+                    EstActif = true,
+                });
+                ctx.SaveChanges();
+            }
+        }
+
+        var client = await CreateTeacherClientAsync("teacher_noassign@eniad.ma", "TeacherPass123!");
+        var response = await client.GetAsync("/api/notes?page=1&pageSize=100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PaginatedResult<Note>>();
+        body!.Total.Should().Be(0);
+        body.Items.Should().BeEmpty();
     }
 
     private void SeedTeacher(string email, string password, int moduleId)

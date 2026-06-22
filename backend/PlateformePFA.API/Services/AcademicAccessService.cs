@@ -49,5 +49,21 @@ namespace PlateformePFA.API.Services
             var assignedModuleId = await GetAssignedModuleIdAsync(user, ct);
             return assignedModuleId.HasValue && assignedModuleId.Value == moduleId;
         }
+
+        public async Task<ModuleScope> GetModuleScopeAsync(ClaimsPrincipal user, CancellationToken ct = default)
+        {
+            // No principal at all => restricted to nothing (deny all reads).
+            if (user == null) return new ModuleScope(false, null);
+
+            if (user.IsInRole("Admin") || user.IsInRole("Responsable"))
+            {
+                return ModuleScope.All;
+            }
+
+            // Any non-privileged role (Enseignant) is restricted to its single
+            // assignment. A null assignment means "see nothing", never "see all".
+            var assignedModuleId = await GetAssignedModuleIdAsync(user, ct);
+            return new ModuleScope(false, assignedModuleId);
+        }
     }
 }

@@ -18,11 +18,13 @@ namespace PlateformePFA.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly RiskScorer _riskScorer;
+        private readonly IAcademicAccessService _academicAccess;
 
-        public EtudiantsController(AppDbContext context, RiskScorer riskScorer)
+        public EtudiantsController(AppDbContext context, RiskScorer riskScorer, IAcademicAccessService academicAccess)
         {
             _context = context;
             _riskScorer = riskScorer;
+            _academicAccess = academicAccess;
         }
 
         // Project Etudiant + Filiere into a flat DTO once. Used by both list and detail.
@@ -47,10 +49,20 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("with-stats")]
         public async Task<ActionResult<List<EtudiantWithStatsDto>>> GetWithStats()
         {
+            // A teacher only sees the cohort of their assigned module — i.e.
+            // students in the same filière + niveau. Admin/Responsable see all.
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
+            var baseQuery = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
+            if (!scope.Unrestricted)
+            {
+                var module = await _context.Modules.AsNoTracking()
+                    .FirstOrDefaultAsync(m => m.Id == scope.FilterModuleId);
+                if (module == null) return new List<EtudiantWithStatsDto>();
+                baseQuery = baseQuery.Where(e => e.FiliereId == module.FiliereId && e.Niveau == module.Niveau);
+            }
+
             // Per-student aggregates in one DB round trip.
-            var rows = await _context.Etudiants
-                .AsNoTracking()
-                .Where(e => e.DesinscritLe == null)
+            var rows = await baseQuery
                 .Select(e => new
                 {
                     e.Id,
@@ -121,9 +133,15 @@ namespace PlateformePFA.API.Controllers
             var exists = await _context.Etudiants.AnyAsync(e => e.Id == id && e.DesinscritLe == null);
             if (!exists) return NotFound();
 
-            var notes = await _context.Notes
-                .AsNoTracking()
-                .Where(n => n.EtudiantId == id)
+            // A teacher only sees grades for their own module; Admin/Responsable see all.
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
+            var notesQuery = _context.Notes.AsNoTracking().Where(n => n.EtudiantId == id);
+            if (!scope.Unrestricted)
+            {
+                notesQuery = notesQuery.Where(n => n.ModuleId == scope.FilterModuleId);
+            }
+
+            var notes = await notesQuery
                 .OrderByDescending(n => n.Annee)
                 .ThenByDescending(n => n.Semestre)
                 .ThenBy(n => n.ModuleId)

@@ -33,11 +33,11 @@ namespace PlateformePFA.API.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
-            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
             var query = _context.Absences.AsNoTracking();
-            if (assignedModuleId.HasValue)
+            if (!scope.Unrestricted)
             {
-                query = query.Where(a => a.ModuleId == assignedModuleId.Value);
+                query = query.Where(a => a.ModuleId == scope.FilterModuleId);
             }
             query = query.OrderByDescending(a => a.DateAbsence);
             var total = await query.CountAsync();
@@ -72,15 +72,15 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("etudiant/{etudiantId}")]
         public async Task<ActionResult<IEnumerable<Absence>>> GetAbsencesByEtudiant(int etudiantId)
         {
-            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
             var query = _context.Absences
                 .Include(a => a.Etudiant)
                 .Include(a => a.Module)
                 .Where(a => a.EtudiantId == etudiantId);
 
-            if (assignedModuleId.HasValue)
+            if (!scope.Unrestricted)
             {
-                query = query.Where(a => a.ModuleId == assignedModuleId.Value);
+                query = query.Where(a => a.ModuleId == scope.FilterModuleId);
             }
 
             return await query

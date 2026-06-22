@@ -36,11 +36,11 @@ namespace PlateformePFA.API.Controllers
             page     = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
             var query = _context.Notes.AsNoTracking();
-            if (assignedModuleId.HasValue)
+            if (!scope.Unrestricted)
             {
-                query = query.Where(n => n.ModuleId == assignedModuleId.Value);
+                query = query.Where(n => n.ModuleId == scope.FilterModuleId);
             }
             query = query.OrderByDescending(n => n.CreeLe);
             var total = await query.CountAsync();
@@ -73,15 +73,15 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("etudiant/{etudiantId}")]
         public async Task<ActionResult<IEnumerable<Note>>> GetNotesByEtudiant(int etudiantId)
         {
-            var assignedModuleId = await _academicAccess.GetAssignedModuleIdAsync(User);
+            var scope = await _academicAccess.GetModuleScopeAsync(User);
             var query = _context.Notes
                 .Include(n => n.Etudiant)
                 .Include(n => n.Module)
                 .Where(n => n.EtudiantId == etudiantId);
 
-            if (assignedModuleId.HasValue)
+            if (!scope.Unrestricted)
             {
-                query = query.Where(n => n.ModuleId == assignedModuleId.Value);
+                query = query.Where(n => n.ModuleId == scope.FilterModuleId);
             }
 
             return await query
