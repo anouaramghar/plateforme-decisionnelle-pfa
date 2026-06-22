@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pill } from '../components/ui/Pill'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
@@ -11,6 +11,7 @@ import { MiniKpi } from '../components/ui/KpiCard'
 import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
 import { api } from '../services/api'
 import { useFiliere } from '../context/FiliereContext'
+import { useAuth } from '../context/AuthContext'
 
 interface ModelMetrics {
   auc?: number
@@ -165,8 +166,26 @@ const PERIOD_LABELS: Record<Period, string> = {
 export default function Dashboard() {
   const navigate = useNavigate()
   const { filiere } = useFiliere()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'Admin'
+  const queryClient = useQueryClient()
   const [absTrendMode, setAbsTrendMode] = useState<AbsTrendMode>('heures')
   const [period, setPeriod] = useState<Period>('S2')
+  const [showFeatures, setShowFeatures] = useState(false)
+  const [showJournal, setShowJournal] = useState(false)
+
+  const { data: allActivity = [], isFetching: journalLoading } = useQuery({
+    queryKey: ['dashboard-activity-full'],
+    queryFn: async () => (await api.get<ActivityRow[]>('/dashboard/activity?limit=100')).data,
+    enabled: showJournal,
+  })
+
+  const retrainMutation = useMutation({
+    mutationFn: async () => (await api.post('/predictions/retrain')).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ml-metrics'] })
+    },
+  })
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['dashboard-summary', filiere, period],
@@ -591,6 +610,7 @@ export default function Dashboard() {
           </table>
         </div>
 
+        {isAdmin && (
         <div className="card col-span-4 p-5">
           <SectionHeader title="Activité récente" subtitle="Audit de la plateforme" />
           <div className="space-y-3 relative">
@@ -628,10 +648,12 @@ export default function Dashboard() {
           <button
             className="btn btn-sm w-full mt-4"
             style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-2)' }}
+            onClick={() => setShowJournal(true)}
           >
             Voir le journal complet
           </button>
         </div>
+        )}
       </div>
 
       {/* ML model status */}
@@ -693,10 +715,113 @@ export default function Dashboard() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm">Voir les features</button>
-          <button className="btn btn-sm btn-primary">Ré-entraîner</button>
+          <button className="btn btn-sm" onClick={() => setShowFeatures(true)}>
+            Voir les features
+          </button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => retrainMutation.mutate()}
+            disabled={retrainMutation.isPending}
+            title="Relance l'entraînement du modèle XGBoost"
+          >
+            <Icon name="refresh" size={13} />
+            {retrainMutation.isPending ? 'Ré-entraînement…' : 'Ré-entraîner'}
+          </button>
         </div>
       </div>
+
+      {/* Journal complet modal */}
+      {showJournal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setShowJournal(false)}
+        >
+          <div
+            className="card-feature flex flex-col"
+            style={{ width: 640, maxWidth: '95vw', maxHeight: '80vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div>
+                <div className="text-[14px] font-semibold">Journal d'activité</div>
+                <div className="cap mt-0.5">Toutes les entrées d'audit de la plateforme</div>
+              </div>
+              <button className="btn btn-sm" onClick={() => setShowJournal(false)}>✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-5">
+              {journalLoading ? (
+                <div className="cap text-center py-8">Chargement…</div>
+              ) : allActivity.length === 0 ? (
+                <div className="cap text-center py-8">Aucune activité enregistrée</div>
+              ) : (
+                <div className="space-y-3 relative">
+                  <div
+                    className="absolute left-[13px] top-3 bottom-3 w-px"
+                    style={{ background: 'var(--border)' }}
+                  />
+                  {allActivity.map(a => (
+                    <div key={a.id} className="flex items-start gap-3 relative">
+                      <div
+                        className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 relative z-10 text-[14px]"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      >
+                        {ACTION_ICONS[a.action] ?? '•'}
+                      </div>
+                      <div className="flex-1 min-w-0 pt-0.5">
+                        <div className="text-[12.5px] leading-snug">
+                          <span className="font-medium">{a.utilisateurNom}</span>{' '}
+                          <span style={{ color: 'var(--text-2)' }}>
+                            {formatAction(a)}
+                            {a.message ? ` — ${a.message}` : ''}
+                          </span>
+                        </div>
+                        <div className="cap mt-1">{relativeTime(a.creeLe)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Features modal */}
+      {showFeatures && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setShowFeatures(false)}
+        >
+          <div
+            className="card-feature p-6 w-[420px] max-w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-[14px] font-semibold">Features du modèle XGBoost</div>
+              <button className="btn btn-sm" onClick={() => setShowFeatures(false)}>✕</button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {[
+                { name: 'moyenne_generale', desc: 'Moyenne générale de l\'étudiant (0 – 20)', type: 'float' },
+                { name: 'taux_absence',     desc: 'Heures d\'absence / heures planifiées (0 – 1)', type: 'float' },
+                { name: 'nb_modules',       desc: 'Nombre de modules suivis dans la période', type: 'int' },
+              ].map(f => (
+                <div key={f.name} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                  <code className="text-[12px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-100)', color: 'var(--accent-700)' }}>
+                    {f.name}
+                  </code>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px]">{f.desc}</div>
+                    <div className="cap mt-0.5">{f.type}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

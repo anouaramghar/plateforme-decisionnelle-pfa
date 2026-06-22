@@ -92,38 +92,17 @@ export function Sidebar() {
         className="px-3 pt-3 pb-3 flex items-center gap-2.5"
         style={{ height: 56, borderBottom: '1px solid var(--side-border)' }}
       >
-        <div
+        <img
+          src="/eniad-logo.png"
+          alt="ENIAD"
           style={{
-            width: 30,
-            height: 30,
-            borderRadius: 8,
-            background: 'linear-gradient(135deg, var(--accent-400), var(--accent-700))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontWeight: 600,
-            fontSize: 14,
-            letterSpacing: '-0.03em',
+            height: sidebarCollapsed ? 32 : 46,
+            width: 'auto',
+            objectFit: 'contain',
             flexShrink: 0,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(0,0,0,.3)',
+            transition: 'height .18s ease',
           }}
-        >
-          É
-        </div>
-        {!sidebarCollapsed && (
-          <div className="flex-1 overflow-hidden">
-            <div className="text-[13px] font-semibold leading-none tracking-tight" style={{ color: '#fff' }}>
-              ENIAD
-            </div>
-            <div
-              className="text-[10.5px] mt-1.5 font-mono"
-              style={{ color: 'var(--side-text-3)', letterSpacing: '0.02em' }}
-            >
-              plateforme · décisionnelle
-            </div>
-          </div>
-        )}
+        />
       </div>
 
       {/* filiere context */}
