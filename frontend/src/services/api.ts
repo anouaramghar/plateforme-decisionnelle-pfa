@@ -9,6 +9,15 @@ let refreshToken: string | null = null
 let onUnauthorized: (() => void) | null = null
 let onTokenRefreshed: ((newToken: string, newRefresh: string) => void) | null = null
 
+// Monotonic session id. Logout and login bump it so a refresh that was already
+// in flight when the session changed cannot commit its result over the new one
+// (or resurrect a token after logout).
+let sessionGeneration = 0
+
+export function bumpSession(): void {
+  sessionGeneration += 1
+}
+
 export function setAuthToken(token: string | null): void {
   authToken = token
 }
@@ -53,6 +62,7 @@ async function refreshOnce(): Promise<string | null> {
   if (!refreshToken) return null
   if (pendingRefresh) return pendingRefresh
 
+  const startGeneration = sessionGeneration
   pendingRefresh = (async () => {
     try {
       const res = await axios.post(
@@ -60,6 +70,9 @@ async function refreshOnce(): Promise<string | null> {
         { refreshToken },
         { headers: { 'Content-Type': 'application/json' } },
       )
+      // If logout/login happened while this was in flight, drop the result so
+      // it can't clobber the new session (or revive a logged-out one).
+      if (sessionGeneration !== startGeneration) return null
       const newToken: string = res.data.token
       const newRefresh: string = res.data.refreshToken
       authToken    = newToken

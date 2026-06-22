@@ -180,7 +180,17 @@ namespace PlateformePFA.API.Controllers
             page     = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
-            var query = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null).OrderBy(e => e.Id);
+            // Teachers only see their own cohort (filière + niveau of their module);
+            // Admin/Responsable are unrestricted.
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+            var baseQuery = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
+            if (!cohort.Unrestricted)
+            {
+                if (!cohort.HasCohort) return new PaginatedResult<EtudiantDto>(new List<EtudiantDto>(), 0, page, pageSize);
+                baseQuery = baseQuery.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
+            }
+
+            var query = baseQuery.OrderBy(e => e.Id);
             var total = await query.CountAsync();
             var items = await query
                 .Skip((page - 1) * pageSize)
@@ -195,12 +205,16 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<EtudiantDto>> GetEtudiant(int id)
         {
-            var dto = await _context.Etudiants
-                .AsNoTracking()
-                .Where(e => e.Id == id && e.DesinscritLe == null)
-                .Select(ToDto)
-                .FirstOrDefaultAsync();
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+            var query = _context.Etudiants.AsNoTracking().Where(e => e.Id == id && e.DesinscritLe == null);
+            if (!cohort.Unrestricted)
+            {
+                // A teacher outside their cohort gets 404, not a leak of existence.
+                if (!cohort.HasCohort) return NotFound();
+                query = query.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
+            }
 
+            var dto = await query.Select(ToDto).FirstOrDefaultAsync();
             if (dto == null) return NotFound();
             return dto;
         }

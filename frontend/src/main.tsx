@@ -10,9 +10,13 @@ import { ThemeProvider } from './context/ThemeContext'
 import { FiliereProvider } from './context/FiliereContext'
 import './index.css'
 
+// Always same-origin: the runtime authenticates via the httpOnly
+// `pfa_copilot_session` cookie, which the browser only sends on same-origin
+// requests. In dev, Vite proxies /api/copilotkit → the runtime (see
+// vite.config.ts); in prod, nginx does. A cross-origin localhost:4000 URL would
+// drop the cookie and 401 every request.
 const copilotRuntimeUrl =
-  (import.meta.env.VITE_COPILOTKIT_URL as string | undefined) ??
-  (import.meta.env.DEV ? 'http://localhost:4000/api/copilotkit' : '/api/copilotkit')
+  (import.meta.env.VITE_COPILOTKIT_URL as string | undefined) ?? '/api/copilotkit'
 
 const queryClient = new QueryClient({
   defaultOptions: {

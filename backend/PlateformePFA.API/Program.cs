@@ -157,6 +157,36 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret!))
     };
+
+    // Re-validate the live account on every request: a 24h JWT must NOT keep a
+    // user signed in (or at a stale role) after they are deactivated or demoted.
+    // One indexed lookup per request — cheap at this scale, closes the window
+    // that a security stamp would otherwise be needed for.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async ctx =>
+        {
+            var idClaim = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var roleClaim = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (!int.TryParse(idClaim, out var userId))
+            {
+                ctx.Fail("Invalid subject claim.");
+                return;
+            }
+
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            var account = await db.Utilisateurs
+                .AsNoTracking()
+                .Where(u => u.Id == userId)
+                .Select(u => new { u.EstActif, u.Role })
+                .FirstOrDefaultAsync();
+
+            if (account is null || !account.EstActif || account.Role != roleClaim)
+            {
+                ctx.Fail("Account is no longer active or its role has changed.");
+            }
+        }
+    };
 });
 
 // CORS — only matters when the frontend talks to the backend directly (Vite dev

@@ -123,6 +123,13 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT (EtudiantKey, ModuleKey, TempsKey, NoteFinale, NbAbsences, ScoreRisque, Cluster)
     VALUES (src.EtudiantKey, src.ModuleKey, src.TempsKey,
-            src.NoteFinale, src.NbAbsences, src.ScoreRisque, src.Cluster);
+            src.NoteFinale, src.NbAbsences, src.ScoreRisque, src.Cluster)
+-- Physically-deleted OLTP notes must also disappear from the warehouse,
+-- otherwise BI reports and future ML training keep counting stale grades.
+-- The source already covers every current note (dimensions are synced first
+-- in this same transaction), so any fact with no matching source row is an
+-- orphan from a deleted note.
+WHEN NOT MATCHED BY SOURCE THEN
+    DELETE;
 
 COMMIT TRANSACTION;

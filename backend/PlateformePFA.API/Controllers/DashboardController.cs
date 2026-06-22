@@ -15,6 +15,7 @@ namespace PlateformePFA.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly RiskScorer _riskScorer;
+        private readonly IAcademicAccessService _academicAccess;
 
         // Stable colour map for the five filières — matches the frontend palette.
         private static readonly Dictionary<string, string> FiliereColors = new()
@@ -26,10 +27,11 @@ namespace PlateformePFA.API.Controllers
             ["IRSI"] = "#0ea5e9",
         };
 
-        public DashboardController(AppDbContext context, RiskScorer riskScorer)
+        public DashboardController(AppDbContext context, RiskScorer riskScorer, IAcademicAccessService academicAccess)
         {
             _context = context;
             _riskScorer = riskScorer;
+            _academicAccess = academicAccess;
         }
 
         // GET: api/dashboard/activity?limit=8
@@ -38,6 +40,11 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("activity")]
         public async Task<ActionResult<List<ActivityDto>>> GetActivity([FromQuery] int limit = 12)
         {
+            // The activity feed is an institution-wide audit log; it does not map
+            // to a teacher's single-module cohort. Restricted roles get nothing.
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+            if (!cohort.Unrestricted) return new List<ActivityDto>();
+
             limit = Math.Clamp(limit, 1, 100);
             var rows = await _context.AuditEntries
                 .AsNoTracking()
@@ -62,11 +69,19 @@ namespace PlateformePFA.API.Controllers
         {
             bool isFiltered = !string.IsNullOrWhiteSpace(filiere) && filiere != "TOUS";
 
+            // Teachers are confined to their module's cohort regardless of the
+            // client-supplied `filiere` filter. A teacher with no cohort sees an
+            // empty dashboard (the cohort predicate matches no rows). Admin /
+            // Responsable are unrestricted.
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+
             // 1) Per-student aggregates: average final note + total absence hours.
             //    Pulled in a single round-trip; everything below is in-memory.
             var studentsQuery = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 studentsQuery = studentsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                studentsQuery = studentsQuery.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
 
             var students = await studentsQuery
                 .Select(e => new
@@ -94,6 +109,8 @@ namespace PlateformePFA.API.Controllers
                 .Where(a => !a.Resolue && a.Etudiant.DesinscritLe == null);
             if (isFiltered)
                 alertesQuery = alertesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                alertesQuery = alertesQuery.Where(a => a.Etudiant.FiliereId == cohort.FiliereId && a.Etudiant.Niveau == cohort.Niveau);
             var alertesActives = await alertesQuery.CountAsync();
 
             // 4) KPIs.
@@ -180,6 +197,8 @@ namespace PlateformePFA.API.Controllers
                 .Where(a => a.DateAbsence >= since && a.Etudiant.DesinscritLe == null);
             if (isFiltered)
                 absencesQuery = absencesQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                absencesQuery = absencesQuery.Where(a => a.Etudiant.FiliereId == cohort.FiliereId && a.Etudiant.Niveau == cohort.Niveau);
             var rawAbsences = await absencesQuery
                 .Select(a => new { a.DateAbsence, a.NombreHeures, a.EtudiantId })
                 .ToListAsync();
@@ -238,6 +257,8 @@ namespace PlateformePFA.API.Controllers
                 .Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 prevEtudiantsQuery = prevEtudiantsQuery.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                prevEtudiantsQuery = prevEtudiantsQuery.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
             var prevStudents = await prevEtudiantsQuery
                 .Select(e => new
                 {
@@ -265,6 +286,8 @@ namespace PlateformePFA.API.Controllers
                     && (a.Etudiant.DesinscritLe == null || a.Etudiant.DesinscritLe >= weekAgo));
             if (isFiltered)
                 prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.Filiere != null && a.Etudiant.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                prevAlertsQuery = prevAlertsQuery.Where(a => a.Etudiant.FiliereId == cohort.FiliereId && a.Etudiant.Niveau == cohort.Niveau);
             var prevActiveAlerts = await prevAlertsQuery.CountAsync();
 
             // Student count trend: % growth of active students vs 30 days ago.
@@ -273,11 +296,15 @@ namespace PlateformePFA.API.Controllers
             var activeBase = _context.Etudiants.AsNoTracking().Where(e => e.DesinscritLe == null);
             if (isFiltered)
                 activeBase = activeBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                activeBase = activeBase.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
 
             // allBase: all students (including desinscrit), scoped to filière — used for history and retraits.
             var allBase = _context.Etudiants.AsNoTracking();
             if (isFiltered)
                 allBase = allBase.Where(e => e.Filiere != null && e.Filiere.Code == filiere);
+            if (!cohort.Unrestricted)
+                allBase = allBase.Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau);
             var totalBefore30 = await allBase.CountAsync(e =>
                 e.CreeLe < since30 && (e.DesinscritLe == null || e.DesinscritLe >= since30));
             var nbDelta = totalBefore30 == 0 ? 0m : Math.Round((decimal)(nbEtudiants - totalBefore30) / totalBefore30 * 100m, 1);

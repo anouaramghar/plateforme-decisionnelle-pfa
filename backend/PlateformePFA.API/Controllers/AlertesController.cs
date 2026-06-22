@@ -24,6 +24,9 @@ namespace PlateformePFA.API.Controllers
         }
 
         // GET: api/alertes?resolue=false&page=1&pageSize=20
+        // Alerts are an institution-wide management view; teachers have no
+        // alerts UI, so reads are restricted server-side (defense in depth).
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpGet]
         public async Task<ActionResult<PaginatedResult<Alerte>>> GetAlertes(
             [FromQuery] bool? resolue = null,
@@ -48,6 +51,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // GET: api/alertes/5
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpGet("{id}")]
         public async Task<ActionResult<Alerte>> GetAlerte(int id)
         {
@@ -60,6 +64,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // GET: api/alertes/etudiant/5
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpGet("etudiant/{etudiantId}")]
         public async Task<ActionResult<IEnumerable<Alerte>>> GetAlertesByEtudiant(int etudiantId)
         {

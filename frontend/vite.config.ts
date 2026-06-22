@@ -21,6 +21,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
+        // Copilot runtime runs separately (`npm run dev` in copilot-runtime,
+        // port 4000). Must be listed BEFORE '/api' so this more specific prefix
+        // wins. Routing it same-origin lets the httpOnly session cookie flow.
+        '/api/copilotkit': {
+          target: env.VITE_COPILOT_PROXY_TARGET || 'http://localhost:4000',
+          changeOrigin: true,
+        },
         // Default target = the backend dev server (`dotnet run` listens on 5135).
         // Set VITE_API_PROXY_TARGET=http://localhost:80 when using the full docker stack.
         '/api': {

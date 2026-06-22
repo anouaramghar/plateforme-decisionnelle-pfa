@@ -18,10 +18,24 @@ namespace PlateformePFA.API.Services
         public int FilterModuleId => ModuleId ?? -1;
     }
 
+    /// <summary>
+    /// Student-level read scope. A teacher sees only the cohort of their assigned
+    /// module (same filière + niveau); Admin/Responsable are unrestricted. A
+    /// teacher with no module (or no filière resolved) sees nothing.
+    /// </summary>
+    public readonly record struct CohortScope(bool Unrestricted, int? FiliereId, string? Niveau)
+    {
+        public static CohortScope All => new(true, null, null);
+
+        // True only for a teacher whose cohort actually resolved.
+        public bool HasCohort => !Unrestricted && FiliereId.HasValue && Niveau != null;
+    }
+
     public interface IAcademicAccessService
     {
         Task<int?> GetAssignedModuleIdAsync(ClaimsPrincipal user, CancellationToken ct = default);
         Task<bool> CanAccessModuleAsync(ClaimsPrincipal user, int moduleId, CancellationToken ct = default);
         Task<ModuleScope> GetModuleScopeAsync(ClaimsPrincipal user, CancellationToken ct = default);
+        Task<CohortScope> GetCohortScopeAsync(ClaimsPrincipal user, CancellationToken ct = default);
     }
 }

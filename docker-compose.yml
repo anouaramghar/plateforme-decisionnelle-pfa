@@ -65,7 +65,11 @@ services:
       db:
         condition: service_healthy
       ml-service:
-        condition: service_healthy
+        # service_started, NOT service_healthy: predictions degrade gracefully
+        # (PredictionsController records MlUnavailable and the BI platform stays
+        # up), so an unhealthy/slow ML model must NOT block the whole backend —
+        # and therefore nginx — from booting.
+        condition: service_started
       # NOTE: copilot-runtime is intentionally NOT a startup gate. Copilot is an
       # optional add-on; the BI platform (auth, students, notes, exports) must
       # boot and stay available even if the AI sidecar is down or unhealthy.

@@ -7,7 +7,12 @@ import {
   getRefreshToken,
   setOnUnauthorized,
   setOnTokenRefreshed,
+  bumpSession,
 } from '../services/api'
+
+// The Copilot session cookie lives 15 min server-side; renew well before that
+// so the sidebar doesn't silently start returning 401 mid-session.
+const COPILOT_RENEW_MS = 10 * 60_000
 
 interface AuthUser {
   email: string
@@ -42,6 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token])
 
   const logout = useCallback(() => {
+    // Invalidate any in-flight token refresh so it can't revive this session.
+    bumpSession()
     const rt = getRefreshToken()
     if (rt) {
       // Best-effort server-side revocation — don't block the UI on its result.
@@ -56,6 +63,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRefreshToken(null)
     queryClient.clear()
   }, [queryClient])
+
+  // Keep the Copilot session cookie alive while Copilot is active. Without this
+  // the 15-min cookie expires and the sidebar 401s while the UI still shows it
+  // as available.
+  useEffect(() => {
+    if (!token || !copilotActive) return
+    const id = setInterval(() => {
+      api.post('/copilot/session', {}, { withCredentials: true })
+        .catch(() => setCopilotActive(false))
+    }, COPILOT_RENEW_MS)
+    return () => clearInterval(id)
+  }, [token, copilotActive])
 
   // Centralize 401 handling: if any request comes back unauthorized AND the
   // refresh attempt also fails, wipe state and let the router redirect.
@@ -79,6 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient])
 
   const login = useCallback(async (email: string, password: string) => {
+    // New session: invalidate any in-flight refresh from a prior session.
+    bumpSession()
     // Cancel any inflight queries and wipe the cache so the previous user's
     // data cannot bleed through into the new session.
     await queryClient.cancelQueries()

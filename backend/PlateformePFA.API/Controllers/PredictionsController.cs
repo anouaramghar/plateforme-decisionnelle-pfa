@@ -313,47 +313,57 @@ namespace PlateformePFA.API.Controllers
 
             if (validStudents.Count > 0)
             {
-                var requestBody = validStudents.Select(vs => new
+                // ML rejects batches > 500. Chunk so a large cohort doesn't fail
+                // wholesale, and reconcile per chunk: a failed chunk only marks
+                // its own students MlUnavailable, leaving the rest predicted.
+                const int MlBatchLimit = 500;
+                var mlResults = new MlResponseItem?[validStudents.Count];
+                var chunkFailed = new bool[validStudents.Count];
+
+                var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+                var client = _httpClientFactory.CreateClient("MLService");
+
+                for (int offset = 0; offset < validStudents.Count; offset += MlBatchLimit)
                 {
-                    moyenne_generale = vs.MoyenneGenerale,
-                    taux_absence = vs.TauxAbsence,
-                    nb_modules = vs.NbModules
-                }).ToList();
-
-                string jsonBody = JsonSerializer.Serialize(requestBody);
-                List<MlResponseItem>? mlResults = null;
-                string status = "Ok";
-
-                try
-                {
-                    var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
-                    var client = _httpClientFactory.CreateClient("MLService");
-
-                    var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/batch")
+                    var chunk = validStudents.Skip(offset).Take(MlBatchLimit).ToList();
+                    var requestBody = chunk.Select(vs => new
                     {
-                        Content = new StringContent(jsonBody, Encoding.UTF8, "application/json"),
-                    };
-                    httpRequest.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+                        moyenne_generale = vs.MoyenneGenerale,
+                        taux_absence = vs.TauxAbsence,
+                        nb_modules = vs.NbModules
+                    }).ToList();
+                    string jsonBody = JsonSerializer.Serialize(requestBody);
 
-                    var response = await client.SendAsync(httpRequest);
-                    if (response.IsSuccessStatusCode)
+                    try
                     {
-                        var body = await response.Content.ReadAsStringAsync();
-                        mlResults = JsonSerializer.Deserialize<List<MlResponseItem>>(body, new JsonSerializerOptions
+                        var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/batch")
                         {
-                            PropertyNameCaseInsensitive = true
-                        });
+                            Content = new StringContent(jsonBody, Encoding.UTF8, "application/json"),
+                        };
+                        httpRequest.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+
+                        var response = await client.SendAsync(httpRequest);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var body = await response.Content.ReadAsStringAsync();
+                            var items = JsonSerializer.Deserialize<List<MlResponseItem>>(body, new JsonSerializerOptions
+                            {
+                                PropertyNameCaseInsensitive = true
+                            });
+                            for (int j = 0; j < chunk.Count; j++)
+                                mlResults[offset + j] = (items != null && j < items.Count) ? items[j] : null;
+                        }
+                        else
+                        {
+                            for (int j = 0; j < chunk.Count; j++) chunkFailed[offset + j] = true;
+                            _logger.LogWarning("ML service returned {Code} for batch prediction chunk at offset {Offset}", response.StatusCode, offset);
+                        }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        status = "MlUnavailable";
-                        _logger.LogWarning("ML service returned {Code} for batch prediction", response.StatusCode);
+                        for (int j = 0; j < chunk.Count; j++) chunkFailed[offset + j] = true;
+                        _logger.LogWarning(ex, "ML service unreachable for batch prediction chunk at offset {Offset}", offset);
                     }
-                }
-                catch (Exception ex)
-                {
-                    status = "MlUnavailable";
-                    _logger.LogWarning(ex, "ML service unreachable for batch prediction");
                 }
 
                 for (int i = 0; i < validStudents.Count; i++)
@@ -362,20 +372,22 @@ namespace PlateformePFA.API.Controllers
 
                     decimal? scoreRisque = null;
                     string? niveauRisque = null;
-                    string studentStatus = status;
+                    string studentStatus;
 
-                    if (status == "Ok" && mlResults != null && i < mlResults.Count)
+                    if (chunkFailed[i])
+                    {
+                        studentStatus = "MlUnavailable";
+                        result.Failed++;
+                    }
+                    else
                     {
                         var item = mlResults[i];
                         if (item != null && item.Probabilite >= 0.0m && item.Probabilite <= 1.0m &&
                             (item.NiveauRisque == "Faible" || item.NiveauRisque == "Moyen" || item.NiveauRisque == "Eleve" || item.NiveauRisque == "Élevé" || item.NiveauRisque == "Critique"))
                         {
                             scoreRisque = item.Probabilite;
-                            niveauRisque = item.NiveauRisque;
-                            if (niveauRisque == "Élevé")
-                            {
-                                niveauRisque = "Eleve";
-                            }
+                            niveauRisque = item.NiveauRisque == "Élevé" ? "Eleve" : item.NiveauRisque;
+                            studentStatus = "Ok";
                             result.Predicted++;
                         }
                         else
@@ -383,11 +395,6 @@ namespace PlateformePFA.API.Controllers
                             studentStatus = "InvalidResponse";
                             result.Failed++;
                         }
-                    }
-                    else
-                    {
-                        studentStatus = (status == "Ok") ? "InvalidResponse" : "MlUnavailable";
-                        result.Failed++;
                     }
 
                     var prediction = new PredictionML
