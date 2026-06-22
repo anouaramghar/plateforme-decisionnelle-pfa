@@ -171,6 +171,46 @@ namespace PlateformePFA.API.Controllers
             return byModule;
         }
 
+        // GET {id}/timeline — merged chronological activity for the Student 360
+        // workspace: evidence signals + every intervention-case event, newest
+        // first. Cases/alerts are management data, so Admin/Responsable only.
+        [Authorize(Roles = "Admin,Responsable")]
+        [HttpGet("{id}/timeline")]
+        public async Task<ActionResult<List<TimelineItemDto>>> GetTimeline(int id)
+        {
+            var exists = await _context.Etudiants.AnyAsync(e => e.Id == id);
+            if (!exists) return NotFound();
+
+            var signals = await _context.Alertes.AsNoTracking()
+                .Where(a => a.EtudiantId == id)
+                .Select(a => new TimelineItemDto
+                {
+                    Date   = a.CreeLe,
+                    Source = "Signal",
+                    Action = "SignalRaised",
+                    Label  = a.Type + " (" + a.Niveau + ")",
+                    RefId  = a.Id,
+                })
+                .ToListAsync();
+
+            var caseEvents = await _context.CaseTimelineEvents.AsNoTracking()
+                .Where(t => t.Case.EtudiantId == id)
+                .Select(t => new TimelineItemDto
+                {
+                    Date   = t.CreeLe,
+                    Source = "Case",
+                    Action = t.Action,
+                    Label  = t.Description,
+                    RefId  = t.CaseId,
+                })
+                .ToListAsync();
+
+            return signals.Concat(caseEvents)
+                .OrderByDescending(x => x.Date)
+                .Take(500)
+                .ToList();
+        }
+
         // 1. GET ALL (paginated)
         [HttpGet]
         public async Task<ActionResult<PaginatedResult<EtudiantDto>>> GetEtudiants(
