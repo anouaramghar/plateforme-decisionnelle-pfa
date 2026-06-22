@@ -73,29 +73,11 @@ export default function Login() {
         />
 
         <div className="relative z-10 flex items-center gap-3">
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 9,
-              background: 'linear-gradient(135deg, var(--accent-500), var(--accent-700))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 17,
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.2), 0 8px 24px -8px rgba(249,115,22,.5)',
-            }}
-          >
-            E
-          </div>
-          <div>
-            <div className="text-[14px] font-semibold leading-none">ENIAD</div>
-            <div className="text-[11px] mt-1" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              École Nationale d'Intelligence Artificielle
-            </div>
-          </div>
+          <img
+            src="/eniad-logo.png"
+            alt="ENIAD"
+            style={{ height: 52, width: 'auto', objectFit: 'contain' }}
+          />
         </div>
 
         <div className="relative z-10 max-w-[440px]">
