@@ -32,7 +32,7 @@ def test_temporal_training_contract():
         return df.dropna(subset=["at_risk"]).copy()
 
     processed_original = process(raw_df.copy())
-    
+
     # Check features and label of the first period
     assert processed_original.loc[0, "moyenne_generale"] == 12.0
     assert processed_original.loc[0, "at_risk"] == 1.0

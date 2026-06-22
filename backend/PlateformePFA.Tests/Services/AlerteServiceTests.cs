@@ -86,7 +86,7 @@ public class AlerteServiceTests : IClassFixture<TestWebFactory>
         using var context = _factory.CreateContext();
         var seeded = SampleData.SeedOne(context);
         var student = AddStudent(context, seeded.Filiere.Id, "E-ABS-RESOLVE");
-        
+
         // Seed active AbsenceExcessive alert (22 hours unjustified)
         var absence = new Absence
         {
@@ -98,7 +98,7 @@ public class AlerteServiceTests : IClassFixture<TestWebFactory>
             CreeLe = DateTime.UtcNow
         };
         context.Absences.Add(absence);
-        
+
         var alert = new Alerte
         {
             EtudiantId = student.Id,
@@ -110,14 +110,14 @@ public class AlerteServiceTests : IClassFixture<TestWebFactory>
         };
         context.Alertes.Add(alert);
         await context.SaveChangesAsync();
-        
+
         // Update absence so unjustified hours drop to <= 20
         absence.NombreHeures = 15;
         await context.SaveChangesAsync();
-        
+
         var service = new AlerteService(context, NullLogger<AlerteService>.Instance);
         await service.CheckAbsenceAlertAsync(student.Id);
-        
+
         // Assert
         var updatedAlert = await context.Alertes.FirstOrDefaultAsync(a => a.Id == alert.Id);
         updatedAlert.Should().NotBeNull();

@@ -178,7 +178,7 @@ public class AbsencesControllerTests : IClassFixture<TestWebFactory>
         {
             var seeded = SampleData.SeedOne(ctx);
             studentId = seeded.Etudiant.Id;
-            
+
             var otherFil = new Filiere { Code = "IA", Intitule = "Intelligence Artificielle" };
             ctx.Filieres.Add(otherFil);
             ctx.SaveChanges();
@@ -262,12 +262,12 @@ public class AbsencesControllerTests : IClassFixture<TestWebFactory>
         int absenceId;
         int studentId;
         int alertId;
-        
+
         using (var ctx = _factory.CreateContext())
         {
             var seeded = SampleData.SeedOne(ctx);
             studentId = seeded.Etudiant.Id;
-            
+
             // Seed a 22h unjustified absence
             var absence = new Absence
             {
@@ -279,7 +279,7 @@ public class AbsencesControllerTests : IClassFixture<TestWebFactory>
                 CreeLe = DateTime.UtcNow
             };
             ctx.Absences.Add(absence);
-            
+
             // Seed an active AbsenceExcessive alert
             var alert = new Alerte
             {
@@ -292,19 +292,19 @@ public class AbsencesControllerTests : IClassFixture<TestWebFactory>
             };
             ctx.Alertes.Add(alert);
             ctx.SaveChanges();
-            
+
             absenceId = absence.Id;
             alertId = alert.Id;
         }
-        
+
         var client = _factory.CreateClient();
         var token = await AuthHelper.GetAdminTokenAsync(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        
+
         // Delete the absence via endpoint
         var response = await client.DeleteAsync($"/api/absences/{absenceId}");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        
+
         // Verify the alert is resolved in the DB
         using (var ctx = _factory.CreateContext())
         {

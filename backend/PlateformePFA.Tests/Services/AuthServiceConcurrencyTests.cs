@@ -112,16 +112,16 @@ namespace PlateformePFA.Tests.Services
             using var context2 = CreateDbContext();
 
             var authService1 = new AuthService(
-                context1, 
-                myConfiguration, 
-                NullLogger<AuthService>.Instance, 
+                context1,
+                myConfiguration,
+                NullLogger<AuthService>.Instance,
                 fakeAudit
             );
 
             var authService2 = new AuthService(
-                context2, 
-                myConfiguration, 
-                NullLogger<AuthService>.Instance, 
+                context2,
+                myConfiguration,
+                NullLogger<AuthService>.Instance,
                 fakeAudit
             );
 

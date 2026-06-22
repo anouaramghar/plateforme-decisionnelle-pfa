@@ -300,7 +300,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
         {
             var seeded = SampleData.SeedOne(ctx);
             studentId = seeded.Etudiant.Id;
-            
+
             var otherFil = new Filiere { Code = "IA", Intitule = "Intelligence Artificielle" };
             ctx.Filieres.Add(otherFil);
             ctx.SaveChanges();
@@ -342,7 +342,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
             var seeded = SampleData.SeedOne(ctx);
             var note = ctx.Notes.First();
             noteId = note.Id;
-            
+
             // Seed initial rowversion
             note.RowVersion = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
             ctx.SaveChanges();

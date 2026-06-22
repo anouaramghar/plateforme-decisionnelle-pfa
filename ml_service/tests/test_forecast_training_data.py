@@ -22,7 +22,7 @@ def test_forecast_no_leakage_of_target_into_features():
         return df
 
     original_processed = process(raw_df.copy())
-    
+
     # In the original, current period features are: moyenne_actuelle = 14.0, target is 11.0
     assert original_processed.loc[0, "moyenne_actuelle"] == 14.0
     assert original_processed.loc[0, "note_finale"] == 11.0
