@@ -50,28 +50,24 @@ for i in $(seq 1 150); do
     sleep 2
 done
 
-echo "Checking if database already initialized..."
-RESULT=$(SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
-    -S localhost -U sa -C \
-    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name='PFA_DB'" \
-    -h -1 2>/dev/null | tr -d ' \r\n')
+# init.sql and init_dw.sql are fully idempotent — every CREATE is guarded by
+# IF OBJECT_ID / IF NOT EXISTS and the SchemaState marker is upserted. Run them
+# on EVERY boot (not just cold first boot) so pre-existing volumes roll forward:
+# a volume seeded before SchemaState (or any later additive change) existed would
+# otherwise never receive the schema marker and stay permanently unhealthy. -b
+# aborts the boot on any SQL error.
+echo "Running init.sql (idempotent)..."
+SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost -U sa -C -b \
+    -v APP_PASSWORD="$APP_DB_PASSWORD" \
+    -i /scripts/init.sql
 
-if [ "$RESULT" = "0" ]; then
-    echo "Running init.sql..."
-    SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
-        -S localhost -U sa -C -b \
-        -v APP_PASSWORD="$APP_DB_PASSWORD" \
-        -i /scripts/init.sql
+echo "Running init_dw.sql (idempotent)..."
+SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost -U sa -C -b \
+    -i /scripts/init_dw.sql
 
-    echo "Running init_dw.sql..."
-    SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd \
-        -S localhost -U sa -C -b \
-        -i /scripts/init_dw.sql
-
-    echo "Database initialization complete."
-else
-    echo "Database PFA_DB already exists — skipping initialization."
-fi
+echo "Database initialization complete."
 
 # Always run the Copilot read-only provisioning — idempotent, and crucially it
 # must roll forward onto volumes seeded BEFORE Copilot existed (the init.sql /

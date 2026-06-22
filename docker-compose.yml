@@ -73,11 +73,14 @@ services:
       # so no hard dependency is needed here.
     healthcheck:
       # curl is installed in the backend Dockerfile runtime stage.
-      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/health || exit 1"]
+      # Probe /ready (DB reachable + schema marker), NOT /health (liveness
+      # only) — otherwise the backend reports healthy and nginx admits traffic
+      # before the schema is provisioned, or after a migration silently failed.
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     restart: unless-stopped
     networks:
       - pfa_public

@@ -216,17 +216,25 @@ using (var scope = app.Services.CreateScope())
         var context       = services.GetRequiredService<AppDbContext>();
         var configuration = services.GetRequiredService<IConfiguration>();
 
-        // Idempotent runtime migrations — entrypoint.sh only runs init.sql
-        // on first boot, so additive schema changes go here. Each block is
-        // safe to run on every startup.
-        PlateformePFA.API.Data.RuntimeMigrations.Apply(context);
-
-        PlateformePFA.API.Data.DataSeeder.Initialize(context, configuration);
+        // Idempotent runtime migrations + seeding — production schema/provisioning
+        // that must roll forward on every startup. Both use raw SQL / sample-data
+        // seeding meant for the real relational database; the InMemory test
+        // provider already has the current model and tests seed their own data,
+        // so the whole block is skipped there. A real failure rethrows below.
+        if (context.Database.IsRelational())
+        {
+            PlateformePFA.API.Data.RuntimeMigrations.Apply(context);
+            PlateformePFA.API.Data.DataSeeder.Initialize(context, configuration);
+        }
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the database.");
+        // Fail fast: a failed migration or seed must NOT leave the app running
+        // and reporting healthy on a half-provisioned schema. Rethrow so the
+        // process exits non-zero and the container is restarted/flagged.
+        logger.LogError(ex, "Database migration/seeding failed — aborting startup.");
+        throw;
     }
 }
 
