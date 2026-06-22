@@ -65,11 +65,11 @@ namespace PlateformePFA.API.Services
         }
 
         // ── Refresh ───────────────────────────────────────────────
-        public async Task<AuthResponseDto?> RefreshAsync(string refreshToken)
+        public async Task<AuthResponseDto?> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
         {
             var storedToken = await _context.RefreshTokens
                 .Include(rt => rt.Utilisateur)
-                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+                .FirstOrDefaultAsync(rt => rt.Token == refreshToken, cancellationToken);
 
             if (storedToken == null)
             {
@@ -77,38 +77,86 @@ namespace PlateformePFA.API.Services
                 return null;
             }
 
-            if (!storedToken.IsActive)
-            {
-                _logger.LogWarning("[AuthService] Refresh token expiré ou révoqué — userId={UserId}", storedToken.UtilisateurId);
-                return null;
-            }
-
             var utilisateur = storedToken.Utilisateur;
             if (utilisateur == null || !utilisateur.EstActif)
             {
-                _logger.LogWarning("[AuthService] Refresh refusé — compte désactivé userId={UserId}", storedToken.UtilisateurId);
+                _logger.LogWarning("[AuthService] Refresh refusé — compte désactivé ou introuvable userId={UserId}", storedToken.UtilisateurId);
                 return null;
             }
 
-            // Revoke the old token (single-use rotation) and persist immediately so
-            // a failure during new-token creation cannot leave the old token usable.
-            storedToken.RevokedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            var newJwt          = BuildJwtToken(utilisateur);
-            var newRefreshToken = await CreateRefreshTokenAsync(utilisateur.Id);
-
-            _logger.LogInformation("[AuthService] Token rafraîchi — userId={UserId}", utilisateur.Id);
-
-            return new AuthResponseDto
+            // Fallback for InMemory provider which does not support ExecuteUpdateAsync or transactions
+            if (_context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
             {
-                Token        = new JwtSecurityTokenHandler().WriteToken(newJwt),
-                RefreshToken = newRefreshToken.Token,
-                Expiration   = newJwt.ValidTo,
-                Role         = utilisateur.Role,
-                Email        = utilisateur.Email,
-                NomComplet   = $"{utilisateur.Prenom} {utilisateur.Nom}"
-            };
+                if (storedToken.RevokedAt != null || storedToken.ExpiresAt <= DateTime.UtcNow)
+                {
+                    _logger.LogWarning("[AuthService] Refresh token déjà consommé ou expiré (InMemory) — rt.Id={Id}", storedToken.Id);
+                    return null;
+                }
+
+                storedToken.RevokedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+
+                var newJwt          = BuildJwtToken(utilisateur);
+                var newRefreshToken = await CreateRefreshTokenAsync(utilisateur.Id, cancellationToken);
+
+                _logger.LogInformation("[AuthService] Token rafraîchi (InMemory) — userId={UserId}", utilisateur.Id);
+
+                return new AuthResponseDto
+                {
+                    Token        = new JwtSecurityTokenHandler().WriteToken(newJwt),
+                    RefreshToken = newRefreshToken.Token,
+                    Expiration   = newJwt.ValidTo,
+                    Role         = utilisateur.Role,
+                    Email        = utilisateur.Email,
+                    NomComplet   = $"{utilisateur.Prenom} {utilisateur.Nom}"
+                };
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var now = DateTime.UtcNow;
+                var rowsUpdated = await _context.RefreshTokens
+                    .Where(rt => rt.Id == storedToken.Id && rt.RevokedAt == null && rt.ExpiresAt > now)
+                    .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.RevokedAt, now), cancellationToken);
+
+                if (rowsUpdated == 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    _logger.LogWarning("[AuthService] Refresh token déjà consommé ou expiré — rt.Id={Id}", storedToken.Id);
+                    return null;
+                }
+
+                var newJwt          = BuildJwtToken(utilisateur);
+                var newRefreshToken = await CreateRefreshTokenAsync(utilisateur.Id, cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation("[AuthService] Token rafraîchi — userId={UserId}", utilisateur.Id);
+
+                return new AuthResponseDto
+                {
+                    Token        = new JwtSecurityTokenHandler().WriteToken(newJwt),
+                    RefreshToken = newRefreshToken.Token,
+                    Expiration   = newJwt.ValidTo,
+                    Role         = utilisateur.Role,
+                    Email        = utilisateur.Email,
+                    NomComplet   = $"{utilisateur.Prenom} {utilisateur.Nom}"
+                };
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "[AuthService] Erreur lors du rollback de la transaction pour rt.Id={Id}", storedToken.Id);
+                }
+                _logger.LogError(ex, "[AuthService] Erreur lors de la rotation du refresh token — rt.Id={Id}", storedToken.Id);
+                throw;
+            }
         }
 
         // ── Helpers privés ────────────────────────────────────────
@@ -148,7 +196,7 @@ namespace PlateformePFA.API.Services
             return true;
         }
 
-        private async Task<RefreshToken> CreateRefreshTokenAsync(int utilisateurId)
+        private async Task<RefreshToken> CreateRefreshTokenAsync(int utilisateurId, CancellationToken cancellationToken = default)
         {
             // Generate a cryptographically secure random token
             var tokenBytes = RandomNumberGenerator.GetBytes(64);
@@ -163,7 +211,7 @@ namespace PlateformePFA.API.Services
             };
 
             _context.RefreshTokens.Add(refreshToken);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
 
             return refreshToken;
         }

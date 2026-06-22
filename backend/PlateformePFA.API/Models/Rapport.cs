@@ -37,10 +37,7 @@ namespace PlateformePFA.API.Models
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 
-        // Stored as VARBINARY(MAX). Excluded from JSON output — fetched via
-        // /api/rapports/{id}/download instead.
         [JsonIgnore]
-        [Column(TypeName = "varbinary(max)")]
         public byte[] Contenu { get; set; } = Array.Empty<byte>();
 
         [JsonIgnore]

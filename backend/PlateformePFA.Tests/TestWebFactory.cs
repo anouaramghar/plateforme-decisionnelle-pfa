@@ -71,7 +71,9 @@ public class TestWebFactory : WebApplicationFactory<Program>
             // Replace the SQL Server context with InMemory.
             var ctxDescriptor = services.Single(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
             services.Remove(ctxDescriptor);
-            services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase(DbName));
+            services.AddDbContext<AppDbContext>(opt => opt
+                .UseInMemoryDatabase(DbName)
+                .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
         });
     }
 
