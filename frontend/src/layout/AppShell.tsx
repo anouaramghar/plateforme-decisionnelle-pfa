@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { CopilotSidebar, useCopilotChatConfiguration } from '@copilotkit/react-core/v2'
 import { Sidebar } from './Sidebar'
@@ -10,7 +10,7 @@ export function AppShell() {
   const chatConfig = useCopilotChatConfiguration()
 
   const copilotOpen = chatConfig?.isModalOpen ?? false
-  const setCopilotOpen = (open: boolean | ((o: boolean) => boolean)) => {
+  const setCopilotOpen = useCallback((open: boolean | ((o: boolean) => boolean)) => {
     if (chatConfig) {
       if (typeof open === 'function') {
         chatConfig.setModalOpen(open(chatConfig.isModalOpen))
@@ -18,7 +18,7 @@ export function AppShell() {
         chatConfig.setModalOpen(open)
       }
     }
-  }
+  }, [chatConfig])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -36,7 +36,7 @@ export function AppShell() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [chatConfig])
+  }, [chatConfig, setCopilotOpen])
 
   return (
     <div className="vh-full flex" style={{ background: 'var(--bg)' }}>

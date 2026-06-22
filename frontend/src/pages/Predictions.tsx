@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
+import { useNavigate } from 'react-router-dom'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
@@ -12,6 +13,7 @@ import { ChartScatter } from '../components/charts'
 import { api } from '../services/api'
 import { ConfirmCard } from '../components/copilot/ConfirmCard'
 import type { ConfirmData } from '../components/copilot/ConfirmCard'
+import { useAuth } from '../context/AuthContext'
 
 const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
 const NIVEAUX  = ['Toutes', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
@@ -77,7 +79,41 @@ async function runBatch(input: { filiereCode?: string; niveau?: string }): Promi
   return res.data
 }
 
+function EnseignantRestricted() {
+  const navigate = useNavigate()
+  return (
+    <div className="flex flex-col items-center justify-center py-24 gap-5 text-center">
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 16,
+          background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon name="brain" size={30} style={{ color: 'var(--accent-500)' }} />
+      </div>
+      <div>
+        <h2 className="text-[18px] font-semibold mb-1.5">Prédictions ML non disponibles</h2>
+        <p className="cap max-w-sm" style={{ lineHeight: 1.6 }}>
+          Le moteur de prédiction par intelligence artificielle est réservé aux rôles
+          <strong> Administrateur</strong> et <strong>Responsable</strong>.
+          En tant qu'enseignant, vous pouvez saisir notes et absences depuis votre espace dédié.
+        </p>
+      </div>
+      <button className="btn btn-accent" onClick={() => navigate('/enseignant')}>
+        <Icon name="doc" size={14} />
+        Aller à mon espace
+      </button>
+    </div>
+  )
+}
+
 export default function Predictions() {
+  const { user } = useAuth()
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
   const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
@@ -210,6 +246,8 @@ export default function Predictions() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
     },
   })
+
+  if (user?.role === 'Enseignant') return <EnseignantRestricted />
 
   if (isLoading) {
     return (

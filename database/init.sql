@@ -130,6 +130,13 @@ IF OBJECT_ID('dbo.Alertes', 'U') IS NOT NULL
     ALTER TABLE Alertes ADD ResolueeParId INT NULL REFERENCES Utilisateurs(Id);
 GO
 
+-- Idempotent migration: link Enseignant to their Module
+IF OBJECT_ID('dbo.Utilisateurs', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.columns
+                   WHERE object_id = OBJECT_ID('dbo.Utilisateurs') AND name = 'ModuleId')
+    ALTER TABLE Utilisateurs ADD ModuleId INT NULL REFERENCES Modules(Id);
+GO
+
 -- ─── Refresh Tokens ──────────────────────────────────────────
 IF OBJECT_ID('dbo.RefreshTokens', 'U') IS NULL
 CREATE TABLE RefreshTokens (

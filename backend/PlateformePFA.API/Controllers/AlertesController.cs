@@ -9,7 +9,7 @@ using PlateformePFA.API.Models;
 
 namespace PlateformePFA.API.Controllers
 {
-    [Authorize(Roles = "Admin,Responsable")]
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class AlertesController : ControllerBase
@@ -96,6 +96,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // PATCH: api/alertes/5/resoudre
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPatch("{id}/resoudre")]
         public async Task<IActionResult> ResoudreAlerte(int id)
         {
@@ -119,6 +120,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // PATCH: api/alertes/batch-resolve
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPatch("batch-resolve")]
         public async Task<IActionResult> BatchResolve([FromBody] BatchResolveRequest request)
         {

@@ -55,6 +55,7 @@ async function createUser(data: {
   email: string
   role: string
   motDePasse: string
+  moduleId?: number | null
 }): Promise<Utilisateur> {
   const res = await api.post<Utilisateur>('/utilisateurs', data)
   return res.data
@@ -79,6 +80,12 @@ interface EtudiantRow {
 
 async function fetchFilieres(): Promise<Filiere[]> {
   const res = await api.get<{ items: Filiere[] }>('/filieres?pageSize=20')
+  return res.data.items
+}
+
+interface ModuleItem { id: number; code: string; nom: string; filiereCode: string; niveau: string }
+async function fetchModules(): Promise<ModuleItem[]> {
+  const res = await api.get<{ items: ModuleItem[] }>('/modules?pageSize=100')
   return res.data.items
 }
 
@@ -291,7 +298,7 @@ function UsersTab() {
 // ── Create user form ──────────────────────────────────────────────────────────
 
 interface CreateUserFormProps {
-  onSubmit: (data: { nom: string; prenom: string; email: string; role: string; motDePasse: string }) => void
+  onSubmit: (data: { nom: string; prenom: string; email: string; role: string; motDePasse: string; moduleId?: number | null }) => void
   onCancel: () => void
   isPending: boolean
   error?: string
@@ -304,6 +311,12 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
     email: '',
     role: 'Enseignant' as Role,
     motDePasse: '',
+    moduleId: null as number | null,
+  })
+
+  const { data: modules = [] } = useQuery({
+    queryKey: ['modules-all'],
+    queryFn: fetchModules,
   })
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -311,7 +324,10 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(form)
+    onSubmit({
+      ...form,
+      moduleId: form.role === 'Enseignant' ? form.moduleId : null,
+    })
   }
 
   return (
@@ -330,36 +346,17 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1">
           <span className="cap">Prénom</span>
-          <input
-            className="input"
-            placeholder="Mohamed"
-            value={form.prenom}
-            onChange={set('prenom')}
-            required
-          />
+          <input className="input" placeholder="Mohamed" value={form.prenom} onChange={set('prenom')} required />
         </label>
         <label className="flex flex-col gap-1">
           <span className="cap">Nom</span>
-          <input
-            className="input"
-            placeholder="Ait Ali"
-            value={form.nom}
-            onChange={set('nom')}
-            required
-          />
+          <input className="input" placeholder="Ait Ali" value={form.nom} onChange={set('nom')} required />
         </label>
       </div>
 
       <label className="flex flex-col gap-1">
         <span className="cap">Email</span>
-        <input
-          className="input"
-          type="email"
-          placeholder="m.aitali@eniad.ma"
-          value={form.email}
-          onChange={set('email')}
-          required
-        />
+        <input className="input" type="email" placeholder="m.aitali@eniad.ma" value={form.email} onChange={set('email')} required />
       </label>
 
       <div className="grid grid-cols-2 gap-3">
@@ -383,14 +380,31 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         </label>
       </div>
 
+      {form.role === 'Enseignant' && (
+        <label className="flex flex-col gap-1">
+          <span className="cap">Module enseigné</span>
+          <select
+            className="input"
+            value={form.moduleId ?? ''}
+            onChange={e => setForm(f => ({ ...f, moduleId: e.target.value ? Number(e.target.value) : null }))}
+            required
+          >
+            <option value="">Sélectionner un module…</option>
+            {modules.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.code} — {m.nom} ({m.filiereCode} · {m.niveau})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {error && (
         <p className="text-[12px]" style={{ color: 'var(--bad)' }}>{error}</p>
       )}
 
       <div className="flex items-center gap-2 justify-end">
-        <button type="button" className="btn btn-sm" onClick={onCancel}>
-          Annuler
-        </button>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>Annuler</button>
         <button type="submit" className="btn btn-sm btn-accent" disabled={isPending}>
           {isPending ? 'Création…' : 'Créer l\'utilisateur'}
         </button>
