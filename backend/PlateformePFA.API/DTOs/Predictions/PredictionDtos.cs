@@ -51,6 +51,8 @@ namespace PlateformePFA.API.DTOs.Predictions
     {
         public string? FiliereCode { get; set; }
         public string? Niveau      { get; set; }
+        public string? Annee       { get; set; }
+        public string? Semestre    { get; set; }
     }
 
     public class BatchResultDto

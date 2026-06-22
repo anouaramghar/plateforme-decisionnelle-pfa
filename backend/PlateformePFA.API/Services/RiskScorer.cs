@@ -41,7 +41,7 @@ public class RiskScorer
     {
         return await _context.PredictionsML
             .AsNoTracking()
-            .Where(p => p.ScoreRisque.HasValue)
+            .Where(p => p.Status == "Ok" && p.ScoreRisque.HasValue)
             .GroupBy(p => p.EtudiantId)
             .Select(g => new
             {

@@ -7,6 +7,7 @@ using PlateformePFA.API.DTOs.ML;
 using PlateformePFA.API.DTOs.Predictions;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
+using PlateformePFA.API.Helpers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -275,6 +276,10 @@ namespace PlateformePFA.API.Controllers
             var students = await query.ToListAsync();
             var result = new BatchResultDto { Total = students.Count };
 
+            var targetAnnee = request.Annee ?? _configuration["CurrentAcademicYear"] ?? AcademicPeriod.CurrentAcademicYear();
+            var targetSemestre = request.Semestre;
+            var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(targetAnnee, targetSemestre);
+
             var validStudents = new List<(Etudiant Student, decimal MoyenneGenerale, double TauxAbsence, int NbModules)>();
 
             foreach (var student in students)
@@ -282,8 +287,11 @@ namespace PlateformePFA.API.Controllers
                 var notes = student.Notes ?? new List<Note>();
                 var absences = student.Absences ?? new List<Absence>();
 
-                var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
-                int nbModules = notes.Select(n => n.ModuleId).Distinct().Count();
+                var filteredNotes = notes
+                    .Where(n => n.Annee == targetAnnee && (targetSemestre == null || n.Semestre == targetSemestre))
+                    .ToList();
+                var notesAvecFinal = filteredNotes.Where(n => n.NoteFinal.HasValue).ToList();
+                int nbModules = filteredNotes.Select(n => n.ModuleId).Distinct().Count();
 
                 if (nbModules == 0 || notesAvecFinal.Count == 0)
                 {
@@ -291,9 +299,13 @@ namespace PlateformePFA.API.Controllers
                     continue;
                 }
 
+                var filteredAbsences = absences
+                    .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                    .ToList();
+
                 decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
                 double scheduledHours = nbModules * 32.0;
-                int absenceHours = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+                int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
                 double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 
                 validStudents.Add((student, moyenneGenerale, tauxAbsence, nbModules));
@@ -344,27 +356,37 @@ namespace PlateformePFA.API.Controllers
                     _logger.LogWarning(ex, "ML service unreachable for batch prediction");
                 }
 
-                var annee = _configuration["CurrentAcademicYear"] ?? CurrentAcademicYear();
-
                 for (int i = 0; i < validStudents.Count; i++)
                 {
                     var (student, moyenneGenerale, tauxAbsence, nbModules) = validStudents[i];
 
-                    decimal scoreRisque = 0;
-                    string niveauRisque = "Faible";
+                    decimal? scoreRisque = null;
+                    string? niveauRisque = null;
                     string studentStatus = status;
 
-                    if (mlResults != null && i < mlResults.Count && status == "Ok")
+                    if (status == "Ok" && mlResults != null && i < mlResults.Count)
                     {
-                        scoreRisque = mlResults[i].Probabilite;
-                        niveauRisque = mlResults[i].NiveauRisque;
-                        result.Predicted++;
+                        var item = mlResults[i];
+                        if (item != null && item.Probabilite >= 0.0m && item.Probabilite <= 1.0m &&
+                            (item.NiveauRisque == "Faible" || item.NiveauRisque == "Moyen" || item.NiveauRisque == "Eleve" || item.NiveauRisque == "Élevé" || item.NiveauRisque == "Critique"))
+                        {
+                            scoreRisque = item.Probabilite;
+                            niveauRisque = item.NiveauRisque;
+                            if (niveauRisque == "Élevé")
+                            {
+                                niveauRisque = "Eleve";
+                            }
+                            result.Predicted++;
+                        }
+                        else
+                        {
+                            studentStatus = "InvalidResponse";
+                            result.Failed++;
+                        }
                     }
                     else
                     {
-                        studentStatus = "MlUnavailable";
-                        scoreRisque = 0;
-                        niveauRisque = "Faible";
+                        studentStatus = (status == "Ok") ? "InvalidResponse" : "MlUnavailable";
                         result.Failed++;
                     }
 
@@ -375,12 +397,12 @@ namespace PlateformePFA.API.Controllers
                         ScoreRisque = scoreRisque,
                         Niveau      = niveauRisque,
                         Status      = studentStatus,
-                        Annee       = annee,
+                        Annee       = targetAnnee,
                         CreeLe      = DateTime.UtcNow,
                     };
                     _context.PredictionsML.Add(prediction);
 
-                    if (niveauRisque is "Eleve" or "Critique")
+                    if (studentStatus == "Ok" && (niveauRisque is "Eleve" or "Critique"))
                     {
                         result.RisqueEleve++;
 
@@ -533,9 +555,11 @@ namespace PlateformePFA.API.Controllers
             return Ok(result);
         }
 
-        // POST: api/predictions/predict/5
         [HttpPost("predict/{etudiantId}")]
-        public async Task<ActionResult<PredictionML>> PredictForEtudiant(int etudiantId)
+        public async Task<ActionResult<PredictionML>> PredictForEtudiant(
+            int etudiantId,
+            [FromQuery] string? annee = null,
+            [FromQuery] string? semestre = null)
         {
             var etudiant = await _context.Etudiants
                 .Include(e => e.Notes)
@@ -544,67 +568,109 @@ namespace PlateformePFA.API.Controllers
 
             if (etudiant == null) return NotFound(new { message = "Étudiant introuvable." });
 
-            var notes    = etudiant.Notes    ?? new List<Note>();
+            var targetAnnee = annee ?? _configuration["CurrentAcademicYear"] ?? AcademicPeriod.CurrentAcademicYear();
+            var targetSemestre = semestre;
+            var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(targetAnnee, targetSemestre);
+
+            var notes = etudiant.Notes ?? new List<Note>();
             var absences = etudiant.Absences ?? new List<Absence>();
 
-            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
-            int nbModules = notes.Select(n => n.ModuleId).Distinct().Count();
+            var filteredNotes = notes
+                .Where(n => n.Annee == targetAnnee && (targetSemestre == null || n.Semestre == targetSemestre))
+                .ToList();
+            var notesAvecFinal = filteredNotes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules = filteredNotes.Select(n => n.ModuleId).Distinct().Count();
 
-            // Refuse to call ML when we'd violate its `nb_modules >= 1` schema —
-            // ML would 422 and the previous code silently saved a polluted
-            // ScoreRisque=0 row. Be explicit: short-circuit with InsufficientData.
             if (nbModules == 0 || notesAvecFinal.Count == 0)
             {
                 return UnprocessableEntity(new
                 {
-                    message = "Données insuffisantes : aucune note finale enregistrée pour cet étudiant.",
+                    message = "Données insuffisantes : aucune note finale enregistrée pour la période sélectionnée.",
                     nbModules,
                     nbNotesFinal = notesAvecFinal.Count,
                 });
             }
 
-            decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
+            if (nbModules < 1 || nbModules > 30)
+            {
+                return UnprocessableEntity(new
+                {
+                    message = "Nombre de modules invalide pour la prédiction (doit être entre 1 et 30).",
+                    nbModules
+                });
+            }
 
-            // taux_absence = unjustified hours / scheduled hours (capped at 1.0).
-            // 32h/module is a coarse estimate (2h/week × 16 weeks); replace with
-            // module.HeuresParSemaine when that field exists.
+            var filteredAbsences = absences
+                .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                .ToList();
+
+            decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
             double scheduledHours = nbModules * 32.0;
-            int    absenceHours   = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
-            double tauxAbsence    = Math.Min(absenceHours / scheduledHours, 1.0);
+            int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 
             var features = new
             {
                 moyenne_generale = moyenneGenerale,
-                taux_absence     = tauxAbsence,
-                nb_modules       = nbModules,
+                taux_absence = tauxAbsence,
+                nb_modules = nbModules,
             };
 
-            decimal? scoreRisque  = null;
-            string?  niveauRisque = null;
-            string   status       = "Ok";
-            string   featuresJson = JsonSerializer.Serialize(features);
+            decimal? scoreRisque = null;
+            string? niveauRisque = null;
+            string status = "Ok";
+            string featuresJson = JsonSerializer.Serialize(features);
 
             try
             {
                 var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
-                var client   = _httpClientFactory.CreateClient("MLService");
+                var client = _httpClientFactory.CreateClient("MLService");
 
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict")
                 {
                     Content = new StringContent(featuresJson, Encoding.UTF8, "application/json"),
                 };
-                request.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"]);
+                request.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"] ?? "");
 
                 var response = await client.SendAsync(request);
 
                 if (response.IsSuccessStatusCode)
                 {
                     var body = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(body);
-                    if (doc.RootElement.TryGetProperty("probabilite", out var prob))
-                        scoreRisque = prob.GetDecimal();
-                    if (doc.RootElement.TryGetProperty("niveau_risque", out var niveau))
-                        niveauRisque = niveau.GetString();
+                    bool isValid = false;
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(body);
+                        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                            doc.RootElement.TryGetProperty("probabilite", out var prob) &&
+                            doc.RootElement.TryGetProperty("niveau_risque", out var niveau))
+                        {
+                            var probVal = prob.GetDecimal();
+                            var niveauVal = niveau.GetString();
+
+                            if (probVal >= 0.0m && probVal <= 1.0m &&
+                                (niveauVal == "Faible" || niveauVal == "Moyen" || niveauVal == "Eleve" || niveauVal == "Élevé" || niveauVal == "Critique"))
+                            {
+                                scoreRisque = probVal;
+                                niveauRisque = niveauVal;
+                                if (niveauRisque == "Élevé")
+                                {
+                                    niveauRisque = "Eleve";
+                                }
+                                isValid = true;
+                            }
+                        }
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        _logger.LogWarning(jsonEx, "Failed to parse ML response body");
+                    }
+
+                    if (!isValid)
+                    {
+                        status = "InvalidResponse";
+                        _logger.LogWarning("ML service returned malformed or out of bounds response: {Body}", body);
+                    }
                 }
                 else
                 {
@@ -619,36 +685,42 @@ namespace PlateformePFA.API.Controllers
                 _logger.LogWarning(ex, "ML service unreachable for etudiantId={Id}", etudiantId);
             }
 
-            // If ML failed, surface the failure rather than persisting a misleading 0.
             if (status != "Ok")
             {
+                var failedPrediction = new PredictionML
+                {
+                    EtudiantId = etudiantId,
+                    TypeModele = "RisqueEchec",
+                    ScoreRisque = null,
+                    Niveau = null,
+                    Status = status,
+                    Annee = targetAnnee,
+                    CreeLe = DateTime.UtcNow,
+                };
+                _context.PredictionsML.Add(failedPrediction);
+                await _context.SaveChangesAsync();
+
                 return StatusCode(StatusCodes.Status502BadGateway, new
                 {
-                    message = "Service ML indisponible. Aucune prédiction enregistrée.",
+                    message = "Service ML indisponible ou réponse invalide. Aucune prédiction enregistrée.",
                     status,
                 });
             }
 
-            // Read the academic year from configuration; fall back to a UTC computation.
-            var annee = _configuration["CurrentAcademicYear"] ?? CurrentAcademicYear();
-
             var prediction = new PredictionML
             {
-                EtudiantId  = etudiantId,
-                TypeModele  = "RisqueEchec",
+                EtudiantId = etudiantId,
+                TypeModele = "RisqueEchec",
                 ScoreRisque = scoreRisque,
-                Niveau      = niveauRisque,
-                Status      = status,
-                Annee       = annee,
-                CreeLe      = DateTime.UtcNow,
+                Niveau = niveauRisque,
+                Status = status,
+                Annee = targetAnnee,
+                CreeLe = DateTime.UtcNow,
             };
 
             _context.PredictionsML.Add(prediction);
             await _context.SaveChangesAsync();
 
-            // Insert an Alerte for high-risk predictions. Trust the ML label —
-            // single source of truth for thresholds, no duplicated magic numbers.
-            // Dedupe + escalate so repeated predictions don't pile up duplicates.
             if (niveauRisque is "Eleve" or "Critique")
             {
                 await _alertes.UpsertRiskAlertAsync(
@@ -666,19 +738,6 @@ namespace PlateformePFA.API.Controllers
             return CreatedAtAction(nameof(GetPrediction), new { id = prediction.Id }, prediction);
         }
 
-        /// <summary>
-        /// Academic year in "YYYY/YYYY" form. The school year flips on 1 September:
-        /// dates before September belong to the previous start year.
-        /// </summary>
-        private static string CurrentAcademicYear()
-        {
-            var now = DateTime.UtcNow;
-            var start = now.Month >= 9 ? now.Year : now.Year - 1;
-            return $"{start}/{start + 1}";
-        }
-
-        /// <summary>
-        /// Pulls AUC + model version from the ML service so the summary page
         /// agrees with the dashboard card. Returns <c>(0.0, "—")</c> if the
         /// ML service is unreachable — the page still renders, just without
         /// the headline number.

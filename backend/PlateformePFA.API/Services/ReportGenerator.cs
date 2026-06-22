@@ -7,6 +7,7 @@ using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using System.Globalization;
 using System.Text;
+using PlateformePFA.API.Helpers;
 
 namespace PlateformePFA.API.Services
 {
@@ -86,7 +87,7 @@ namespace PlateformePFA.API.Services
         {
             // Parse the period selector ("Semestre 2 · 2025/2026" → annee=2025/2026, sem=S2).
             var (annee, semestre) = ParsePeriode(periode);
-            var (windowStart, windowEnd) = SemesterDateRange(annee, semestre);
+            var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(annee, semestre);
 
             // Apply filière filter at the SQL level so the report is fast even
             // on a real cohort.
@@ -544,7 +545,7 @@ namespace PlateformePFA.API.Services
         {
             var match = System.Text.RegularExpressions.Regex.Match(
                 periode ?? string.Empty, @"\d{4}/\d{4}");
-            var annee = match.Success ? match.Value : CurrentAcademicYear();
+            var annee = match.Success ? match.Value : AcademicPeriod.CurrentAcademicYear();
             string? sem = null;
             if (!string.IsNullOrEmpty(periode))
             {
@@ -554,20 +555,6 @@ namespace PlateformePFA.API.Services
             return (annee, sem);
         }
 
-        private static (DateTime Start, DateTime End) SemesterDateRange(string annee, string? semestre)
-        {
-            var parts = annee.Split('/');
-            if (!int.TryParse(parts[0], out var startYear)) startYear = DateTime.UtcNow.Year;
-            if (semestre == "S1") return (new DateTime(startYear, 9, 1), new DateTime(startYear + 1, 2, 1));
-            if (semestre == "S2") return (new DateTime(startYear + 1, 2, 1), new DateTime(startYear + 1, 8, 1));
-            return (new DateTime(startYear, 9, 1), new DateTime(startYear + 1, 8, 1));
-        }
 
-        private static string CurrentAcademicYear()
-        {
-            var now = DateTime.UtcNow;
-            var start = now.Month >= 9 ? now.Year : now.Year - 1;
-            return $"{start}/{start + 1}";
-        }
     }
 }
