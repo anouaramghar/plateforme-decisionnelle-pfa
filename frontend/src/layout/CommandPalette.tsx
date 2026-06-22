@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
+import { canRunBatchPredictions } from '../auth/roles'
 
 interface PaletteItem {
   label: string
@@ -39,7 +40,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [active, setActive]     = useState(0)
   const [status, setStatus]     = useState<Record<string, 'idle' | 'loading' | 'ok' | 'err'>>({})
   const listRef = useRef<HTMLDivElement>(null)
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin      = user?.role === 'Admin'
+  const canBatch     = canRunBatchPredictions(user?.role)
 
   // Top-3 highest-risk students from the real API
   const { data: topStudents = [] } = useQuery({
@@ -70,11 +72,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   }
 
   const ACTION_ITEMS: PaletteItem[] = [
-    {
+    ...(canBatch ? [{
       label: 'Lancer une prédiction batch…',
-      icon: 'spark',
+      icon: 'spark' as IconName,
       action: () => runAction('batch', () => api.post('/predictions/batch', {}).then(() => {})),
-    },
+    }] : []),
     ...(isAdmin ? [{
       label: 'Synchroniser le Data Warehouse',
       icon: 'refresh' as IconName,

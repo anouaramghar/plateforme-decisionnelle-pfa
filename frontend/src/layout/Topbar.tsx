@@ -5,6 +5,7 @@ import { Icon } from '../components/ui/Icon'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
+import { canCreateStudent, canRunBatchPredictions } from '../auth/roles'
 
 const BREADCRUMBS: Record<string, [string, string]> = {
   '/dashboard':   ['Pilotage', 'Tableau de bord'],
@@ -80,22 +81,24 @@ export function Topbar({ onCommandOpen, onCopilotOpen, copilotActive }: TopbarPr
     finally { setSyncLoading(false); setNouveauOpen(false) }
   }
 
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin  = user?.role === 'Admin'
+  const canAddStudent = canCreateStudent(user?.role)
+  const canBatch      = canRunBatchPredictions(user?.role)
 
   const NOUVEAU_ITEMS: NouveauItem[] = [
-    {
+    ...(canAddStudent ? [{
       label: 'Ajouter un étudiant',
-      icon: 'students',
+      icon: 'students' as Parameters<typeof Icon>[0]['name'],
       action: () => { navigate('/admin', { state: { tab: 'etudiants' } }); setNouveauOpen(false) },
-    },
-    {
+    }] : []),
+    ...(canBatch ? [{
       label: batchLoading ? 'Calcul en cours…' : 'Prédictions batch',
-      icon: 'brain',
+      icon: 'brain' as Parameters<typeof Icon>[0]['name'],
       action: runBatch,
-    },
+    }] : []),
     {
       label: syncLoading ? 'Sync en cours…' : 'Synchroniser DW',
-      icon: 'refresh',
+      icon: 'refresh' as Parameters<typeof Icon>[0]['name'],
       action: runSync,
       adminOnly: true,
     },

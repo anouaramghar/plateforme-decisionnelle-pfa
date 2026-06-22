@@ -20,3 +20,11 @@ export function canAccessRolePage(role: string | null | undefined, page: RolePag
   if (role === 'Admin') return true
   return page === 'enseignant' ? role === 'Enseignant' : role === 'Responsable'
 }
+
+export function canCreateStudent(role?: string | null): boolean {
+  return role === 'Admin' || role === 'Responsable'
+}
+
+export function canRunBatchPredictions(role?: string | null): boolean {
+  return role === 'Admin' || role === 'Responsable'
+}

@@ -79,6 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient])
 
   const login = useCallback(async (email: string, password: string) => {
+    // Cancel any inflight queries and wipe the cache so the previous user's
+    // data cannot bleed through into the new session.
+    await queryClient.cancelQueries()
+    queryClient.clear()
     const res = await api.post('/auth/login', { email, motDePasse: password })
     const { token: jwt, refreshToken: refresh, email: userEmail, role, nomComplet } = res.data
     setAuthToken(jwt)
@@ -94,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('Copilot session creation failed:', err)
       setCopilotActive(false)
     }
-  }, [])
+  }, [queryClient])
 
   return (
     <AuthContext.Provider value={{ token, user, copilotActive, login, logout }}>

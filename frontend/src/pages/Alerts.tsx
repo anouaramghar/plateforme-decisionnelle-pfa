@@ -75,9 +75,12 @@ export default function Alerts() {
 
   const resolveMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`, {}),
-    onSuccess: (_res, id) => {
-      queryClient.invalidateQueries({ queryKey: ['alertes'] })
-      queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] })
+    onSuccess: async (_res, id) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+        queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] }),
+        queryClient.invalidateQueries({ queryKey: ['sidebar', 'alertes-unresolved'] }),
+      ])
       const alerte = all.find(a => a.id === id)
       if (alerte) {
         const nom = alerte.etudiant
@@ -93,7 +96,13 @@ export default function Alerts() {
   // Scoped to the filtered view so the action matches what the user is looking at.
   const resolveAllMutation = useMutation({
     mutationFn: (ids: number[]) => api.patch('/alertes/batch-resolve', { ids }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['alertes'] }),
+        queryClient.invalidateQueries({ queryKey: ['topbar', 'alertes-unresolved'] }),
+        queryClient.invalidateQueries({ queryKey: ['sidebar', 'alertes-unresolved'] }),
+      ])
+    },
   })
 
   const filtered = all.filter(a => {
