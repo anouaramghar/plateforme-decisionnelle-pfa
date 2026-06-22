@@ -132,6 +132,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<RiskScorer>();
 builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 builder.Services.AddScoped<IAcademicAccessService, AcademicAccessService>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
 builder.Services.AddHttpClient("MLService");
 

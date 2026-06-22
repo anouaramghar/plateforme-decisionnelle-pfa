@@ -412,6 +412,40 @@ namespace PlateformePFA.API.Data
                                      AND object_id = OBJECT_ID('dbo.CaseNotes'))
                     CREATE INDEX IX_CaseNotes_CaseId ON CaseNotes(CaseId);
             ");
+
+            // 17. CaseCommunications — outbound emails; rendered text stored as sent.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NULL
+                CREATE TABLE CaseCommunications (
+                    Id           INT IDENTITY(1,1) PRIMARY KEY,
+                    CaseId       INT           NOT NULL REFERENCES InterventionCases(Id),
+                    Destinataire NVARCHAR(200) NOT NULL,
+                    TemplateId   NVARCHAR(60)  NOT NULL DEFAULT '',
+                    Sujet        NVARCHAR(300) NOT NULL,
+                    Corps        NVARCHAR(4000) NOT NULL,
+                    Status       NVARCHAR(20)  NOT NULL DEFAULT 'Queued',
+                    Erreur       NVARCHAR(500) NULL,
+                    CreeLe       DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+                    EnvoyeLe     DATETIME2     NULL,
+                    CreeParId    INT NULL REFERENCES Utilisateurs(Id)
+                );
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
+                                   WHERE name = 'IX_CaseCommunications_CaseId_Status'
+                                     AND object_id = OBJECT_ID('dbo.CaseCommunications'))
+                    CREATE INDEX IX_CaseCommunications_CaseId_Status ON CaseCommunications(CaseId, Status);
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_CaseCommunications_Status'
+                                     AND parent_object_id = OBJECT_ID('dbo.CaseCommunications'))
+                    ALTER TABLE CaseCommunications
+                        ADD CONSTRAINT CK_CaseCommunications_Status
+                        CHECK (Status IN ('Queued','Sent','Failed'));
+            ");
         }
     }
 }

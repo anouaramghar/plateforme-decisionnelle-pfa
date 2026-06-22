@@ -21,12 +21,14 @@ namespace PlateformePFA.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IAuditService _audit;
+        private readonly IEmailSender _email;
         private readonly ILogger<InterventionCasesController> _logger;
 
-        public InterventionCasesController(AppDbContext context, IAuditService audit, ILogger<InterventionCasesController> logger)
+        public InterventionCasesController(AppDbContext context, IAuditService audit, IEmailSender email, ILogger<InterventionCasesController> logger)
         {
             _context = context;
             _audit   = audit;
+            _email   = email;
             _logger  = logger;
         }
 
@@ -292,6 +294,92 @@ namespace PlateformePFA.API.Controllers
             });
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetNotes), new { id }, note);
+        }
+
+        // ── Communications (email) ────────────────────────────────────────────
+
+        // GET: api/intervention-cases/5/communications
+        [HttpGet("{id}/communications")]
+        public async Task<ActionResult<IEnumerable<CaseCommunication>>> GetCommunications(int id)
+        {
+            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+                return NotFound(new { message = "Cas introuvable." });
+
+            return await _context.CaseCommunications.AsNoTracking()
+                .Where(cc => cc.CaseId == id)
+                .OrderByDescending(cc => cc.CreeLe)
+                .ToListAsync();
+        }
+
+        // POST: api/intervention-cases/5/communications
+        // The explicit POST is the staff confirmation. Renders server-side from
+        // the student, stores the rendered text, sends synchronously, records
+        // Sent/Failed. A failure is persisted (not thrown) and stays retryable.
+        [HttpPost("{id}/communications")]
+        public async Task<ActionResult<CaseCommunication>> SendCommunication(int id, SendCommunicationDto dto)
+        {
+            var c = await _context.InterventionCases.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            if (c == null) return NotFound(new { message = "Cas introuvable." });
+
+            if (!EmailTemplates.All.TryGetValue(dto.TemplateId, out var template))
+                return BadRequest(new { message = "Modèle d'email inconnu." });
+
+            var etu = await _context.Etudiants.AsNoTracking().FirstOrDefaultAsync(e => e.Id == c.EtudiantId);
+            if (etu == null) return BadRequest(new { message = "Étudiant introuvable." });
+            if (string.IsNullOrWhiteSpace(etu.Email))
+                return BadRequest(new { message = "L'étudiant n'a pas d'adresse email." });
+
+            var (userId, userName) = CurrentUser();
+            var (sujet, corps) = EmailTemplates.Render(template, etu.Prenom, etu.Nom, etu.Matricule);
+
+            var comm = new CaseCommunication
+            {
+                CaseId       = id,
+                Destinataire = etu.Email!,
+                TemplateId   = template.Id,
+                Sujet        = sujet,
+                Corps        = corps,
+                Status       = "Queued",
+                CreeParId    = userId,
+            };
+            _context.CaseCommunications.Add(comm);
+            await _context.SaveChangesAsync(); // persist Queued before attempting send
+
+            await TrySendAsync(comm, userId, userName);
+            return CreatedAtAction(nameof(GetCommunications), new { id }, comm);
+        }
+
+        // POST: api/intervention-cases/5/communications/9/retry
+        // Re-sends the STORED subject/body (never re-renders) so history is intact.
+        [HttpPost("{id}/communications/{commId}/retry")]
+        public async Task<IActionResult> RetryCommunication(int id, int commId)
+        {
+            var comm = await _context.CaseCommunications.FirstOrDefaultAsync(cc => cc.Id == commId && cc.CaseId == id);
+            if (comm == null) return NotFound(new { message = "Communication introuvable." });
+            if (comm.Status != "Failed")
+                return BadRequest(new { message = "Seules les communications échouées peuvent être renvoyées." });
+
+            var (userId, userName) = CurrentUser();
+            await TrySendAsync(comm, userId, userName);
+            return NoContent();
+        }
+
+        // Attempts the SMTP send and persists the outcome + a timeline event.
+        private async Task TrySendAsync(CaseCommunication comm, int? userId, string userName)
+        {
+            var (ok, error) = await _email.SendAsync(comm.Destinataire, comm.Sujet, comm.Corps);
+            comm.Status = ok ? "Sent" : "Failed";
+            comm.Erreur = error;
+            if (ok) comm.EnvoyeLe = DateTime.UtcNow;
+
+            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = comm.CaseId,
+                Action = ok ? "EmailSent" : "EmailFailed",
+                Description = ok ? comm.Sujet : $"Échec : {comm.Sujet}",
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+            await _context.SaveChangesAsync();
         }
     }
 }

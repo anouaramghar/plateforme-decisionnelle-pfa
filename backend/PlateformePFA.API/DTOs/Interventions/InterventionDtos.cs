@@ -55,4 +55,10 @@ namespace PlateformePFA.API.DTOs.Interventions
         public string Contenu { get; set; } = string.Empty;
         public bool IsPrivate { get; set; }
     }
+
+    public class SendCommunicationDto
+    {
+        [Required, MaxLength(60)]
+        public string TemplateId { get; set; } = string.Empty;
+    }
 }

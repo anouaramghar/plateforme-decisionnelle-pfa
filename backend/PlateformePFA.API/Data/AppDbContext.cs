@@ -27,6 +27,7 @@ namespace PlateformePFA.API.Data
         public DbSet<CaseTimelineEvent> CaseTimelineEvents { get; set; }
         public DbSet<CaseTask>          CaseTasks          { get; set; }
         public DbSet<CaseNote>          CaseNotes          { get; set; }
+        public DbSet<CaseCommunication> CaseCommunications { get; set; }
 
         // ── Copilot ──────────────────────────────────────────────────────────
         public DbSet<AlertDraft>          AlertDrafts          { get; set; }
@@ -110,6 +111,8 @@ namespace PlateformePFA.API.Data
                 .HasIndex(t => new { t.CaseId, t.Done });
             modelBuilder.Entity<CaseNote>()
                 .HasIndex(n => n.CaseId);
+            modelBuilder.Entity<CaseCommunication>()
+                .HasIndex(cc => new { cc.CaseId, cc.Status });
 
             // ── Copilot ──────────────────────────────────────────────────────
             modelBuilder.Entity<AlertDraft>()
