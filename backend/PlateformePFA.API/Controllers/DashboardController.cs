@@ -34,6 +34,36 @@ namespace PlateformePFA.API.Controllers
             _academicAccess = academicAccess;
         }
 
+        // GET: api/dashboard/interventions
+        // Intervention KPIs for the Admin/Responsable dashboards. ponytail: both
+        // roles see institution-wide numbers (matches the rest of the app, which
+        // doesn't filière-scope Responsable yet). Enseignant case views land with
+        // the teacher-access slice.
+        [Authorize(Roles = "Admin,Responsable")]
+        [HttpGet("interventions")]
+        public async Task<ActionResult<InterventionDashboardDto>> GetInterventions()
+        {
+            var now = DateTime.UtcNow;
+            var openStates = new[] { CaseWorkflowState.Resolved, CaseWorkflowState.Closed };
+
+            var cases = _context.InterventionCases.AsNoTracking();
+            var open  = cases.Where(c => !openStates.Contains(c.Etat));
+
+            return new InterventionDashboardDto
+            {
+                TriageQueue     = await _context.Alertes.AsNoTracking()
+                                      .CountAsync(a => !a.Resolue && a.CaseId == null),
+                OpenCases       = await open.CountAsync(),
+                UnassignedCases = await open.CountAsync(c => c.OwnerId == null),
+                EscalatedCases  = await cases.CountAsync(c => c.Etat == CaseWorkflowState.Escalated),
+                OverdueCases    = await open.CountAsync(c => c.DueDate != null && c.DueDate < now),
+                OverdueTasks    = await _context.CaseTasks.AsNoTracking()
+                                      .CountAsync(t => !t.Done && t.DueDate != null && t.DueDate < now),
+                FailedEmails    = await _context.CaseCommunications.AsNoTracking()
+                                      .CountAsync(cc => cc.Status == "Failed"),
+            };
+        }
+
         // GET: api/dashboard/activity?limit=8
         // Returns recent rows from AuditEntries (capped at 100). Powers the
         // dashboard's right-rail "Activité récente" feed.
