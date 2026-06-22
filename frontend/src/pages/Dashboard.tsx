@@ -14,7 +14,24 @@ import { useFiliere } from '../context/FiliereContext'
 
 const SPARK = [22, 28, 30, 26, 32, 38, 42, 40, 46, 52, 48, 55, 62, 58]
 
+interface ModelMetrics {
+  auc?: number
+  f1?: number
+  precision?: number
+  recall?: number
+  mae?: number
+  r2?: number
+  nSamples: number
+  modelVersion: string
+  trainedAt: string | null
+  source: 'computed' | 'metadata'
+  dataSource: string
+  splitStrategy: string
+}
+
 interface MlMetrics {
+  risk?: ModelMetrics
+  forecast?: ModelMetrics
   auc: number
   f1: number
   precision: number
@@ -23,6 +40,8 @@ interface MlMetrics {
   modelVersion: string
   trainedAt: string | null
   source: 'computed' | 'metadata'
+  dataSource?: string
+  splitStrategy?: string
 }
 
 async function fetchMlMetrics(): Promise<MlMetrics> {

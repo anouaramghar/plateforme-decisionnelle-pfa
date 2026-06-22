@@ -53,7 +53,24 @@ interface BatchResult {
   risqueEleve: number
 }
 
+interface ModelMetrics {
+  auc?: number
+  f1?: number
+  precision?: number
+  recall?: number
+  mae?: number
+  r2?: number
+  nSamples: number
+  modelVersion: string
+  trainedAt: string | null
+  source: 'computed' | 'metadata'
+  dataSource: string
+  splitStrategy: string
+}
+
 interface MlMetrics {
+  risk?: ModelMetrics
+  forecast?: ModelMetrics
   auc: number
   f1: number
   precision: number
@@ -62,6 +79,8 @@ interface MlMetrics {
   modelVersion: string
   trainedAt: string | null
   source: 'computed' | 'metadata'
+  dataSource?: string
+  splitStrategy?: string
 }
 
 async function fetchSummary(): Promise<PredictionsSummary> {
@@ -304,12 +323,25 @@ export default function Predictions() {
           </div>
         </div>
       )}
+
+      {(ml?.risk?.dataSource === 'synthetic' || ml?.forecast?.dataSource === 'synthetic' || ml?.dataSource === 'synthetic') && (
+        <div
+          className="card p-3 text-[12.5px] flex items-center gap-3 mb-4"
+          style={{ background: 'var(--accent-50)', borderColor: 'var(--accent-300)', color: 'var(--accent-700)' }}
+        >
+          <Icon name="warning" size={14} />
+          <span>
+            Modèle de démonstration entraîné sur des données synthétiques — ne pas utiliser pour une décision pédagogique.
+          </span>
+        </div>
+      )}
+
       <div className="flex items-end justify-between">
         <div>
           <div className="cap mb-1">
-            Modèle XGBoost {ml?.modelVersion ?? '…'} · AUC {ml?.auc?.toFixed(2) ?? '—'}
-            {ml?.trainedAt
-              ? ` · ré-entraîné ${new Date(ml.trainedAt).toLocaleDateString('fr-FR')}`
+            Modèle XGBoost {ml?.risk?.modelVersion ?? ml?.modelVersion ?? '…'} · AUC {ml?.risk?.auc?.toFixed(2) ?? ml?.auc?.toFixed(2) ?? '—'}
+            {(ml?.risk?.trainedAt || ml?.trainedAt)
+              ? ` · ré-entraîné ${new Date(ml?.risk?.trainedAt ?? ml?.trainedAt!).toLocaleDateString('fr-FR')}`
               : ''}
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight">Prédictions ML</h1>
