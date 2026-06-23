@@ -12,6 +12,9 @@ const NIVEAU_TONE: Record<string, PillTone> = {
   Critique: 'bad', Eleve: 'bad', Moyen: 'warn', Faible: 'neutral',
 }
 
+// Risk score (0–1) → pill colour, same thresholds as the backend priority blend.
+const riskTone = (s: number): PillTone => (s >= 0.6 ? 'bad' : s >= 0.35 ? 'warn' : 'neutral')
+
 export default function Triage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -25,7 +28,7 @@ export default function Triage() {
   const openCase = useMutation({
     mutationFn: (g: TriageGroup) => createCase({
       etudiantId: g.etudiantId,
-      motif: `${g.signalCount} signal(s) — ${g.maxNiveau}`,
+      motif: g.resume,
       priorite: g.suggestedPriorite,
       alerteId: g.signals[0]?.id,
     }),
@@ -50,7 +53,7 @@ export default function Triage() {
       <div>
         <div className="cap mb-1 flex items-center gap-2">
           <span className="pill-dot live-dot" style={{ background: 'var(--accent-500)' }} />
-          File de triage — regroupée par étudiant, actualisée toutes les 30 s
+          Classée par risque prédit — top 50, actualisée toutes les 30 s
         </div>
         <h1 className="text-[22px] font-semibold tracking-tight">Triage des signaux</h1>
       </div>
@@ -76,7 +79,10 @@ export default function Triage() {
             style={{ borderBottom: i < groups.length - 1 ? '1px solid var(--border)' : 'none' }}
           >
             <div className="flex items-center gap-3">
-              <Pill tone={NIVEAU_TONE[g.maxNiveau] ?? 'neutral'} dot>
+              <Pill tone={riskTone(g.scoreRisque)} dot>
+                {Math.round(g.scoreRisque * 100)}%
+              </Pill>
+              <Pill tone={NIVEAU_TONE[g.maxNiveau] ?? 'neutral'}>
                 {PRIORITE_LABELS[g.suggestedPriorite] ?? g.suggestedPriorite}
               </Pill>
               <button
@@ -86,7 +92,10 @@ export default function Triage() {
                 {g.etudiantNom || `Étudiant #${g.etudiantId}`}
               </button>
               <span className="cap font-mono">· {g.matricule}</span>
-              <span className="cap">· {g.signalCount} signal(s)</span>
+              <span className="cap">
+                · {g.moyenne != null ? `moyenne ${g.moyenne}` : 'aucune note'}
+                {g.absencesH > 0 && ` · ${g.absencesH}h abs.`}
+              </span>
               <div className="flex-1" />
               {g.openCaseId ? (
                 <button className="btn btn-sm" onClick={() => navigate(`/cases/${g.openCaseId}`)}>

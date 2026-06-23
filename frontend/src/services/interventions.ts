@@ -53,6 +53,10 @@ export interface TriageGroup {
   signalCount: number
   maxNiveau: string
   suggestedPriorite: string
+  scoreRisque: number       // 0–1 predicted risk
+  moyenne: number | null
+  absencesH: number
+  resume: string            // one-line motif
   openCaseId: number | null
   signals: TriageSignal[]
 }

@@ -20,8 +20,14 @@ namespace PlateformePFA.API.DTOs.Alertes
         public int FiliereId { get; set; }
 
         public int SignalCount { get; set; }
-        public string MaxNiveau { get; set; } = string.Empty;     // highest severity in the group
-        public string SuggestedPriorite { get; set; } = "Medium"; // mapped from MaxNiveau
+        public string MaxNiveau { get; set; } = string.Empty;     // highest raw-signal severity in the group
+        public string SuggestedPriorite { get; set; } = "Medium"; // blend of risk score + MaxNiveau
+
+        // Decision context: why this student is at the top of the queue.
+        public decimal ScoreRisque { get; set; }  // predicted risk 0.0–1.0 (ML or heuristic fallback)
+        public decimal? Moyenne { get; set; }      // current moyenne générale, null if no grades yet
+        public int AbsencesH { get; set; }         // total absence hours
+        public string Resume { get; set; } = "";   // one-line human motif, used as the case Motif
 
         // If the student already has an open case, the UI links the signals to it
         // instead of offering "open new case".

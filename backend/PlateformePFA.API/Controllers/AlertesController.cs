@@ -16,12 +16,14 @@ namespace PlateformePFA.API.Controllers
     public class AlertesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly RiskScorer _riskScorer;
         private readonly ILogger<AlertesController> _logger;
 
-        public AlertesController(AppDbContext context, ILogger<AlertesController> logger)
+        public AlertesController(AppDbContext context, RiskScorer riskScorer, ILogger<AlertesController> logger)
         {
-            _context = context;
-            _logger  = logger;
+            _context    = context;
+            _riskScorer = riskScorer;
+            _logger     = logger;
         }
 
         // GET: api/alertes?resolue=false&page=1&pageSize=20
@@ -106,40 +108,71 @@ namespace PlateformePFA.API.Controllers
                 .Select(g => new { EtudiantId = g.Key, CaseId = g.Max(c => c.Id) })
                 .ToDictionaryAsync(x => x.EtudiantId, x => x.CaseId);
 
+            // Academic context per student — same aggregation the dashboard uses,
+            // so a student's risk/moyenne reads identically across the app.
+            var stats = await _context.Etudiants.AsNoTracking()
+                .Where(e => etudiantIds.Contains(e.Id))
+                .Select(e => new
+                {
+                    e.Id,
+                    Moyenne = (decimal?)e.Notes!.Where(n => n.NoteFinal.HasValue).Average(n => n.NoteFinal),
+                    Absences = (int?)e.Absences!.Sum(a => a.NombreHeures) ?? 0,
+                })
+                .ToDictionaryAsync(x => x.Id, x => x);
+
+            var latestPredictions = await _riskScorer.GetLatestPredictionsAsync();
+
             var groups = signals
                 .GroupBy(s => s.EtudiantId)
                 .Select(g =>
                 {
                     var maxNiveau = g.Select(s => s.Niveau).OrderByDescending(NiveauRank).First();
                     var e = g.First().Etudiant;
+                    stats.TryGetValue(g.Key, out var st);
+                    var moyenne  = st?.Moyenne;
+                    var absences = st?.Absences ?? 0;
+                    var score    = _riskScorer.Score(moyenne, absences, g.Key, latestPredictions);
+                    var count    = g.Count();
                     return new TriageGroupDto
                     {
                         EtudiantId        = g.Key,
                         Matricule         = e?.Matricule ?? "",
                         EtudiantNom       = e == null ? "" : $"{e.Prenom} {e.Nom}".Trim(),
                         FiliereId         = e?.FiliereId ?? 0,
-                        SignalCount       = g.Count(),
+                        SignalCount       = count,
                         MaxNiveau         = maxNiveau,
-                        SuggestedPriorite = NiveauToPriorite(maxNiveau),
+                        SuggestedPriorite = RiskScorer.SuggestedPriorite(score, maxNiveau),
+                        ScoreRisque       = Math.Round(score, 2),
+                        Moyenne           = moyenne.HasValue ? Math.Round(moyenne.Value, 1) : null,
+                        AbsencesH         = absences,
+                        Resume            = BuildResume(score, moyenne, absences, count),
                         OpenCaseId        = openCaseByStudent.TryGetValue(g.Key, out var cid) ? cid : (int?)null,
                         Signals           = g.OrderByDescending(s => s.CreeLe).ToList(),
                     };
                 })
-                .OrderByDescending(grp => NiveauRank(grp.MaxNiveau))
+                // Risk score is the primary sort — the model decides who needs
+                // attention first; raw-signal severity and volume break ties.
+                .OrderByDescending(grp => grp.ScoreRisque)
+                .ThenByDescending(grp => NiveauRank(grp.MaxNiveau))
                 .ThenByDescending(grp => grp.SignalCount)
+                .Take(50) // ponytail: a focused top-50 queue, not a 500-row wall. Raise if counsellors clear it faster.
                 .ToList();
 
             return groups;
         }
 
+        private static string BuildResume(decimal score, decimal? moyenne, int absencesH, int signalCount)
+        {
+            var parts = new List<string> { $"Risque {Math.Round(score * 100)}%" };
+            if (moyenne.HasValue) parts.Add($"moyenne {Math.Round(moyenne.Value, 1)}");
+            if (absencesH > 0)    parts.Add($"{absencesH}h d'absence");
+            parts.Add($"{signalCount} signal(s)");
+            return string.Join(" · ", parts);
+        }
+
         private static int NiveauRank(string niveau) => niveau switch
         {
             "Critique" => 3, "Eleve" => 2, "Moyen" => 1, _ => 0,
-        };
-
-        private static string NiveauToPriorite(string niveau) => niveau switch
-        {
-            "Critique" => "Critical", "Eleve" => "High", "Moyen" => "Medium", _ => "Low",
         };
 
         // PATCH: api/alertes/5/dismiss  — dismiss a signal with a mandatory reason.

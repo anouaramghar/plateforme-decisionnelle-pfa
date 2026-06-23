@@ -54,6 +54,35 @@ public class RiskScorer
     public static string Bucket(decimal score) =>
         score >= 0.65m ? "eleve" : score >= 0.35m ? "modere" : "faible";
 
+    // ── Triage ranking ────────────────────────────────────────────────────────
+    // The alert engine's raw severity string → a case priority.
+    public static string NiveauToPriorite(string niveau) => niveau switch
+    {
+        "Critique" => "Critical", "Eleve" => "High", "Moyen" => "Medium", _ => "Low",
+    };
+
+    // The predicted risk score → a case priority.
+    public static string RiskToPriorite(decimal score) =>
+        score >= 0.80m ? "Critical" : score >= 0.60m ? "High" : score >= 0.35m ? "Medium" : "Low";
+
+    private static int PrioriteRank(string p) => p switch
+    {
+        "Critical" => 3, "High" => 2, "Medium" => 1, _ => 0,
+    };
+
+    /// <summary>
+    /// Triage priority = the more severe of (the model's risk score) and
+    /// (the worst raw signal). This is what connects intervention to prediction:
+    /// a high ML risk escalates a case even if the raw alerts look mild, and a
+    /// raw "Critique" signal is never down-ranked by an optimistic score.
+    /// </summary>
+    public static string SuggestedPriorite(decimal score, string maxSignalNiveau)
+    {
+        var fromRisk   = RiskToPriorite(score);
+        var fromSignal = NiveauToPriorite(maxSignalNiveau);
+        return PrioriteRank(fromRisk) >= PrioriteRank(fromSignal) ? fromRisk : fromSignal;
+    }
+
     public static string StatutLabel(decimal moyenne) =>
         moyenne == 0m ? "Suivi"
         : moyenne < 10m ? "En difficulté"
