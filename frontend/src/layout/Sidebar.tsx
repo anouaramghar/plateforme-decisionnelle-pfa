@@ -66,7 +66,6 @@ export function Sidebar() {
     { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
     ...(mayAccessAlerts
       ? [
-          { to: '/triage', label: 'Triage',          icon: 'filter' as IconName },
           { to: '/cases',  label: "Cas d'intervention", icon: 'bookmark' as IconName },
         ]
       : []),

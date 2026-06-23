@@ -15,7 +15,7 @@ const NIVEAU_TONE: Record<string, PillTone> = {
 // Risk score (0–1) → pill colour, same thresholds as the backend priority blend.
 const riskTone = (s: number): PillTone => (s >= 0.6 ? 'bad' : s >= 0.35 ? 'warn' : 'neutral')
 
-export default function Triage() {
+export default function Triage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
@@ -55,7 +55,7 @@ export default function Triage() {
           <span className="pill-dot live-dot" style={{ background: 'var(--accent-500)' }} />
           Classée par risque prédit — top 50, actualisée toutes les 30 s
         </div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Triage des signaux</h1>
+        {!embedded && <h1 className="text-[22px] font-semibold tracking-tight">Triage des signaux</h1>}
       </div>
 
       <div className="card overflow-hidden">

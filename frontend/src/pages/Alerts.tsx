@@ -57,7 +57,7 @@ async function fetchAlertes(): Promise<BackendAlerte[]> {
   return res.data.items
 }
 
-export default function Alerts() {
+export default function Alerts({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth()
   const canResolve = user?.role !== 'Enseignant'
   const navigate = useNavigate()
@@ -173,7 +173,7 @@ export default function Alerts() {
             <span className="pill-dot live-dot" style={{ background: 'var(--accent-500)' }} />
             Mise à jour automatique toutes les 30 secondes
           </div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>
+          {!embedded && <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>}
         </div>
         <div className="flex items-center gap-2">
           {canResolve && (
