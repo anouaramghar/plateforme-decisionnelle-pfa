@@ -24,7 +24,7 @@ interface AuthContextValue {
   token: string | null
   user: AuthUser | null
   copilotActive: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<string>
   logout: () => void
 }
 
@@ -119,6 +119,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('Copilot session creation failed:', err)
       setCopilotActive(false)
     }
+
+    // Return the role so the caller can route to the right home before the
+    // `user` state update has propagated.
+    return role as string
   }, [queryClient])
 
   return (

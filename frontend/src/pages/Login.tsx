@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useAuth } from '../context/AuthContext'
+import { homeFor } from '../auth/roles'
 import { Field } from '../components/ui/Field'
 import { Icon } from '../components/ui/Icon'
 import { PasswordInput } from '../components/ui/PasswordInput'
@@ -31,8 +32,8 @@ export default function Login() {
   const onSubmit = async ({ email, password }: FormValues) => {
     try {
       setError(null)
-      await login(email, password)
-      navigate('/dashboard')
+      const role = await login(email, password)
+      navigate(homeFor(role))
     } catch {
       setError('Email ou mot de passe incorrect.')
     }

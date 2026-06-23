@@ -60,19 +60,21 @@ export function Sidebar() {
     staleTime: 4 * 60_000,
   })
 
+  const isEns   = user?.role === 'Enseignant'
+  const isResp  = user?.role === 'Responsable'
+  const isAdmin = user?.role === 'Admin'
+
+  // Each role's own workspace leads the list; institution tools follow and are
+  // hidden when the role can't use them.
   const PRIMARY: NavEntry[] = [
-    { to: '/dashboard',   label: 'Tableau de bord', icon: 'dashboard' },
-    { to: '/students',    label: 'Étudiants',       icon: 'students',   badge: etudiantsCount },
-    { to: '/alerts',      label: 'Alertes',         icon: 'bell',       badge: alertesData, badgeTone: 'bad' },
-    ...(mayAccessAlerts
-      ? [
-          { to: '/cases',  label: "Cas d'intervention", icon: 'bookmark' as IconName },
-        ]
-      : []),
-    ...(user?.role !== 'Enseignant'
-      ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }]
-      : []),
-    { to: '/reports',     label: 'Rapports',        icon: 'doc' },
+    ...(isEns  ? [{ to: '/enseignant',  label: 'Mon espace', icon: 'doc' as IconName }] : []),
+    ...(isResp ? [{ to: '/responsable', label: 'Mon espace', icon: 'graduation' as IconName }] : []),
+    ...(isAdmin || isResp ? [{ to: '/dashboard', label: 'Tableau de bord', icon: 'dashboard' as IconName }] : []),
+    { to: '/students', label: 'Étudiants', icon: 'students', badge: etudiantsCount },
+    ...(mayAccessAlerts ? [{ to: '/alerts', label: 'Alertes', icon: 'bell' as IconName, badge: alertesData, badgeTone: 'bad' as const }] : []),
+    ...(mayAccessAlerts ? [{ to: '/cases',  label: "Cas d'intervention", icon: 'bookmark' as IconName }] : []),
+    ...(!isEns ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }] : []),
+    { to: '/reports', label: 'Rapports', icon: 'doc' },
   ]
 
   // Best-effort display name; fall back to the email's local part if the
@@ -205,8 +207,8 @@ export function Sidebar() {
       )}
 
       <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-3">
-        {!sidebarCollapsed && <div className="nav-section-title">Pilotage</div>}
-        {PRIMARY.filter(it => it.to !== '/alerts' || mayAccessAlerts).map(it => (
+        {!sidebarCollapsed && <div className="nav-section-title">{isEns ? 'Enseignement' : 'Pilotage'}</div>}
+        {PRIMARY.map(it => (
           <NavLink
             key={it.to}
             to={it.to}
@@ -227,18 +229,6 @@ export function Sidebar() {
         ))}
 
         {!sidebarCollapsed && <div className="nav-section-title">Système</div>}
-        {user?.role === 'Enseignant' && (
-          <NavLink to="/enseignant" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Icon name="doc" size={15} />
-            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Enseignant</span>}
-          </NavLink>
-        )}
-        {user?.role === 'Responsable' && (
-          <NavLink to="/responsable" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Icon name="graduation" size={15} />
-            {!sidebarCollapsed && <span className="flex-1 truncate">Espace Responsable</span>}
-          </NavLink>
-        )}
         {SECONDARY.filter(it => it.to !== '/admin' || user?.role === 'Admin').map(it => (
           <NavLink
             key={it.to}

@@ -15,10 +15,17 @@ import Settings from './pages/Settings'
 import Enseignant from './pages/Enseignant'
 import Responsable from './pages/Responsable'
 import { RoleRoute } from './components/auth/RoleRoute'
+import { homeFor } from './auth/roles'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
   return token ? <>{children}</> : <Navigate to="/login" replace />
+}
+
+// "/" lands each role on its own home, not a one-size-fits-all dashboard.
+function RoleHome() {
+  const { user } = useAuth()
+  return <Navigate to={homeFor(user?.role)} replace />
 }
 
 export default function App() {
@@ -34,7 +41,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<RoleHome />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />

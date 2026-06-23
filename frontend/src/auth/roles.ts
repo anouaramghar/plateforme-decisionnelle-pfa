@@ -1,5 +1,13 @@
 export type RolePage = 'enseignant' | 'responsable'
 
+// Each role's real home — the page that matches what they actually do.
+// Teachers enter grades/absences; responsables steer a cohort; admins pilot.
+export function homeFor(role?: string | null): string {
+  return role === 'Enseignant' ? '/enseignant'
+    : role === 'Responsable' ? '/responsable'
+    : '/dashboard'
+}
+
 export function canManageStudents(role?: string | null): boolean {
   return role === 'Admin' || role === 'Responsable'
 }
