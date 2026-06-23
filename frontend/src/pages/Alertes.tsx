@@ -18,7 +18,10 @@ export default function Alertes() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>
+      <div>
+        <div className="cap mb-1">Signaux automatiques · triage et journal</div>
+        <h1 className="text-[22px] font-semibold tracking-tight">Alertes</h1>
+      </div>
 
       <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
         {tabs.map(t => (

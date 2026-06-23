@@ -31,7 +31,10 @@ export default function Cases() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-[22px] font-semibold tracking-tight">Cas d'intervention</h1>
+      <div>
+        <div className="cap mb-1">Suivi des interventions</div>
+        <h1 className="text-[22px] font-semibold tracking-tight">Cas d'intervention</h1>
+      </div>
 
       <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
         {([
