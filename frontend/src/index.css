@@ -79,11 +79,15 @@ body {
   letter-spacing: -0.005em;
   font-feature-settings: 'ss01', 'cv11';
 }
+/* Editorial display voice — Instrument Serif, italic. The brand's warmth
+   lives here: used for accent words in headings and large display numbers,
+   never for body or UI chrome. (Previously mis-set to Inter, which isn't even
+   loaded, so this rendered as plain bold sans.) */
 .display-serif {
-  font-family: 'Inter', 'Segoe UI', sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-style: normal;
+  font-family: 'Instrument Serif', serif;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0;
 }
 .font-mono {
   font-family: 'Geist Mono', ui-monospace, monospace;

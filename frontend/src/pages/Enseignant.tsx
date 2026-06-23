@@ -209,7 +209,7 @@ export default function Enseignant() {
         <div>
           <div className="cap mb-1">Espace Enseignant</div>
           <h1 className="text-[22px] font-semibold tracking-tight">
-            Bonjour, {user?.nom || 'Enseignant'}
+            Bonjour, <span className="display-serif" style={{ fontSize: '1.15em' }}>{user?.nom || 'Enseignant'}</span>
           </h1>
         </div>
         {monModule && (

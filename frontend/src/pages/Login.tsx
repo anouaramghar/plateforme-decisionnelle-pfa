@@ -90,7 +90,7 @@ export default function Login() {
           </div>
           <h1 className="text-[42px] font-bold leading-[1.08]" style={{ letterSpacing: '-0.03em' }}>
             Décider, anticiper, accompagner —{' '}
-            <span style={{ color: 'var(--accent-400)' }}>chaque étudiant compte</span>.
+            <span className="display-serif" style={{ color: 'var(--accent-400)' }}>chaque étudiant compte</span>.
           </h1>
           <p
             className="mt-4 text-[13.5px] leading-relaxed"

@@ -68,7 +68,7 @@ export default function Responsable() {
         <div>
           <div className="cap mb-1">Espace Responsable</div>
           <h1 className="text-[22px] font-semibold tracking-tight">
-            Bonjour, {user?.nom || 'Responsable'}
+            Bonjour, <span className="display-serif" style={{ fontSize: '1.15em' }}>{user?.nom || 'Responsable'}</span>
           </h1>
         </div>
         <div className="cap">
