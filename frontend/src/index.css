@@ -236,6 +236,9 @@ html.dark .pill-accent { color: var(--accent-300); }
 .btn-sm { height: 26px; padding: 0 8px;  font-size: 12px; }
 .btn-lg { height: 36px; padding: 0 14px; font-size: 13px; }
 
+/* Native <dialog> backdrop (used by ui/Modal) */
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+
 /* Input */
 .input {
   width: 100%;

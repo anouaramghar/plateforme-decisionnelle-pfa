@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
+import { Modal } from '../components/ui/Modal'
+import type { AxiosError } from 'axios'
 import {
   fetchCase, transitionCase, fetchTasks, createTask, completeTask,
   fetchNotes, createNote, fetchCommunications, sendCommunication, retryCommunication,
@@ -29,29 +31,47 @@ export default function CaseDetail() {
     qc.invalidateQueries({ queryKey: ['cases'] })
   }
 
+  // Transitions that need extra input open a dialog instead of a prompt chain:
+  // resolving needs an outcome + summary; reopening needs a reason.
+  const [dialog, setDialog] = useState<{ to: string; kind: 'resolve' | 'reopen' } | null>(null)
+  const [form, setForm] = useState<{ outcome: string; summary: string; raison: string }>(
+    { outcome: OUTCOMES[0], summary: '', raison: '' },
+  )
+
   const transition = useMutation({
     mutationFn: (body: Parameters<typeof transitionCase>[1]) => transitionCase(caseId, body),
-    onSuccess: invalidate,
-    onError: (e: any) => alert(e?.response?.data?.message ?? 'Transition refusée.'),
+    onSuccess: () => { setDialog(null); invalidate() },
+    onError: (e) =>
+      alert((e as AxiosError<{ message?: string }>).response?.data?.message ?? 'Transition refusée.'),
   })
 
-  const doTransition = (to: string) => {
-    const body: Parameters<typeof transitionCase>[1] = { etat: to }
+  const startTransition = (to: string) => {
     if (to === 'Resolved') {
-      const outcome = window.prompt(`Résultat (${OUTCOMES.join(' / ')}) :`)
-      if (!outcome?.trim()) return
-      const summary = window.prompt('Résumé de résolution :')
-      if (!summary?.trim()) return
-      body.outcome = outcome.trim()
-      body.resolutionSummary = summary.trim()
+      setForm(f => ({ ...f, outcome: OUTCOMES[0], summary: '' }))
+      setDialog({ to, kind: 'resolve' })
+      return
     }
     const isReopen = (c?.etat === 'Resolved' || c?.etat === 'Closed') && to === 'InProgress'
     if (isReopen) {
-      const raison = window.prompt('Raison de réouverture :')
-      if (!raison?.trim()) return
-      body.raison = raison.trim()
+      setForm(f => ({ ...f, raison: '' }))
+      setDialog({ to, kind: 'reopen' })
+      return
     }
-    transition.mutate(body)
+    transition.mutate({ etat: to })
+  }
+
+  const resolveInvalid = !form.outcome || !form.summary.trim()
+  const reopenInvalid = !form.raison.trim()
+
+  const confirmDialog = () => {
+    if (!dialog) return
+    if (dialog.kind === 'resolve') {
+      if (resolveInvalid) return
+      transition.mutate({ etat: dialog.to, outcome: form.outcome, resolutionSummary: form.summary.trim() })
+    } else {
+      if (reopenInvalid) return
+      transition.mutate({ etat: dialog.to, raison: form.raison.trim() })
+    }
   }
 
   if (isLoading) return <div className="cap" style={{ color: 'var(--text-3)' }}>Chargement…</div>
@@ -89,7 +109,7 @@ export default function CaseDetail() {
             <button
               key={s}
               className="btn btn-sm"
-              onClick={() => doTransition(s)}
+              onClick={() => startTransition(s)}
               disabled={transition.isPending}
             >
               {ETAT_LABELS[s] ?? s}
@@ -105,6 +125,58 @@ export default function CaseDetail() {
       </div>
       <CommunicationsCard caseId={caseId} onChange={invalidate} />
       <TimelineCard events={c.timeline ?? []} />
+
+      <Modal
+        open={!!dialog}
+        onClose={() => setDialog(null)}
+        title={dialog?.kind === 'resolve' ? 'Résoudre le cas' : 'Rouvrir le cas'}
+      >
+        {dialog?.kind === 'resolve' ? (
+          <div className="space-y-3">
+            <label className="flex flex-col gap-1">
+              <span className="cap">Résultat</span>
+              <select
+                className="input"
+                value={form.outcome}
+                onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))}
+              >
+                {OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="cap">Résumé de résolution</span>
+              <textarea
+                className="input"
+                rows={3}
+                value={form.summary}
+                onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
+                placeholder="Ce qui a été fait et le résultat obtenu…"
+              />
+            </label>
+          </div>
+        ) : (
+          <label className="flex flex-col gap-1">
+            <span className="cap">Raison de réouverture</span>
+            <textarea
+              className="input"
+              rows={3}
+              value={form.raison}
+              onChange={e => setForm(f => ({ ...f, raison: e.target.value }))}
+              placeholder="Pourquoi ce cas est rouvert…"
+            />
+          </label>
+        )}
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-sm" onClick={() => setDialog(null)}>Annuler</button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={confirmDialog}
+            disabled={transition.isPending || (dialog?.kind === 'resolve' ? resolveInvalid : reopenInvalid)}
+          >
+            Confirmer
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

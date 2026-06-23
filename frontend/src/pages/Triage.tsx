@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
+import { Modal } from '../components/ui/Modal'
 import {
   fetchTriage, dismissSignal, createCase,
   PRIORITE_LABELS, type TriageGroup,
@@ -38,15 +40,18 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
     },
   })
 
+  const [dismissId, setDismissId] = useState<number | null>(null)
+  const [raison, setRaison] = useState('')
+
   const dismiss = useMutation({
-    mutationFn: ({ id, raison }: { id: number; raison: string }) => dismissSignal(id, raison),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['triage'] }),
+    mutationFn: ({ id, raison: r }: { id: number; raison: string }) => dismissSignal(id, r),
+    onSuccess: () => {
+      setDismissId(null)
+      qc.invalidateQueries({ queryKey: ['triage'] })
+    },
   })
 
-  const onDismiss = (signalId: number) => {
-    const raison = window.prompt('Raison du rejet de ce signal :')
-    if (raison && raison.trim()) dismiss.mutate({ id: signalId, raison: raison.trim() })
-  }
+  const onDismiss = (signalId: number) => { setRaison(''); setDismissId(signalId) }
 
   return (
     <div className="space-y-4">
@@ -136,6 +141,30 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
           </div>
         ))}
       </div>
+
+      <Modal open={dismissId !== null} onClose={() => setDismissId(null)} title="Rejeter le signal">
+        <label className="flex flex-col gap-1">
+          <span className="cap">Raison du rejet</span>
+          <textarea
+            className="input"
+            rows={3}
+            value={raison}
+            onChange={e => setRaison(e.target.value)}
+            placeholder="Pourquoi ce signal ne nécessite pas de cas…"
+            autoFocus
+          />
+        </label>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-sm" onClick={() => setDismissId(null)}>Annuler</button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => dismissId !== null && raison.trim() && dismiss.mutate({ id: dismissId, raison: raison.trim() })}
+            disabled={dismiss.isPending || !raison.trim()}
+          >
+            Rejeter
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
