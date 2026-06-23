@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
@@ -6,6 +6,7 @@ import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { useAuth } from '../context/AuthContext'
+import { useFiliere } from '../context/FiliereContext'
 import { api } from '../services/api'
 
 interface EtudiantRow {
@@ -35,7 +36,9 @@ export default function Responsable() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [filterFiliere, setFilterFiliere] = useState('TOUS')
+  // Scope follows the single global "Périmètre" picker in the sidebar — no
+  // second filière control that can drift out of sync with the rest of the app.
+  const { filiere: filterFiliere } = useFiliere()
 
   const { data: students = [], isLoading: loadingStudents } = useQuery({
     queryKey: ['etudiants-with-stats'], queryFn: fetchStudents, refetchInterval: 60_000,
@@ -48,8 +51,6 @@ export default function Responsable() {
     mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['responsable-alertes'] }),
   })
-
-  const filieres = useMemo(() => ['TOUS', ...Array.from(new Set(students.map(e => e.filiereCode))).sort()], [students])
 
   const scopedStudents = useMemo(
     () => filterFiliere === 'TOUS' ? students : students.filter(e => e.filiereCode === filterFiliere),
@@ -70,16 +71,8 @@ export default function Responsable() {
             Bonjour, {user?.nom || 'Responsable'}
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="cap">Filière :</span>
-          <select
-            className="input"
-            style={{ width: 'auto', paddingRight: 28 }}
-            value={filterFiliere}
-            onChange={e => setFilterFiliere(e.target.value)}
-          >
-            {filieres.map(f => <option key={f} value={f}>{f === 'TOUS' ? 'Toutes' : f}</option>)}
-          </select>
+        <div className="cap">
+          Périmètre : {filterFiliere === 'TOUS' ? 'Toutes filières' : `Filière ${filterFiliere}`}
         </div>
       </div>
 
