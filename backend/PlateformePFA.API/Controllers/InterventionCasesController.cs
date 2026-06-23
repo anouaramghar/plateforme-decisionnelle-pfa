@@ -40,6 +40,21 @@ namespace PlateformePFA.API.Controllers
             return (id, name);
         }
 
+        // Default owner when the caller doesn't pick one. ponytail: Utilisateur has no
+        // filière link, so "the filière Responsable" collapses to "a Responsable, else
+        // an Admin". Add filière scoping when a User→Filière mapping and a second
+        // Responsable exist.
+        private async Task<int?> ResolveDefaultOwnerAsync()
+        {
+            var responsable = await _context.Utilisateurs.AsNoTracking()
+                .Where(u => u.EstActif && u.Role == "Responsable")
+                .OrderBy(u => u.Id).Select(u => (int?)u.Id).FirstOrDefaultAsync();
+            if (responsable != null) return responsable;
+            return await _context.Utilisateurs.AsNoTracking()
+                .Where(u => u.EstActif && u.Role == "Admin")
+                .OrderBy(u => u.Id).Select(u => (int?)u.Id).FirstOrDefaultAsync();
+        }
+
         // GET: api/intervention-cases?etat=Open&etudiantId=5&page=1&pageSize=20
         [HttpGet]
         public async Task<ActionResult<PaginatedResult<InterventionCase>>> GetCases(
@@ -96,7 +111,7 @@ namespace PlateformePFA.API.Controllers
                 Motif      = dto.Motif,
                 Priorite   = dto.Priorite,
                 Etat       = CaseWorkflowState.Open,
-                OwnerId    = dto.OwnerId,
+                OwnerId    = dto.OwnerId ?? await ResolveDefaultOwnerAsync(),
                 DueDate    = dto.DueDate,
                 CreeLe     = DateTime.UtcNow,
                 CreeParId  = userId,
@@ -132,6 +147,69 @@ namespace PlateformePFA.API.Controllers
 
             _logger.LogInformation("Case créé : Id={Id}, EtudiantId={EtudiantId}", newCase.Id, newCase.EtudiantId);
             return CreatedAtAction(nameof(GetCase), new { id = newCase.Id }, newCase);
+        }
+
+        // POST: api/intervention-cases/5/link-signals
+        // Links un-triaged signals (Alertes) to an existing open case — the
+        // "link to existing case" outcome of the Intervention Copilot triage
+        // card, and the duplicate-case-prevention path. Each signal must belong
+        // to the case's student and not already be linked to a case. Idempotent:
+        // validated all-or-nothing — if any signal is missing or already linked,
+        // the whole request is rejected (no partial linking).
+        [HttpPost("{id}/link-signals")]
+        public async Task<IActionResult> LinkSignals(int id, LinkSignalsDto dto)
+        {
+            if (dto?.AlerteIds == null || dto.AlerteIds.Length == 0)
+                return BadRequest(new { message = "Aucun identifiant de signal fourni." });
+
+            var c = await _context.InterventionCases.FindAsync(id);
+            if (c == null) return NotFound(new { message = "Cas introuvable." });
+
+            // A resolved/closed case is not a valid link target — force the user
+            // to reopen or create a new case instead of burying signals in history.
+            if (c.Etat == CaseWorkflowState.Resolved || c.Etat == CaseWorkflowState.Closed)
+                return BadRequest(new { message = "Impossible de lier des signaux à un cas résolu ou clôturé." });
+
+            var (userId, userName) = CurrentUser();
+
+            var alertes = await _context.Alertes
+                .Where(a => dto.AlerteIds.Contains(a.Id))
+                .ToListAsync();
+
+            // Validate every signal before applying any change (all-or-nothing).
+            var distinctIds = dto.AlerteIds.Distinct().ToList();
+            if (alertes.Count != distinctIds.Count)
+                return BadRequest(new { message = "Un ou plusieurs signaux sont introuvables." });
+
+            foreach (var a in alertes)
+            {
+                if (a.EtudiantId != c.EtudiantId)
+                    return BadRequest(new { message = $"Le signal #{a.Id} n'appartient pas à l'étudiant de ce cas." });
+                if (a.CaseId.HasValue)
+                    return BadRequest(new { message = $"Le signal #{a.Id} est déjà lié à un cas." });
+            }
+
+            foreach (var a in alertes)
+            {
+                a.CaseId = c.Id;
+            }
+
+            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = c.Id,
+                Action = "SignalLinked",
+                Description = $"{alertes.Count} signal(aux) lié(s) au cas : {string.Join(", ", alertes.Select(a => a.Id))}.",
+                UtilisateurId = userId,
+                UtilisateurNom = userName,
+            });
+
+            await _context.SaveChangesAsync();
+            await _audit.LogAsync("LinkSignals", "InterventionCase", c.Id,
+                $"{alertes.Count} signaux liés", userId, userName);
+
+            _logger.LogInformation("Signaux liés au cas {CaseId} : {Ids}", c.Id,
+                string.Join(", ", alertes.Select(a => a.Id)));
+            return NoContent();
         }
 
         // PATCH: api/intervention-cases/5/transition
