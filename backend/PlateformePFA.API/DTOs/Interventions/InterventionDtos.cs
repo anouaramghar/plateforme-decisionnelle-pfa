@@ -61,4 +61,11 @@ namespace PlateformePFA.API.DTOs.Interventions
         [Required, MaxLength(60)]
         public string TemplateId { get; set; } = string.Empty;
     }
+
+    /// <summary>Links one or more un-triaged signals (Alertes) to an existing case.</summary>
+    public class LinkSignalsDto
+    {
+        [Required]
+        public int[] AlerteIds { get; set; } = Array.Empty<int>();
+    }
 }
