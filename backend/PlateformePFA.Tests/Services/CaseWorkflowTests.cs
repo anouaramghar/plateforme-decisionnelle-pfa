@@ -44,4 +44,20 @@ public class CaseWorkflowTests
         CaseWorkflow.CanTransition("Resolved", "Closed", Facts(monitoring: false)).ok.Should().BeFalse();
         CaseWorkflow.CanTransition("Resolved", "Closed", Facts(monitoring: true)).ok.Should().BeTrue();
     }
+
+    [Fact]
+    public void IsCriticalOverdue_only_for_critical_past_due_active_cases()
+    {
+        var now = new DateTime(2026, 6, 23, 12, 0, 0, DateTimeKind.Utc);
+        var past = now.AddDays(-1);
+        var future = now.AddDays(1);
+
+        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", past, now).Should().BeTrue();
+        CaseWorkflow.IsCriticalOverdue("InProgress", "High",     past, now).Should().BeFalse(); // not critical
+        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", future, now).Should().BeFalse(); // not overdue
+        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", null, now).Should().BeFalse(); // no due date
+        CaseWorkflow.IsCriticalOverdue("Resolved",   "Critical", past, now).Should().BeFalse(); // terminal
+        CaseWorkflow.IsCriticalOverdue("Closed",     "Critical", past, now).Should().BeFalse(); // terminal
+        CaseWorkflow.IsCriticalOverdue("Escalated",  "Critical", past, now).Should().BeFalse(); // already escalated
+    }
 }

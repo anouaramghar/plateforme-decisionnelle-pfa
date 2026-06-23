@@ -59,5 +59,18 @@ namespace PlateformePFA.API.Services
 
             return (true, null);
         }
+
+        /// <summary>
+        /// True when a case must auto-escalate: Critical priority, past its due
+        /// date, and not already in a terminal/escalated state.
+        /// </summary>
+        public static bool IsCriticalOverdue(string etat, string priorite, DateTime? dueDate, DateTime now)
+        {
+            if (priorite != "Critical") return false;
+            if (etat == CaseWorkflowState.Resolved
+                || etat == CaseWorkflowState.Closed
+                || etat == CaseWorkflowState.Escalated) return false;
+            return dueDate.HasValue && dueDate.Value < now;
+        }
     }
 }

@@ -133,6 +133,8 @@ builder.Services.AddScoped<RiskScorer>();
 builder.Services.AddScoped<PlateformePFA.API.Services.ReportGenerator>();
 builder.Services.AddScoped<IAcademicAccessService, AcademicAccessService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<CaseEscalationService>();
+builder.Services.AddHostedService<CaseEscalationWorker>();
 
 builder.Services.AddHttpClient("MLService");
 
