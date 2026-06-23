@@ -56,6 +56,29 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         return body!.Id;
     }
 
+    private async Task<HttpClient> TeacherClientAsync()
+    {
+        using (var ctx = _factory.CreateContext())
+        {
+            SampleData.SeedOne(ctx);
+            var module = ctx.Modules.Single(m => m.Code == "GI01");
+            if (!ctx.Utilisateurs.Any(u => u.Email == "teacher@eniad.ma"))
+            {
+                ctx.Utilisateurs.Add(new Utilisateur
+                {
+                    Email = "teacher@eniad.ma", Nom = "Teach", Prenom = "Er",
+                    MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("TeacherPass!2026"),
+                    Role = "Enseignant", EstActif = true, ModuleId = module.Id,
+                });
+                ctx.SaveChanges();
+            }
+        }
+        var client = _factory.CreateClient();
+        var token = await AuthHelper.GetTokenAsync(client, "teacher@eniad.ma", "TeacherPass!2026");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
     private async Task<int> CreateSignalAsync(AppDbContext ctx, int etuId)
     {
         var a = new Alerte
@@ -255,5 +278,69 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         var created = check.InterventionCases.OrderByDescending(c => c.Id).First();
         var resp = check.Utilisateurs.Single(u => u.Email == "resp1@eniad.ma");
         created.OwnerId.Should().Be(resp.Id);
+    }
+
+    [Fact]
+    public async Task Teacher_can_read_case_and_add_note_but_not_close_or_see_private_notes()
+    {
+        var admin = await AuthedClientAsync();
+        int etuId; using (var ctx = _factory.CreateContext()) etuId = StudentId(ctx);
+        var caseId = await CreateCaseAsync(admin, etuId);
+
+        // Admin seeds one private note.
+        (await admin.PostAsJsonAsync($"/api/intervention-cases/{caseId}/notes",
+            new { contenu = "PRIVATE responsable note", isPrivate = true }))
+            .EnsureSuccessStatusCode();
+
+        var teacher = await TeacherClientAsync();
+
+        // Read the case: allowed (student is in the teacher's cohort).
+        (await teacher.GetAsync($"/api/intervention-cases/{caseId}")).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        // Add a note: allowed, and forced non-private.
+        var noteRes = await teacher.PostAsJsonAsync($"/api/intervention-cases/{caseId}/notes",
+            new { contenu = "Module evidence from teacher", isPrivate = true });
+        noteRes.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // List notes: the private responsable note is hidden; the teacher's own is forced public.
+        var notes = await (await teacher.GetAsync($"/api/intervention-cases/{caseId}/notes"))
+            .Content.ReadFromJsonAsync<List<CaseNote>>();
+        notes!.Should().NotContain(n => n.Contenu.StartsWith("PRIVATE"));
+        notes!.Single(n => n.Contenu.StartsWith("Module evidence")).IsPrivate.Should().BeFalse();
+
+        // Close / transition: forbidden.
+        (await teacher.PatchAsJsonAsync($"/api/intervention-cases/{caseId}/transition",
+            new { etat = "InProgress" })).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden);
+
+        // Send communication: forbidden.
+        (await teacher.PostAsJsonAsync($"/api/intervention-cases/{caseId}/communications",
+            new { templateId = "academic_warning" })).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Teacher_cannot_read_case_outside_their_cohort()
+    {
+        var admin = await AuthedClientAsync();
+        int outsiderId;
+        using (var ctx = _factory.CreateContext())
+        {
+            // A student in a different niveau than the teacher's CI1 cohort.
+            var fil = ctx.Filieres.Single(f => f.Code == "GI");
+            var outsider = new Etudiant
+            {
+                Matricule = "E90001", Nom = "Out", Prenom = "Sider",
+                FiliereId = fil.Id, Niveau = "CI3", Annee = "2025/2026",
+            };
+            ctx.Etudiants.Add(outsider); ctx.SaveChanges();
+            outsiderId = outsider.Id;
+        }
+        var caseId = await CreateCaseAsync(admin, outsiderId);
+
+        var teacher = await TeacherClientAsync();
+        (await teacher.GetAsync($"/api/intervention-cases/{caseId}")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
     }
 }

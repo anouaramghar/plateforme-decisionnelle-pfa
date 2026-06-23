@@ -14,7 +14,7 @@ namespace PlateformePFA.API.Controllers
     // for now the whole controller is Admin/Responsable only (defense in depth).
     // ponytail: Responsable sees all filières, matching AlertesController. Per-filière
     // scoping is a refinement — add when a second Responsable exists.
-    [Authorize(Roles = "Admin,Responsable")]
+    [Authorize]
     [Route("api/intervention-cases")]
     [ApiController]
     public class InterventionCasesController : ControllerBase
@@ -22,13 +22,15 @@ namespace PlateformePFA.API.Controllers
         private readonly AppDbContext _context;
         private readonly IAuditService _audit;
         private readonly IEmailSender _email;
+        private readonly IAcademicAccessService _academicAccess;
         private readonly ILogger<InterventionCasesController> _logger;
 
-        public InterventionCasesController(AppDbContext context, IAuditService audit, IEmailSender email, ILogger<InterventionCasesController> logger)
+        public InterventionCasesController(AppDbContext context, IAuditService audit, IEmailSender email, IAcademicAccessService academicAccess, ILogger<InterventionCasesController> logger)
         {
             _context = context;
             _audit   = audit;
             _email   = email;
+            _academicAccess = academicAccess;
             _logger  = logger;
         }
 
@@ -38,6 +40,21 @@ namespace PlateformePFA.API.Controllers
             int? id = int.TryParse(idClaim, out var uid) ? uid : null;
             var name = User.FindFirstValue("NomComplet") ?? User.FindFirstValue(ClaimTypes.Email) ?? "Système";
             return (id, name);
+        }
+
+        private bool IsPrivileged() => User.IsInRole("Admin") || User.IsInRole("Responsable");
+
+        // A teacher may only touch a case whose student is in their module cohort.
+        // Admin/Responsable are unrestricted. Returns false (caller maps to 404)
+        // for an out-of-cohort or unresolved-cohort teacher.
+        private async Task<bool> CanAccessCaseAsync(int etudiantId)
+        {
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+            if (cohort.Unrestricted) return true;
+            if (!cohort.HasCohort) return false;
+            var etu = await _context.Etudiants.AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == etudiantId);
+            return etu != null && etu.FiliereId == cohort.FiliereId && etu.Niveau == cohort.Niveau;
         }
 
         // Default owner when the caller doesn't pick one. ponytail: Utilisateur has no
@@ -70,6 +87,18 @@ namespace PlateformePFA.API.Controllers
             if (!string.IsNullOrWhiteSpace(etat)) query = query.Where(c => c.Etat == etat);
             if (etudiantId.HasValue)              query = query.Where(c => c.EtudiantId == etudiantId.Value);
 
+            // Teachers see only cases for students in their module cohort.
+            var cohort = await _academicAccess.GetCohortScopeAsync(User);
+            if (!cohort.Unrestricted)
+            {
+                if (!cohort.HasCohort)
+                    return new PaginatedResult<InterventionCase>(new List<InterventionCase>(), 0, page, pageSize);
+                var cohortStudentIds = _context.Etudiants
+                    .Where(e => e.FiliereId == cohort.FiliereId && e.Niveau == cohort.Niveau)
+                    .Select(e => e.Id);
+                query = query.Where(c => cohortStudentIds.Contains(c.EtudiantId));
+            }
+
             var ordered = query.OrderByDescending(c => c.CreeLe);
             var total   = await ordered.CountAsync();
             var items   = await ordered
@@ -91,10 +120,13 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (c == null) return NotFound(new { message = "Cas introuvable." });
+            if (!await CanAccessCaseAsync(c.EtudiantId))
+                return NotFound(new { message = "Cas introuvable." });
             return c;
         }
 
         // POST: api/intervention-cases
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost]
         public async Task<ActionResult<InterventionCase>> CreateCase(CreateCaseDto dto)
         {
@@ -156,6 +188,7 @@ namespace PlateformePFA.API.Controllers
         // to the case's student and not already be linked to a case. Idempotent:
         // validated all-or-nothing — if any signal is missing or already linked,
         // the whole request is rejected (no partial linking).
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost("{id}/link-signals")]
         public async Task<IActionResult> LinkSignals(int id, LinkSignalsDto dto)
         {
@@ -213,6 +246,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         // PATCH: api/intervention-cases/5/transition
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPatch("{id}/transition")]
         public async Task<IActionResult> Transition(int id, TransitionCaseDto dto)
         {
@@ -278,7 +312,9 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("{id}/tasks")]
         public async Task<ActionResult<IEnumerable<CaseTask>>> GetTasks(int id)
         {
-            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+            var owningEtudiantId = await _context.InterventionCases
+                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
+            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
             return await _context.CaseTasks.AsNoTracking()
@@ -291,7 +327,9 @@ namespace PlateformePFA.API.Controllers
         [HttpPost("{id}/tasks")]
         public async Task<ActionResult<CaseTask>> CreateTask(int id, CreateTaskDto dto)
         {
-            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+            var owningEtudiantId = await _context.InterventionCases
+                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
+            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
             var (userId, userName) = CurrentUser();
@@ -320,6 +358,10 @@ namespace PlateformePFA.API.Controllers
             var task = await _context.CaseTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.CaseId == id);
             if (task == null) return NotFound(new { message = "Tâche introuvable." });
             if (task.Done) return BadRequest(new { message = "Tâche déjà terminée." });
+            if (!await CanAccessCaseAsync(
+                    await _context.InterventionCases.Where(c => c.Id == id)
+                        .Select(c => c.EtudiantId).FirstAsync()))
+                return NotFound(new { message = "Cas introuvable." });
 
             var (userId, userName) = CurrentUser();
             task.Done               = true;
@@ -341,23 +383,26 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("{id}/notes")]
         public async Task<ActionResult<IEnumerable<CaseNote>>> GetNotes(int id)
         {
-            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+            var owningEtudiantId = await _context.InterventionCases
+                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
+            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
             // ponytail: controller is Admin/Responsable only, so all notes are
             // visible here. The IsPrivate filter belongs in the teacher-access
             // slice — add `.Where(n => !n.IsPrivate)` for non-privileged callers then.
-            return await _context.CaseNotes.AsNoTracking()
-                .Where(n => n.CaseId == id)
-                .OrderByDescending(n => n.CreeLe)
-                .ToListAsync();
+            var notesQuery = _context.CaseNotes.AsNoTracking().Where(n => n.CaseId == id);
+            if (!IsPrivileged()) notesQuery = notesQuery.Where(n => !n.IsPrivate);
+            return await notesQuery.OrderByDescending(n => n.CreeLe).ToListAsync();
         }
 
         // POST: api/intervention-cases/5/notes
         [HttpPost("{id}/notes")]
         public async Task<ActionResult<CaseNote>> CreateNote(int id, CreateNoteDto dto)
         {
-            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+            var owningEtudiantId = await _context.InterventionCases
+                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
+            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
             var (userId, userName) = CurrentUser();
@@ -365,7 +410,7 @@ namespace PlateformePFA.API.Controllers
             {
                 CaseId    = id,
                 Contenu   = dto.Contenu,
-                IsPrivate = dto.IsPrivate,
+                IsPrivate = IsPrivileged() && dto.IsPrivate,
                 AuteurId  = userId,
                 AuteurNom = userName,
             };
@@ -373,7 +418,7 @@ namespace PlateformePFA.API.Controllers
             _context.CaseTimelineEvents.Add(new CaseTimelineEvent
             {
                 CaseId = id, Action = "NoteAdded",
-                Description = dto.IsPrivate ? "Note privée ajoutée." : "Note ajoutée.",
+                Description = note.IsPrivate ? "Note privée ajoutée." : "Note ajoutée.",
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
             await _context.SaveChangesAsync();
@@ -386,7 +431,9 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("{id}/communications")]
         public async Task<ActionResult<IEnumerable<CaseCommunication>>> GetCommunications(int id)
         {
-            if (!await _context.InterventionCases.AnyAsync(c => c.Id == id))
+            var owningEtudiantId = await _context.InterventionCases
+                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
+            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
             return await _context.CaseCommunications.AsNoTracking()
@@ -399,6 +446,7 @@ namespace PlateformePFA.API.Controllers
         // The explicit POST is the staff confirmation. Renders server-side from
         // the student, stores the rendered text, sends synchronously, records
         // Sent/Failed. A failure is persisted (not thrown) and stays retryable.
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost("{id}/communications")]
         public async Task<ActionResult<CaseCommunication>> SendCommunication(int id, SendCommunicationDto dto)
         {
@@ -435,6 +483,7 @@ namespace PlateformePFA.API.Controllers
 
         // POST: api/intervention-cases/5/communications/9/retry
         // Re-sends the STORED subject/body (never re-renders) so history is intact.
+        [Authorize(Roles = "Admin,Responsable")]
         [HttpPost("{id}/communications/{commId}/retry")]
         public async Task<IActionResult> RetryCommunication(int id, int commId)
         {
