@@ -388,9 +388,7 @@ namespace PlateformePFA.API.Controllers
             if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
                 return NotFound(new { message = "Cas introuvable." });
 
-            // ponytail: controller is Admin/Responsable only, so all notes are
-            // visible here. The IsPrivate filter belongs in the teacher-access
-            // slice — add `.Where(n => !n.IsPrivate)` for non-privileged callers then.
+            // Non-privileged callers (Enseignant) never see private notes.
             var notesQuery = _context.CaseNotes.AsNoTracking().Where(n => n.CaseId == id);
             if (!IsPrivileged()) notesQuery = notesQuery.Where(n => !n.IsPrivate);
             return await notesQuery.OrderByDescending(n => n.CreeLe).ToListAsync();
