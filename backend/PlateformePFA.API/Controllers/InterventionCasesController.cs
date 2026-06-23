@@ -235,7 +235,9 @@ namespace PlateformePFA.API.Controllers
                 HasOwner:   c.OwnerId.HasValue,
                 HasOutcome: !string.IsNullOrWhiteSpace(dto.Outcome ?? c.Outcome)
                             && !string.IsNullOrWhiteSpace(dto.ResolutionSummary ?? c.ResolutionSummary),
-                HasReason:  !string.IsNullOrWhiteSpace(dto.Raison));
+                HasReason:  !string.IsNullOrWhiteSpace(dto.Raison),
+                // Monitoring is "done" when no follow-up date was set, or it has passed.
+                MonitoringComplete: c.FollowUpDate == null || c.FollowUpDate <= DateTime.UtcNow);
 
             var (ok, error) = CaseWorkflow.CanTransition(from, to, facts);
             if (!ok) return BadRequest(new { message = error });

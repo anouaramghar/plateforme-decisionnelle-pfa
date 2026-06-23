@@ -6,8 +6,8 @@ namespace PlateformePFA.Tests.Services;
 
 public class CaseWorkflowTests
 {
-    private static CaseWorkflow.CaseFacts Facts(bool owner = true, bool outcome = true, bool reason = true)
-        => new(HasOwner: owner, HasOutcome: outcome, HasReason: reason);
+    private static CaseWorkflow.CaseFacts Facts(bool owner = true, bool outcome = true, bool reason = true, bool monitoring = true)
+        => new(HasOwner: owner, HasOutcome: outcome, HasReason: reason, MonitoringComplete: monitoring);
 
     [Fact]
     public void Open_to_InProgress_needs_owner()
@@ -36,5 +36,12 @@ public class CaseWorkflowTests
         CaseWorkflow.CanTransition("Open", "Closed", Facts()).ok.Should().BeFalse();
         CaseWorkflow.CanTransition("Open", "Resolved", Facts()).ok.Should().BeFalse();
         CaseWorkflow.CanTransition("Closed", "Resolved", Facts()).ok.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Close_blocked_until_monitoring_period_finished()
+    {
+        CaseWorkflow.CanTransition("Resolved", "Closed", Facts(monitoring: false)).ok.Should().BeFalse();
+        CaseWorkflow.CanTransition("Resolved", "Closed", Facts(monitoring: true)).ok.Should().BeTrue();
     }
 }

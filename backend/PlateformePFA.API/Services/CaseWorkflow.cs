@@ -33,7 +33,7 @@ namespace PlateformePFA.API.Services
             [CaseWorkflowState.Closed]         = new[] { CaseWorkflowState.InProgress },                            // reopen only
         };
 
-        public readonly record struct CaseFacts(bool HasOwner, bool HasOutcome, bool HasReason);
+        public readonly record struct CaseFacts(bool HasOwner, bool HasOutcome, bool HasReason, bool MonitoringComplete);
 
         /// <returns>(true, null) if allowed; (false, reason) otherwise.</returns>
         public static (bool ok, string? error) CanTransition(string from, string to, CaseFacts facts)
@@ -47,6 +47,9 @@ namespace PlateformePFA.API.Services
 
             if (to == CaseWorkflowState.Resolved && !facts.HasOutcome)
                 return (false, "Un résultat et un résumé de résolution sont requis.");
+
+            if (to == CaseWorkflowState.Closed && !facts.MonitoringComplete)
+                return (false, "La période de suivi n'est pas terminée ; clôture impossible avant la date de suivi.");
 
             // Reopening a resolved/closed case must record a reason.
             var isReopen = (from == CaseWorkflowState.Resolved || from == CaseWorkflowState.Closed)
