@@ -120,9 +120,12 @@ export default function Settings() {
       <SectionCard title="Apparence">
         {/* Theme toggle */}
         <Row label="Thème" hint="Choix entre l'interface claire et sombre">
-          <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <div role="radiogroup" aria-label="Thème" className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             {THEMES.map(t => (
               <button
+                type="button"
+                role="radio"
+                aria-checked={theme === t.value}
                 key={t.value}
                 onClick={() => setTheme(t.value)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] transition-all"
@@ -142,9 +145,13 @@ export default function Settings() {
 
         {/* Accent color */}
         <Row label="Couleur d'accent" hint="Teinte principale des boutons, badges et graphiques">
-          <div className="flex items-center gap-2">
+          <div role="radiogroup" aria-label="Couleur d'accent" className="flex items-center gap-2">
             {ACCENT_COLORS.map(c => (
               <button
+                type="button"
+                role="radio"
+                aria-checked={accent === c.value}
+                aria-label={c.label}
                 key={c.value}
                 onClick={() => setAccent(c.value)}
                 title={c.label}
@@ -172,9 +179,12 @@ export default function Settings() {
 
         {/* Density */}
         <Row label="Densité de l'interface" hint="Espacement entre les éléments de la page">
-          <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <div role="radiogroup" aria-label="Densité de l'interface" className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             {DENSITIES.map(d => (
               <button
+                type="button"
+                role="radio"
+                aria-checked={density === d.value}
                 key={d.value}
                 onClick={() => setDensity(d.value)}
                 title={d.desc}
@@ -195,8 +205,10 @@ export default function Settings() {
         {/* Sidebar */}
         <Row label="Sidebar réduite" hint="Afficher uniquement les icônes dans la barre latérale">
           <button
+            type="button"
             role="switch"
             aria-checked={sidebarCollapsed}
+            aria-label="Réduire la barre latérale"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="relative flex-shrink-0"
             style={{

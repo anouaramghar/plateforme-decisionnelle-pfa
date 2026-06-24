@@ -68,8 +68,9 @@ public class AdminController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DW sync failed");
-            return StatusCode(500, new { message = "Erreur lors de la synchronisation.", detail = ex.Message });
+            var correlationId = Guid.NewGuid();
+            _logger.LogError(ex, "DW sync failed (correlationId={CorrelationId})", correlationId);
+            return StatusCode(500, new { message = "Erreur interne.", correlationId });
         }
     }
 
@@ -93,8 +94,9 @@ public class AdminController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "generate-alerts failed");
-            return StatusCode(500, new { message = "Erreur lors du scan.", detail = ex.Message });
+            var correlationId = Guid.NewGuid();
+            _logger.LogError(ex, "generate-alerts failed (correlationId={CorrelationId})", correlationId);
+            return StatusCode(500, new { message = "Erreur interne.", correlationId });
         }
     }
 }

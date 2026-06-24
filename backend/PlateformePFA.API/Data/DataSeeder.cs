@@ -41,6 +41,20 @@ namespace PlateformePFA.API.Data
 
             if (context.Filieres.Any()) return;
 
+            var seedSampleDataConfig = configuration["SEED_SAMPLE_DATA"];
+            bool seedSampleData;
+            if (bool.TryParse(seedSampleDataConfig, out var explicitFlag))
+            {
+                seedSampleData = explicitFlag;
+            }
+            else
+            {
+                var envName = configuration["ASPNETCORE_ENVIRONMENT"]
+                              ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                seedSampleData = string.Equals(envName, "Development", StringComparison.OrdinalIgnoreCase);
+            }
+            if (!seedSampleData) return;
+
             var anneeCourante = configuration["CurrentAcademicYear"]
                                 ?? CurrentAcademicYear();
 

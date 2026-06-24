@@ -55,8 +55,23 @@ namespace PlateformePFA.API.Controllers
             if (c == null) return NotFound(new { message = "Cas introuvable." });
             if (string.IsNullOrWhiteSpace(c.Etudiant.Email))
                 return BadRequest(new { message = "L'étudiant ne possède pas d'adresse email." });
-            if (await _db.CaseCommunications.AnyAsync(x => x.CaseId == caseId && x.Status == CommunicationStatus.Draft))
-                return Conflict(new { message = "Un brouillon existe déjà pour cette intervention." });
+            var hasPendingCommunication = await _db.CaseCommunications.AnyAsync(x =>
+                x.CaseId == caseId && x.TemplateId == OutreachTemplateId &&
+                (x.Status == CommunicationStatus.Draft ||
+                 x.Status == CommunicationStatus.Queued ||
+                 x.Status == CommunicationStatus.Failed));
+            if (hasPendingCommunication)
+                return Conflict(new { message = "Un brouillon ou un envoi en attente existe déjà pour cette intervention." });
+
+            // Guard: only advance the state when the case is still Open.
+            // A case that is already InProgress, WaitingStudent, etc. must not
+            // be unconditionally reset; Resolved/Closed cases must go through
+            // the proper reopen flow before a new draft can be prepared.
+            var mayStart = c.Etat == CaseWorkflowState.Open || c.Etat == CaseWorkflowState.InProgress;
+            var mayReschedule = c.Etat == CaseWorkflowState.WaitingStudent &&
+                (c.MeetingAttendance == "Absent" || c.MeetingAttendance == "Cancelled");
+            if (!mayStart && !mayReschedule)
+                return BadRequest(new { message = "L'état actuel du cas ne permet pas de préparer une invitation." });
 
             var (userId, userName) = CurrentUser();
             var comm = new CaseCommunication
@@ -69,7 +84,29 @@ namespace PlateformePFA.API.Controllers
                 Status       = CommunicationStatus.Draft,
                 CreeParId    = userId,
             };
-            c.Etat = CaseWorkflowState.InProgress;
+            // A new outreach cycle always starts in InProgress. This includes a
+            // reschedule after Absent/Cancelled; the previous schedule remains
+            // preserved in the immutable timeline.
+            if (c.Etat != CaseWorkflowState.InProgress)
+            {
+                var facts = new CaseWorkflow.CaseFacts(
+                    HasOwner: c.OwnerId.HasValue,
+                    HasOutcome: false,
+                    HasReason: false,
+                    MonitoringComplete: false,
+                    MeetingHeld: false);
+                var (ok, transitionError) = CaseWorkflow.CanTransition(c.Etat, CaseWorkflowState.InProgress, facts);
+                if (!ok) return BadRequest(new { message = transitionError });
+
+                c.Etat = CaseWorkflowState.InProgress;
+                if (mayReschedule)
+                {
+                    c.MeetingScheduledFor = null;
+                    c.MeetingLocation = null;
+                    c.MeetingAttendance = null;
+                    c.MeetingHeldAt = null;
+                }
+            }
             _db.CaseCommunications.Add(comm);
             _db.CaseTimelineEvents.Add(new CaseTimelineEvent
             {
@@ -138,7 +175,8 @@ namespace PlateformePFA.API.Controllers
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
 
-            await DeliverAsync(c, comm, userId, userName);
+            if (!await DeliverAsync(c, comm, userId, userName))
+                return Conflict(new { message = "Cet email est déjà en cours de traitement." });
             return NoContent();
         }
 
@@ -156,7 +194,12 @@ namespace PlateformePFA.API.Controllers
             if (c == null) return NotFound(new { message = "Cas introuvable." });
 
             var (userId, userName) = CurrentUser();
-            await DeliverAsync(c, comm, userId, userName);
+            if (c.Etat != CaseWorkflowState.InProgress || c.MeetingScheduledFor == null ||
+                string.IsNullOrWhiteSpace(c.MeetingLocation))
+                return BadRequest(new { message = "Le rendez-vous doit être replanifié avant de renvoyer l'invitation." });
+
+            if (!await DeliverAsync(c, comm, userId, userName))
+                return Conflict(new { message = "Cet email est déjà en cours de traitement." });
             return NoContent();
         }
 
@@ -215,13 +258,26 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
-        // Marks Queued, sends, then persists the authoritative outcome. The case
-        // only advances to WaitingStudent on a confirmed Sent.
-        private async Task DeliverAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
+        // Optimistically claims the send slot (Draft/Failed → Queued). The same
+        // SaveChanges also persists the meeting details and MeetingScheduled
+        // timeline event before SMTP, so an unknown delivery result retains the
+        // schedule staff reviewed.
+        private async Task<bool> DeliverAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
         {
             comm.Status = CommunicationStatus.Queued;
             comm.Erreur = null;
-            await _db.SaveChangesAsync(); // persist Queued + meeting details before the attempt
+            comm.ConcurrencyToken = Guid.NewGuid();
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogWarning(
+                    "DeliverAsync: commId={CommId} already claimed by another request — skipping send.",
+                    comm.Id);
+                return false;
+            }
 
             var (ok, error) = await _email.SendAsync(comm.Destinataire, comm.Sujet, comm.Corps);
             comm.Status = ok ? CommunicationStatus.Sent : CommunicationStatus.Failed;
@@ -240,6 +296,7 @@ namespace PlateformePFA.API.Controllers
             });
             await _db.SaveChangesAsync();
             await _audit.LogAsync(ok ? "EmailSent" : "EmailFailed", "InterventionCase", c.Id, comm.Sujet, userId, userName);
+            return true;
         }
     }
 }

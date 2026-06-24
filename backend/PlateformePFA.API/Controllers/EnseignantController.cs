@@ -15,18 +15,21 @@ namespace PlateformePFA.API.Controllers
 
         public EnseignantController(AppDbContext context) => _context = context;
 
-        private int CurrentUserId =>
-            int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        private int? CurrentUserId =>
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
         /// <summary>Returns the module (with its filière) assigned to the logged-in enseignant.</summary>
         [HttpGet("mon-module")]
         public async Task<IActionResult> GetMonModule()
         {
+            var userId = CurrentUserId;
+            if (userId is null) return Unauthorized();
+
             var utilisateur = await _context.Utilisateurs
                 .AsNoTracking()
                 .Include(u => u.Module)
                     .ThenInclude(m => m!.Filiere)
-                .FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+                .FirstOrDefaultAsync(u => u.Id == userId);
 
             if (utilisateur is null) return NotFound();
             if (utilisateur.ModuleId is null)
@@ -51,10 +54,13 @@ namespace PlateformePFA.API.Controllers
         [HttpGet("mes-etudiants")]
         public async Task<IActionResult> GetMesEtudiants()
         {
+            var userId = CurrentUserId;
+            if (userId is null) return Unauthorized();
+
             var utilisateur = await _context.Utilisateurs
                 .AsNoTracking()
                 .Include(u => u.Module)
-                .FirstOrDefaultAsync(u => u.Id == CurrentUserId);
+                .FirstOrDefaultAsync(u => u.Id == userId);
 
             if (utilisateur?.ModuleId is null)
                 return Ok(Array.Empty<object>());

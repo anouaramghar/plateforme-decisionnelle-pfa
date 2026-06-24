@@ -61,6 +61,10 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Filiere>> PostFiliere(CreateFiliereDto dto)
         {
+            if (dto.ResponsableId.HasValue &&
+                !await _context.Utilisateurs.AnyAsync(u => u.Id == dto.ResponsableId.Value && u.Role == "Responsable"))
+                return BadRequest(new { message = "ResponsableId doit référencer un utilisateur existant avec le rôle Responsable." });
+
             var filiere = new Filiere
             {
                 Code          = dto.Code,
@@ -84,6 +88,10 @@ namespace PlateformePFA.API.Controllers
             {
                 return NotFound(new { message = "Filière introuvable." });
             }
+
+            if (dto.ResponsableId.HasValue &&
+                !await _context.Utilisateurs.AnyAsync(u => u.Id == dto.ResponsableId.Value && u.Role == "Responsable"))
+                return BadRequest(new { message = "ResponsableId doit référencer un utilisateur existant avec le rôle Responsable." });
 
             filiere.Code          = dto.Code;
             filiere.Intitule      = dto.Intitule;

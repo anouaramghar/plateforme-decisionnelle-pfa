@@ -1,19 +1,18 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 import asyncio
 import logging
 import os
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import joblib
 
-from models.auto_train import ensure_all_models_async
+from models.auto_train import ensure_all_models_async, SAVED_MODELS_DIR
 from routers import predict, cluster, forecast, metrics
 
 logger = logging.getLogger(__name__)
-
-SAVED_MODELS_DIR = Path(__file__).parent / "saved_models"
 
 
 # ─── Lifespan: startup & shutdown logic ───────────────────────────────────────
@@ -26,11 +25,13 @@ async def lifespan(app: FastAPI):
     We load every trained model here and store them in app.state so any
     router can access them via request.app.state without reloading from disk.
     """
-    # Fail-fast on missing shared secret — never boot in an unauthenticated state.
-    if not os.getenv("ML_INTERNAL_TOKEN"):
+    # Fail-fast on missing or weak shared secret — never boot unauthenticated.
+    _token = os.getenv("ML_INTERNAL_TOKEN", "")
+    _PLACEHOLDER_TOKENS = {"change-me", "changeme", "placeholder", "your-secret-here", "xxx", "secret"}
+    if len(_token) < 32 or _token in _PLACEHOLDER_TOKENS:
         raise RuntimeError(
-            "ML_INTERNAL_TOKEN environment variable is required. "
-            "Set it to the same value as the backend's ML_INTERNAL_TOKEN."
+            "ML_INTERNAL_TOKEN must be set to a random string of >= 32 characters "
+            "and must not be a placeholder. Set it to the same value as the backend's ML_INTERNAL_TOKEN."
         )
 
     # Train any missing models before we try to load them.
@@ -76,13 +77,14 @@ async def lifespan(app: FastAPI):
 
 # ─── App definition ───────────────────────────────────────────────────────────
 
+_enable_docs = os.getenv("ML_ENABLE_DOCS", "1") == "1"
 app = FastAPI(
     title="PFA ML Service",
     description="Microservice ML — Plateforme Décisionnelle ENIAD",
     version="1.0.0",
     lifespan=lifespan,
-    # Hide /docs and /redoc in production (set via env var).
-    # During development they are useful — keep them on.
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
 )
 
 

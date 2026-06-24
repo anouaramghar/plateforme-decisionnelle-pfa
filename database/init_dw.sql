@@ -97,6 +97,26 @@ BEGIN
 END
 GO
 
--- NOTE: Copilot read-only DW access (pfa_app_readonly user + db_datareader) is
--- provisioned by database/copilot_readonly.sql, run on every boot by
--- entrypoint.sh so it rolls forward onto pre-existing volumes too.
+-- ─── Read access for the read-only login (Copilot query_dw + ML service) ──
+-- pfa_app_readonly login is created by copilot_readonly.sql, which entrypoint.sh
+-- runs AFTER init_dw.sql, so on cold first boot the login does not exist yet and
+-- this block is a no-op (copilot_readonly.sql grants db_datareader on its own
+-- run). On subsequent boots the login exists, so this idempotent block re-asserts
+-- the grant — keeping init_dw.sql self-describing for the DW's full reader set.
+USE PFA_DW;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app_readonly')
+   AND NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app_readonly')
+    CREATE USER pfa_app_readonly FOR LOGIN pfa_app_readonly;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'pfa_app_readonly')
+   AND IS_ROLEMEMBER('db_datareader', 'pfa_app_readonly') = 0
+    ALTER ROLE db_datareader ADD MEMBER pfa_app_readonly;
+GO
+
+-- NOTE: The pfa_app_readonly login itself is provisioned by
+-- database/copilot_readonly.sql, run on every boot by entrypoint.sh so it rolls
+-- forward onto pre-existing volumes too. Both the Copilot query_dw tool and the
+-- ML service connect as pfa_app_readonly (read-only on PFA_DW, no PFA_DB access).

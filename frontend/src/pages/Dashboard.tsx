@@ -277,31 +277,31 @@ export default function Dashboard() {
           </div>
           <Skeleton w={240} h={30} radius={7} />
         </div>
-        <div className="grid grid-cols-12 gap-4">
-          <div className="card-feature col-span-5 p-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="card-feature p-6 xl:col-span-5">
             <Skeleton w={120} h={12} className="mb-5" />
             <Skeleton w={180} h={56} className="mb-5" />
             <Skeleton w="100%" h={38} />
           </div>
-          <div className="col-span-7 grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 xl:col-span-7">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="card p-5 flex flex-col justify-between" style={{ minHeight: 124 }}>
                 <Skeleton w={80} h={11} className="mb-4" />
                 <Skeleton w={90} h={32} />
               </div>
             ))}
-            <div className="card p-4 col-span-3">
+            <div className="card p-4 sm:col-span-3">
               <Skeleton w={160} h={13} className="mb-3" />
               <Skeleton w="100%" h={10} radius={999} />
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-12 gap-4">
-          <div className="card col-span-8 p-5">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="card p-5 xl:col-span-8">
             <Skeleton w={180} h={14} className="mb-4" />
             <Skeleton w="100%" h={232} radius={8} />
           </div>
-          <div className="card col-span-4 p-5">
+          <div className="card p-5 xl:col-span-4">
             <Skeleton w={180} h={14} className="mb-4" />
             <Skeleton w="100%" h={232} radius={8} />
           </div>
@@ -429,8 +429,8 @@ export default function Dashboard() {
       </div>
 
       {/* Hero metric + supporting KPIs */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="card-feature col-span-5 p-6 relative overflow-hidden">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="card-feature relative overflow-hidden p-6 xl:col-span-5">
           <div
             className="absolute inset-0 grid-bg pointer-events-none"
             style={{
@@ -507,7 +507,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="col-span-7 grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 xl:col-span-7">
           <MiniKpi
             label="Moyenne globale"
             value={k.moyGlobale}
@@ -533,7 +533,7 @@ export default function Dashboard() {
             emphasized
           />
 
-          <div className="card p-4 col-span-3">
+          <div className="card p-4 sm:col-span-3">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-[12.5px] font-medium">Répartition du risque</div>
@@ -565,8 +565,8 @@ export default function Dashboard() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="card col-span-8 p-5">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="card p-5 xl:col-span-8">
           <SectionHeader
             title="Moyennes par filière"
             subtitle="Comparaison /20 — semestre courant"
@@ -575,7 +575,7 @@ export default function Dashboard() {
           <ChartBars data={notesByFil} height={232} />
         </div>
 
-        <div className="card col-span-4 p-5">
+        <div className="card p-5 xl:col-span-4">
           <SectionHeader title="Distribution des moyennes" subtitle="Effectifs par tranche /20" />
           <ChartHistogram data={moyDist} height={232} />
         </div>
@@ -619,8 +619,8 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom — table + activity */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="card col-span-8 overflow-hidden">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="card overflow-hidden xl:col-span-8">
           <div className="flex items-end justify-between p-5 pb-4">
             <div>
               <h2 className="text-[15px] font-semibold tracking-tight">Étudiants à surveiller</h2>
@@ -681,7 +681,7 @@ export default function Dashboard() {
         </div>
 
         {isAdmin && (
-        <div className="card col-span-4 p-5">
+        <div className="card p-5 xl:col-span-4">
           <SectionHeader title="Activité récente" subtitle="Audit de la plateforme" />
           <div className="space-y-3 relative">
             <div
@@ -756,7 +756,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ width: 1, height: 36, background: 'var(--border)' }} />
-        <div className="flex-1 grid grid-cols-4 gap-6">
+        <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-6">
           {(mlMetrics.length > 0 ? mlMetrics : [
             { l: 'AUC',       v: '—', t: 'warn' as const, bar: 0 },
             { l: 'F1-score',  v: '—', t: 'warn' as const, bar: 0 },
@@ -790,7 +790,11 @@ export default function Dashboard() {
           </button>
           <button
             className="btn btn-sm btn-primary"
-            onClick={() => retrainMutation.mutate()}
+            onClick={() => {
+              if (window.confirm("Relancer l'entraînement du modèle ? Cette opération peut prendre plusieurs minutes.")) {
+                retrainMutation.mutate()
+              }
+            }}
             disabled={retrainMutation.isPending}
             title="Relance l'entraînement du modèle XGBoost"
           >

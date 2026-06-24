@@ -112,13 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRefresh(refresh)
     setUser({ email: userEmail, role, nom: nomComplet })
 
-    try {
-      await api.post('/copilot/session', {}, { withCredentials: true })
-      setCopilotActive(true)
-    } catch (err) {
-      console.warn('Copilot session creation failed:', err)
-      setCopilotActive(false)
-    }
+    // Copilot is optional. Establish its cookie in the background so a slow or
+    // unavailable AI runtime never delays access to the core platform.
+    setCopilotActive(false)
+    void api.post('/copilot/session', {}, { withCredentials: true })
+      .then(() => setCopilotActive(true))
+      .catch(() => setCopilotActive(false))
 
     // Return the role so the caller can route to the right home before the
     // `user` state update has propagated.

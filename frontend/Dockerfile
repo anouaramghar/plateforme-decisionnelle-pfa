@@ -1,6 +1,7 @@
 # ─── Build stage ──────────────────────────────────────────────
-# Node 20 LTS — Node 18 went into maintenance-only in 2025.
-FROM node:20-alpine AS build
+# Node 20 LTS — pinned to a specific minor for reproducible builds.
+# Node 18 went into maintenance-only in 2025.
+FROM node:20.18-alpine AS build
 WORKDIR /app
 
 # Install deps from lockfile for reproducible builds.
@@ -13,7 +14,8 @@ RUN npm run build
 
 # ─── Runtime stage ────────────────────────────────────────────
 # nginx-unprivileged runs as non-root (UID 101) and listens on 8080 by default.
-FROM nginxinc/nginx-unprivileged:alpine AS final
+# Pinned to a specific minor to match the outer nginx (nginx:1.27-alpine).
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS final
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

@@ -14,7 +14,10 @@ bin/
 obj/
 *.user
 .vs/
-appsettings.Development.json
+# Environment-specific appsettings carry real secrets — never commit them.
+# Only the base appsettings.json (defaults) is safe to track.
+**/appsettings.Development.json
+**/appsettings.Local.json
 
 # Python
 __pycache__/

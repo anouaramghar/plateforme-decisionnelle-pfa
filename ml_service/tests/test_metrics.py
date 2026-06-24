@@ -19,7 +19,7 @@ if str(_ML_SERVICE_ROOT) not in sys.path:
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-_GOOD_TOKEN = "test-token-abc123"
+_GOOD_TOKEN = "test-internal-token-abc123-xyz789"
 
 def patch_metrics_paths(monkeypatch, target_dir):
     import routers.metrics as m
@@ -28,6 +28,19 @@ def patch_metrics_paths(monkeypatch, target_dir):
     monkeypatch.setattr(m, "_METADATA_JSON", target_dir / "metadata.json")
     monkeypatch.setattr(m, "_FORECAST_EVAL_PARQUET", target_dir / "forecast_eval_set.parquet")
     monkeypatch.setattr(m, "_FORECAST_METADATA_JSON", target_dir / "forecast_metadata.json")
+
+
+def patch_model_paths(monkeypatch, target_dir):
+    """Redirects auto_train + per-model MODEL_PATH constants at target_dir so
+    lifespan training and save_with_metadata never touch the real saved_models/."""
+    import models.auto_train as auto_train
+    import models.train_risk as train_risk
+    import models.train_clustering as train_clustering
+    import models.train_regression as train_regression
+    monkeypatch.setattr(auto_train, "SAVED_MODELS_DIR", target_dir)
+    monkeypatch.setattr(train_risk, "MODEL_PATH", target_dir / "risk_model.joblib")
+    monkeypatch.setattr(train_clustering, "MODEL_PATH", target_dir / "cluster_model.joblib")
+    monkeypatch.setattr(train_regression, "MODEL_PATH", target_dir / "forecast_model.joblib")
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -45,6 +58,7 @@ def client(monkeypatch, tmp_path):
     saved_models artefacts, keeping the real saved_models/ directory untouched.
     """
     patch_metrics_paths(monkeypatch, tmp_path)
+    patch_model_paths(monkeypatch, tmp_path)
 
     from fastapi.testclient import TestClient
     import main as main_mod

@@ -1,5 +1,3 @@
-import * as XLSX from 'xlsx'
-
 export interface StudentImportRow {
   rowNumber: number
   matricule: string
@@ -43,7 +41,8 @@ function normalizeHeader(value: unknown): string {
     .replace(/[\s_-]+/g, '')
 }
 
-export function parseStudentCsv(text: string): StudentImportRow[] {
+export async function parseStudentCsv(text: string): Promise<StudentImportRow[]> {
+  const XLSX = await import('xlsx')
   const workbook = XLSX.read(text, { type: 'string' })
   const sheetName = workbook.SheetNames[0]
   if (!sheetName) return []

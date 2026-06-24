@@ -5,6 +5,7 @@ import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
 import { FilterChip } from '../components/ui/FilterChip'
+import { Modal } from '../components/ui/Modal'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -64,6 +65,7 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
   const [tab, setTab] = useState<Tab>('active')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('Tous')
   const [resolvedName, setResolvedName] = useState<string | null>(null)
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: all = [], isLoading, isError } = useQuery({
@@ -88,7 +90,7 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
     },
   })
 
-  // "Tout marquer lu" — resolves every currently-visible unresolved alert.
+  // Bulk resolution applies only to the currently visible unresolved alerts.
   // Scoped to the filtered view so the action matches what the user is looking at.
   const resolveAllMutation = useMutation({
     mutationFn: (ids: number[]) => api.patch('/alertes/batch-resolve', { ids }),
@@ -131,7 +133,13 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
   const handleMarkAllRead = () => {
     const unresolvedIds = filtered.filter(a => !a.resolue).map(a => a.id)
     if (unresolvedIds.length === 0) return
-    if (!window.confirm(`Marquer ${unresolvedIds.length} alerte(s) comme résolue(s) ?`)) return
+    setConfirmAllOpen(true)
+  }
+
+  const confirmMarkAllRead = () => {
+    const unresolvedIds = filtered.filter(a => !a.resolue).map(a => a.id)
+    if (unresolvedIds.length === 0) return
+    setConfirmAllOpen(false)
     resolveAllMutation.mutate(unresolvedIds)
   }
 
@@ -183,7 +191,7 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
               disabled={resolveAllMutation.isPending || filtered.every(a => a.resolue)}
             >
               <Icon name="check" size={13} />
-              {resolveAllMutation.isPending ? 'Marquage…' : 'Tout marquer lu'}
+              {resolveAllMutation.isPending ? 'Résolution…' : 'Tout résoudre'}
             </button>
           )}
           <button
@@ -197,7 +205,7 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {summary.map(c => (
           <button
             key={c.k}
@@ -301,6 +309,21 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
           />
         ))}
       </div>
+    <Modal open={confirmAllOpen} onClose={() => setConfirmAllOpen(false)} title="Marquer comme résolues">
+        <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
+          Marquer les alertes non résolues visibles comme résolues ?
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-sm" onClick={() => setConfirmAllOpen(false)}>Annuler</button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={confirmMarkAllRead}
+            disabled={resolveAllMutation.isPending}
+          >
+            Marquer comme résolues
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -322,7 +345,7 @@ function AlertRow({
 }) {
   const meta = ALERT_TYPES[alert.type as AlertType] ?? { label: alert.type, severity: '', pill: 'neutral' as PillTone }
   const iconName: 'brain' | 'clock' | 'alert' =
-    alert.type === 'RisqueEleve'
+    alert.type === 'RisqueEchec'
       ? 'brain'
       : alert.type === 'AbsenceExcessive'
       ? 'clock'

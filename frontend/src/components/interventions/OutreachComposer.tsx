@@ -110,8 +110,9 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
         <div className="space-y-2.5">
           <label className="flex flex-col gap-1">
             <span className="cap">Date et heure</span>
-            <input type="datetime-local" className="input" value={scheduledFor}
+            <input type="datetime-local" className="input" value={scheduledFor} aria-describedby="outreach-date-hint"
               onChange={e => setScheduledFor(e.target.value)} />
+            <span id="outreach-date-hint" className="cap">Date et heure locales du rendez-vous.</span>
           </label>
           <label className="flex flex-col gap-1">
             <span className="cap">Lieu</span>
@@ -119,9 +120,12 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
               placeholder="Salle B12" />
           </label>
         </div>
-        {error && <div className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
+        {(!scheduledFor || !location.trim()) && (
+          <div className="cap mt-2">Renseignez la date, l'heure et le lieu pour préparer le brouillon.</div>
+        )}
+        {error && <div role="alert" className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
         <button
-          className="btn btn-sm btn-primary mt-3"
+          className="btn btn-sm btn-accent mt-3"
           onClick={() => createDraft.mutate()}
           disabled={!scheduledFor || !location.trim() || createDraft.isPending}
         >
@@ -145,7 +149,7 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
             <span className="cap">Corps</span>
             <textarea className="input" rows={6} value={body} onChange={e => setBody(e.target.value)} />
           </label>
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="cap">Date et heure</span>
               <input type="datetime-local" className="input" value={scheduledFor}
@@ -157,10 +161,10 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
             </label>
           </div>
         </div>
-        {error && <div className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
+        {error && <div role="alert" className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
         <div className="flex justify-end mt-3">
           <button
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm btn-accent"
             onClick={() => setConfirmOpen(true)}
             disabled={!subject.trim() || !body.trim() || !scheduledFor || !location.trim()}
           >
@@ -178,7 +182,7 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
           <div className="flex justify-end gap-2 mt-4">
             <button className="btn btn-sm" onClick={() => setConfirmOpen(false)}>Annuler</button>
             <button
-              className="btn btn-sm btn-primary"
+              className="btn btn-sm btn-accent"
               onClick={() => send.mutate()}
               disabled={send.isPending}
             >
@@ -210,7 +214,7 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
         {comm && <ReadOnlyDraft comm={comm} />}
         {error && <div className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
         <div className="flex justify-end mt-3">
-          <button className="btn btn-sm btn-primary" onClick={() => retry.mutate()} disabled={retry.isPending}>
+          <button className="btn btn-sm btn-accent" onClick={() => retry.mutate()} disabled={retry.isPending}>
             <Icon name="refresh" size={13} /> Renvoyer
           </button>
         </div>

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
@@ -5,7 +7,16 @@ import pandas as pd
 from dependencies import verify_internal_token
 from schemas.prediction_schema import ClusterRequest, ClusterResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/cluster", tags=["Clustering"])
+
+
+def _clamp_nb_modules(nb_modules: int) -> int:
+    if nb_modules > 11:
+        logger.warning("nb_modules=%d clamped to 11 (training range 3-11)", nb_modules)
+        return 11
+    return nb_modules
 
 
 def _get_cluster_model(request: Request) -> Pipeline:
@@ -44,7 +55,7 @@ def assign_cluster(
     features = pd.DataFrame([{
         "moyenne_generale": payload.moyenne_generale,
         "taux_absence":     payload.taux_absence,
-        "nb_modules":       payload.nb_modules,
+        "nb_modules":       _clamp_nb_modules(payload.nb_modules),
     }])
 
     # KMeans.predict() returns the cluster index as an int array.

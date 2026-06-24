@@ -71,10 +71,14 @@ namespace PlateformePFA.API.Controllers
                                       .CountAsync(a => a.Action == "DuplicateCasePrevented");
 
             // ── Derived percentages ──────────────────────────────────────────────
-            var sentCount  = await _context.CaseCommunications.AsNoTracking()
-                                .CountAsync(cc => cc.Status == CommunicationStatus.Sent);
-            var emailDeliverySuccessPercent = (sentCount + failedEmails) > 0
-                ? Math.Round((decimal)sentCount / (sentCount + failedEmails) * 100m, 1)
+            // Scope to student_outreach only — generic staff emails are support
+            // comms and should not dilute the outreach delivery rate.
+            var outreachSent   = await _context.CaseCommunications.AsNoTracking()
+                                    .CountAsync(cc => cc.Status == CommunicationStatus.Sent && cc.TemplateId == "student_outreach");
+            var outreachFailed = await _context.CaseCommunications.AsNoTracking()
+                                    .CountAsync(cc => cc.Status == "Failed" && cc.TemplateId == "student_outreach");
+            var emailDeliverySuccessPercent = (outreachSent + outreachFailed) > 0
+                ? Math.Round((decimal)outreachSent / (outreachSent + outreachFailed) * 100m, 1)
                 : 0m;
 
             var scheduledMeetings = await cases.CountAsync(c => c.MeetingScheduledFor != null);
@@ -96,10 +100,14 @@ namespace PlateformePFA.API.Controllers
                 ? Math.Round((decimal)contactedEligible / eligibleStudentIds.Count * 100m, 1)
                 : 0m;
 
-            // ── Median hours from earliest linked alert to first Sent email ──────
+            // ── Median hours from earliest linked alert to FIRST sent outreach per case ──
+            // We take only the earliest sent outreach comm per case so that
+            // rescheduled sends (a student misses the first meeting) don't
+            // artificially inflate the median — we want time-to-first-contact.
             var sentOutreachComms = await _context.CaseCommunications.AsNoTracking()
                 .Where(cc => cc.Status == CommunicationStatus.Sent && cc.TemplateId == "student_outreach" && cc.EnvoyeLe != null)
-                .Select(cc => new { cc.CaseId, cc.EnvoyeLe })
+                .GroupBy(cc => cc.CaseId)
+                .Select(g => new { CaseId = g.Key, EnvoyeLe = g.Min(cc => cc.EnvoyeLe) })
                 .ToListAsync();
             var linkedAlerts = await _context.Alertes.AsNoTracking()
                 .Where(a => a.CaseId != null)

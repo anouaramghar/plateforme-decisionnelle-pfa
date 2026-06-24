@@ -131,13 +131,13 @@ export default function Cases() {
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {primaryColumns.map(col => (
           <section
             key={col.state}
             role="region"
             aria-label={`${col.label}`}
-            className="card overflow-hidden flex flex-col"
+            className="card min-w-0 overflow-hidden flex flex-col"
             style={{ minHeight: 200 }}
           >
             <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -182,17 +182,21 @@ function CaseCard({ c, onClick, list }: { c: InterventionCase; onClick: () => vo
   const due = c.dueDate
   return (
     <button
+      type="button"
       onClick={onClick}
-      aria-label={student}
-      className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-2)]"
-      style={{ borderBottom: list ? '1px solid var(--border)' : '1px solid var(--border)' }}
+      aria-label={`Ouvrir le cas de ${student} : ${c.motif}`}
+      className="w-full px-3 py-3 text-left hover:bg-[var(--surface-2)]"
+      style={{ borderBottom: '1px solid var(--border)' }}
     >
-      <Pill tone={PRIORITE_TONE[c.priorite] ?? 'neutral'} dot>
-        {PRIORITE_LABELS[c.priorite] ?? c.priorite}
-      </Pill>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] font-medium truncate">{c.motif}</div>
-        <div className="cap truncate">{student}{c.ownerId == null && ' · non assigné'}</div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <Pill tone={PRIORITE_TONE[c.priorite] ?? 'neutral'} dot>
+          {PRIORITE_LABELS[c.priorite] ?? c.priorite}
+        </Pill>
+        {!list && <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>}
+      </div>
+      <div className="min-w-0">
+        <div className="line-clamp-2 text-[12.5px] font-medium" title={c.motif}>{c.motif}</div>
+        <div className="cap mt-1 truncate" title={student}>{student}{c.ownerId == null && ' · non assigné'}</div>
         {meeting && (
           <div className="cap" style={{ color: 'var(--text-3)' }}>
             <Icon name="clock" size={11} /> {new Date(meeting).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
@@ -205,8 +209,6 @@ function CaseCard({ c, onClick, list }: { c: InterventionCase; onClick: () => vo
           </div>
         )}
       </div>
-      {!list && <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>}
-      <Icon name="chevRight" size={13} style={{ color: 'var(--text-3)', marginTop: 2 }} />
     </button>
   )
 }

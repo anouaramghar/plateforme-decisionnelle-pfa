@@ -223,7 +223,7 @@ export default function Enseignant() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { l: 'Module',       v: monModule?.moduleCode ?? '—',    sub: monModule?.semestre },
           { l: 'Filière',      v: monModule?.filiereCode ?? '—',    sub: monModule?.niveau },
@@ -238,9 +238,9 @@ export default function Enseignant() {
         ))}
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* Students list */}
-        <div className="col-span-6 card overflow-hidden">
+        <div className="card overflow-hidden lg:col-span-6">
           <div className="p-4 flex items-center gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
             <div className="relative flex-1">
               <Icon name="search" size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-3)' }} />
@@ -293,8 +293,10 @@ export default function Enseignant() {
                     <td className="cap">{e.annee}</td>
                     <td>
                       <button
+                        type="button"
                         className="btn btn-sm btn-ghost"
                         onClick={ev => { ev.stopPropagation(); navigate(`/students/${e.id}`) }}
+                        aria-label={`Voir la fiche de ${e.nomComplet}`}
                       >
                         <Icon name="ext" size={12} />
                       </button>
@@ -307,7 +309,7 @@ export default function Enseignant() {
         </div>
 
         {/* Right panel */}
-        <div className="col-span-6 space-y-4">
+        <div className="space-y-4 lg:col-span-6">
           {!activeStudent ? (
             <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
               <Icon name="doc" size={32} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
@@ -329,8 +331,10 @@ export default function Enseignant() {
                 <div className="flex gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
                   {(['notes', 'absences'] as ActiveTab[]).map(t => (
                     <button
+                      type="button"
                       key={t}
                       onClick={() => setActiveTab(t)}
+                      aria-pressed={activeTab === t}
                       className="px-3 py-1.5 text-[12px] capitalize"
                       style={{
                         color: activeTab === t ? 'var(--text)' : 'var(--text-3)',
@@ -382,7 +386,7 @@ export default function Enseignant() {
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {(['noteTD', 'noteTP', 'noteExamen', 'noteFinal'] as const).map((field, i) => (
                       <label key={field} className="flex flex-col gap-1">
                         <span className="cap text-[11px]">{['CC', 'TP', 'Examen', 'Finale'][i]}</span>
@@ -403,7 +407,7 @@ export default function Enseignant() {
                   {myNoteRow && (
                     <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
                       <div className="cap mb-2">Note actuelle — {monModule?.moduleCode}</div>
-                      <div className="grid grid-cols-4 gap-2 text-[12px]">
+                      <div className="grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4">
                         {[
                           { l: 'CC',     v: myNoteRow.cc },
                           { l: 'TP',     v: myNoteRow.tp },

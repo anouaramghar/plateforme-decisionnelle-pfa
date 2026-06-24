@@ -42,6 +42,12 @@ namespace PlateformePFA.API.Models
         public DateTime? EnvoyeLe { get; set; }
         public int? CreeParId { get; set; }
 
+        // Optimistic send claim. Changing this token together with Draft/Failed
+        // -> Queued lets exactly one concurrent request persist the claim on
+        // every EF provider, including the in-memory provider used by tests.
+        [ConcurrencyCheck]
+        public Guid ConcurrencyToken { get; set; } = Guid.NewGuid();
+
         [JsonIgnore] public InterventionCase Case { get; set; } = null!;
     }
 }

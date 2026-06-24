@@ -202,6 +202,11 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         var owner = ctx.Utilisateurs.First(u => u.Email == "test-admin@eniad.ma").Id;
         await client.PatchAsJsonAsync($"/api/intervention-cases/{caseId}/transition",
             new { etat = CaseWorkflowState.InProgress, ownerId = owner });
+        using (var prepare = _factory.CreateContext())
+        {
+            prepare.InterventionCases.Single(c => c.Id == caseId).MeetingAttendance = "Held";
+            prepare.SaveChanges();
+        }
         await client.PatchAsJsonAsync($"/api/intervention-cases/{caseId}/transition",
             new
             {

@@ -1,0 +1,5 @@
+certs/
+generate-dev-certs.sh
+*.md
+Dockerfile
+.dockerignore

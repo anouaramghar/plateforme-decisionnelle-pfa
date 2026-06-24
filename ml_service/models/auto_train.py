@@ -15,11 +15,12 @@ for a startup delay.
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SAVED_MODELS_DIR = Path(__file__).parent.parent / "saved_models"
+SAVED_MODELS_DIR = Path(os.getenv("MODEL_DIR", Path(__file__).parent.parent / "saved_models"))
 
 _RANDOM_SEED = 42
 _N_SAMPLES = 1000
@@ -53,7 +54,7 @@ def _ensure_cluster_model() -> None:
         return
 
     from data.db_loader import load_clustering_data
-    from models.train_clustering import generate_data, train, save
+    from models.train_clustering import generate_data, train, save_with_metadata
 
     df = load_clustering_data()
     if df is not None:
@@ -63,7 +64,7 @@ def _ensure_cluster_model() -> None:
         df = generate_data(_N_SAMPLES, _RANDOM_SEED)
 
     pipeline = train(df, k=4)
-    save(pipeline)
+    save_with_metadata(pipeline, k=4, n_samples=len(df))
     logger.info("cluster_model trained and saved.")
 
 
@@ -84,8 +85,8 @@ def _ensure_forecast_model() -> None:
         df = generate_data(_N_SAMPLES, _RANDOM_SEED)
         data_source = "synthetic"
 
-    pipeline = train(df)
-    save_with_metadata(pipeline, getattr(pipeline, "X_test", None), getattr(pipeline, "y_test", None), data_source=data_source)
+    pipeline, X_test, y_test = train(df)
+    save_with_metadata(pipeline, X_test, y_test, data_source=data_source)
     logger.info("forecast_model trained and saved.")
 
 

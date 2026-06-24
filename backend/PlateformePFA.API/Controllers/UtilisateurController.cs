@@ -56,6 +56,9 @@ namespace PlateformePFA.API.Controllers
             if (await _context.Utilisateurs.AnyAsync(u => u.Email == dto.Email))
                 return Conflict(new { message = $"Email '{dto.Email}' déjà utilisé." });
 
+            if (dto.Role == "Enseignant" && !dto.ModuleId.HasValue)
+                return BadRequest(new { message = "ModuleId est requis pour le rôle Enseignant." });
+
             var utilisateur = new Utilisateur
             {
                 Nom = dto.Nom,

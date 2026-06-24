@@ -1,8 +1,10 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Copilot read-only DW access — backend query_dw tool (CopilotToolController).
+-- Read-only DW access — used by TWO consumers:
+--   1. Copilot query_dw tool (CopilotToolController, NL→SQL on the warehouse)
+--   2. ML service training-data loads (reads PFA_DW via pyodbc)
 --
 -- Run by entrypoint.sh on EVERY boot (not only cold init), so it rolls forward
--- onto volumes that were seeded before Copilot existed. Fully idempotent.
+-- onto volumes that were seeded before this login existed. Fully idempotent.
 --
 -- pfa_app_readonly is granted db_datareader ONLY on PFA_DW. Even if every
 -- application-layer safety guard is bypassed, this login physically cannot
@@ -14,8 +16,14 @@
 -- 1. Server-level login (idempotent).
 IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = 'pfa_app_readonly')
 BEGIN
+    -- sqlcmd substitutes $(READONLY_PASSWORD) verbatim into the batch text; the
+    -- REPLACE only doubles embedded single quotes so the @pw_ro literal parses.
+    -- QUOTENAME then escapes the value correctly for the dynamic statement
+    -- (parameterized instead of nested-quote string concatenation).
+    DECLARE @pw_ro NVARCHAR(128) = REPLACE('$(READONLY_PASSWORD)', '''', '''''');
     DECLARE @sql_ro NVARCHAR(MAX) =
-        N'CREATE LOGIN pfa_app_readonly WITH PASSWORD = ''' + REPLACE('$(READONLY_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
+        N'CREATE LOGIN pfa_app_readonly WITH PASSWORD = ' + QUOTENAME(@pw_ro, '''') +
+        N', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
     EXEC sp_executesql @sql_ro;
 END
 GO

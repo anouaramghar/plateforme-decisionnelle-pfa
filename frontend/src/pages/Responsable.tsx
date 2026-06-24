@@ -84,7 +84,7 @@ export default function Responsable() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { l: 'Étudiants suivis',  v: scopedStudents.length, s: '',     t: '' },
           { l: 'Moyenne globale',   v: moyGlobal.toFixed(2),  s: '/20',  t: moyGlobal >= 10 ? 'ok' : 'warn' },
@@ -113,7 +113,7 @@ export default function Responsable() {
               Voir les interventions <Icon name="arrowRight" size={12} />
             </button>
           </div>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {([
               { l: 'À contacter',     v: kpis.needsContact,      t: 'bad' },
               { l: 'Email préparé',   v: kpis.emailPrepared,     t: 'warn' },
@@ -128,7 +128,7 @@ export default function Responsable() {
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-4 gap-3 mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="mt-3 grid grid-cols-1 gap-3 pt-3 sm:grid-cols-2 xl:grid-cols-4" style={{ borderTop: '1px solid var(--border)' }}>
             {([
               { l: 'Étudiants contactés', v: `${kpis.contactedEligiblePercent.toFixed(0)}%`, hint: 'des étudiants à risque' },
               { l: 'Livraison email',      v: `${kpis.emailDeliverySuccessPercent.toFixed(0)}%`, hint: 'Sent / (Sent + Failed)' },
@@ -150,9 +150,9 @@ export default function Responsable() {
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         {/* At-risk students */}
-        <div className="col-span-7 card overflow-hidden">
+        <div className="card overflow-hidden xl:col-span-7">
           <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <div>
               <div className="text-[14px] font-semibold">Étudiants à risque élevé</div>
@@ -200,7 +200,12 @@ export default function Responsable() {
                     </td>
                     <td><RiskBar score={e.scoreRisque} width={80} /></td>
                     <td>
-                      <button className="btn btn-sm btn-ghost">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        aria-label={`Voir la fiche de ${e.nomComplet}`}
+                        onClick={() => navigate(`/students/${e.id}`)}
+                      >
                         <Icon name="chevRight" size={13} />
                       </button>
                     </td>
@@ -217,7 +222,7 @@ export default function Responsable() {
         </div>
 
         {/* Alerts panel */}
-        <div className="col-span-5 card overflow-hidden">
+        <div className="card overflow-hidden xl:col-span-5">
           <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <div>
               <div className="text-[14px] font-semibold">Alertes en attente</div>
@@ -245,10 +250,12 @@ export default function Responsable() {
                   <div className="text-[11.5px] truncate" style={{ color: 'var(--text-3)' }}>{a.message}</div>
                 </div>
                 <button
+                  type="button"
                   className="btn btn-sm btn-ghost flex-shrink-0"
                   onClick={() => resolveMutation.mutate(a.id)}
                   disabled={resolveMutation.isPending}
                   title="Marquer comme résolue"
+                  aria-label={`Marquer l'alerte de ${a.etudiant?.nomComplet ?? 'cet étudiant'} comme résolue`}
                 >
                   <Icon name="check" size={13} />
                 </button>

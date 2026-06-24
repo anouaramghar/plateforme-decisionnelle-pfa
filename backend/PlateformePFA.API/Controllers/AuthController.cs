@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PlateformePFA.API.DTOs.Auth;
 using PlateformePFA.API.Services;
 
@@ -19,6 +20,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         [AllowAnonymous]
+        [EnableRateLimiting("login")]
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {

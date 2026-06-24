@@ -22,7 +22,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/Modules (paginated)
         [HttpGet]
-        public async Task<IActionResult> GetModules(
+        public async Task<ActionResult<PaginatedResult<object>>> GetModules(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] int? filiereId = null)
@@ -46,7 +46,7 @@ namespace PlateformePFA.API.Controllers
                 })
                 .ToListAsync();
 
-            return Ok(new { items, total, page, pageSize });
+            return new PaginatedResult<object>(items, total, page, pageSize);
         }
 
         // GET: api/Modules/5

@@ -21,9 +21,12 @@ from sklearn.pipeline import Pipeline
 import xgboost as xgb
 import joblib
 
+from models.auto_train import SAVED_MODELS_DIR
+
 RANDOM_SEED = 42
 N_SAMPLES = 1000
-MODEL_PATH = Path(__file__).parent.parent / "saved_models" / "forecast_model.joblib"
+MODEL_VERSION = "1.8.0"
+MODEL_PATH = SAVED_MODELS_DIR / "forecast_model.joblib"
 
 
 # ─── 1. Generate synthetic student data ───────────────────────────────────────
@@ -146,24 +149,19 @@ def train(df: pd.DataFrame) -> Pipeline:
     print(f"R²   : {r2:.3f}               (closer to 1.0 is better)")
 
     pipeline.split_strategy = split_strategy
-    pipeline.X_test = X_test
-    pipeline.y_test = y_test
     pipeline.train_periods = list(train_df["period_key"].unique()) if "period_key" in train_df.columns else []
     pipeline.test_periods = list(test_df["period_key"].unique()) if "period_key" in test_df.columns else []
     pipeline.n_students_train = int(train_df["EtudiantId"].nunique()) if "EtudiantId" in train_df.columns else 0
     pipeline.n_students_test = int(test_df["EtudiantId"].nunique()) if "EtudiantId" in test_df.columns else 0
 
-    return pipeline
+    return pipeline, X_test, y_test
 
 
 # ─── 3. Save the trained pipeline to disk ─────────────────────────────────────
 
-def save(pipeline: Pipeline) -> None:
+def save(pipeline: Pipeline, X_test: pd.DataFrame | None, y_test: pd.Series | None) -> None:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, MODEL_PATH)
-    print(f"\nModel saved -> {MODEL_PATH}")
-
-    save_with_metadata(pipeline, getattr(pipeline, "X_test", None), getattr(pipeline, "y_test", None), data_source="synthetic")
+    save_with_metadata(pipeline, X_test, y_test, data_source="synthetic")
 
 
 def save_with_metadata(
@@ -175,11 +173,6 @@ def save_with_metadata(
 ) -> None:
     out_dir = models_dir or MODEL_PATH.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save model
-    model_file = out_dir / "forecast_model.joblib"
-    joblib.dump(pipeline, model_file)
-    print(f"\nModel saved -> {model_file}")
 
     if X_test is not None and y_test is not None:
         eval_df = X_test.copy()
@@ -198,8 +191,12 @@ def save_with_metadata(
         r2 = 0.0
         n_samples = 0
 
+    model_file = out_dir / "forecast_model.joblib"
+    joblib.dump(pipeline, model_file)
+    print(f"\nModel saved -> {model_file}")
+
     metadata = {
-        "model_version": "1.7.0",
+        "model_version": MODEL_VERSION,
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "mae": round(mae, 4),
         "r2": round(r2, 4),
@@ -216,6 +213,35 @@ def save_with_metadata(
     meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(f"Metadata saved -> {meta_path}")
 
+    # ── MLflow tracking (best-effort) ──────────────────────────
+    from mlflow_client import start_run, log_params, log_metrics, log_tags, log_artifact
+
+    reg = pipeline.named_steps.get("regressor")
+    reg_params = reg.get_params() if reg is not None else {}
+
+    with start_run("forecast_model"):
+        log_params({
+            "model_version": MODEL_VERSION,
+            "data_source": data_source,
+            "split_strategy": getattr(pipeline, "split_strategy", "unknown"),
+            "n_samples": n_samples,
+            "n_students_train": int(getattr(pipeline, "n_students_train", 0)),
+            "n_students_test": int(getattr(pipeline, "n_students_test", 0)),
+            "n_estimators": reg_params.get("n_estimators"),
+            "max_depth": reg_params.get("max_depth"),
+            "learning_rate": reg_params.get("learning_rate"),
+        })
+        log_metrics({"mae": mae, "r2": r2})
+        log_tags({
+            "model_name": "forecast_model",
+            "train_periods": ",".join(str(p) for p in getattr(pipeline, "train_periods", [])),
+            "test_periods": ",".join(str(p) for p in getattr(pipeline, "test_periods", [])),
+        })
+        log_artifact(model_file)
+        if X_test is not None and y_test is not None:
+            log_artifact(out_dir / "forecast_eval_set.parquet")
+        log_artifact(meta_path)
+
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -225,6 +251,6 @@ if __name__ == "__main__":
     print(f"  {len(df)} samples | avg final grade: {df['note_finale'].mean():.1f}/20\n")
 
     print("Training XGBoost regressor...")
-    pipeline = train(df)
+    pipeline, X_test, y_test = train(df)
 
-    save_with_metadata(pipeline, getattr(pipeline, "X_test", None), getattr(pipeline, "y_test", None), data_source="synthetic")
+    save_with_metadata(pipeline, X_test, y_test, data_source="synthetic")

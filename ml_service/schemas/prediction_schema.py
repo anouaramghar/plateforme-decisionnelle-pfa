@@ -1,4 +1,14 @@
-from pydantic import BaseModel, Field
+import logging
+
+from pydantic import BaseModel, Field, field_validator
+
+_logger = logging.getLogger(__name__)
+
+
+def _warn_nb_modules_above_training_range(value: int) -> int:
+    if 11 < value <= 30:
+        _logger.warning("nb_modules=%d exceeds training range 3-11 (schema cap 30)", value)
+    return value
 
 
 class PredictionRequest(BaseModel):
@@ -10,6 +20,11 @@ class PredictionRequest(BaseModel):
         description="Absence rate as a fraction of total hours (0 = never absent, 1 = always absent)")
     nb_modules: int = Field(..., ge=1, le=30,
         description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
+
+    @field_validator("nb_modules")
+    @classmethod
+    def _warn_nb_modules(cls, v: int) -> int:
+        return _warn_nb_modules_above_training_range(v)
 
 
 class PredictionResponse(BaseModel):
@@ -29,6 +44,11 @@ class ClusterRequest(BaseModel):
     nb_modules: int = Field(..., ge=1, le=30,
         description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
 
+    @field_validator("nb_modules")
+    @classmethod
+    def _warn_nb_modules(cls, v: int) -> int:
+        return _warn_nb_modules_above_training_range(v)
+
 
 class ClusterResponse(BaseModel):
     """Which cluster/segment the student belongs to."""
@@ -45,6 +65,11 @@ class ForecastRequest(BaseModel):
     taux_absence: float = Field(..., ge=0, le=1)
     nb_modules: int = Field(..., ge=1, le=30,
         description="Number of modules enrolled in. NOTE: model trained on data up to 11 modules; values above 11 are extrapolations.")
+
+    @field_validator("nb_modules")
+    @classmethod
+    def _warn_nb_modules(cls, v: int) -> int:
+        return _warn_nb_modules_above_training_range(v)
 
 
 class ForecastResponse(BaseModel):

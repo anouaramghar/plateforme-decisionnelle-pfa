@@ -8,6 +8,7 @@ import App from './App'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { FiliereProvider } from './context/FiliereContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
 
 // Always same-origin: the runtime authenticates via the httpOnly
@@ -39,6 +40,7 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
       runtimeUrl={copilotRuntimeUrl}
       useSingleEndpoint
       headers={token ? { Authorization: `Bearer ${token}` } : {}}
+      showDevConsole={import.meta.env.DEV}
     >
       {children}
     </CopilotKit>
@@ -47,16 +49,18 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
-          <FiliereProvider>
-            <CopilotBridge>
-              <App />
-            </CopilotBridge>
-          </FiliereProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AuthProvider>
+            <FiliereProvider>
+              <CopilotBridge>
+                <App />
+              </CopilotBridge>
+            </FiliereProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>
 )

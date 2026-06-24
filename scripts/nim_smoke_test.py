@@ -334,14 +334,45 @@ def _read_dotenv_key(repo_root: str, name: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------
+# Known placeholder / sentinel values for NVIDIA_NIM_API_KEY. Running the
+# smoke test against one of these only produces confusing 401s from the NIM
+# endpoint, so they are refused up front with a clear error.
+_PLACEHOLDER_KEYS = {
+    "",
+    "nvapi-PUT-YOUR-KEY-HERE",
+    "nvapi-CHANGE_ME_GET_KEY_FROM_BUILD_NVIDIA_COM",
+    "nvapi-YOUR_KEY_HERE",
+    "PUT-YOUR-KEY-HERE",
+    "YOUR_KEY_HERE",
+}
+
+
+def _is_placeholder_key(key: str) -> bool:
+    k = (key or "").strip().strip('"').strip("'")
+    if k.lower() in {p.lower() for p in _PLACEHOLDER_KEYS}:
+        return True
+    low = k.lower()
+    return (
+        "change_me" in low
+        or "put-your" in low
+        or "your_key" in low
+        or "your-key" in low
+    )
+
+
 def main() -> int:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     api_key = os.environ.get("NVIDIA_NIM_API_KEY") or _read_dotenv_key(repo_root, "NVIDIA_NIM_API_KEY")
-    if not api_key:
+    if not api_key or _is_placeholder_key(api_key):
         sys.stderr.write(
-            "ERROR: NVIDIA_NIM_API_KEY not set.\n"
-            '  PowerShell:  $env:NVIDIA_NIM_API_KEY = "nvapi-..."\n'
-            "  or add       NVIDIA_NIM_API_KEY=nvapi-...   to .env\n"
+            "ERROR: NVIDIA_NIM_API_KEY is missing or still a placeholder.\n"
+            "  The smoke test calls the real NVIDIA NIM endpoint and cannot run\n"
+            "  with a sentinel value. Set a REAL key explicitly:\n"
+            '    PowerShell:  $env:NVIDIA_NIM_API_KEY = "nvapi-...real key..."\n'
+            "    bash:        export NVIDIA_NIM_API_KEY=nvapi-...real key...\n"
+            "  (a value read from .env is used as a fallback, but it must NOT be\n"
+            "   a placeholder such as nvapi-CHANGE_ME_* or nvapi-PUT-YOUR-KEY-HERE.)\n"
         )
         return 2
 

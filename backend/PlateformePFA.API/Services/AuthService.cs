@@ -12,6 +12,8 @@ namespace PlateformePFA.API.Services
 {
     public class AuthService : IAuthService
     {
+        private static readonly string DummyHash =
+            BCrypt.Net.BCrypt.HashPassword("dummy-password-for-timing", workFactor: 11);
         private readonly AppDbContext    _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthService> _logger;
@@ -35,7 +37,14 @@ namespace PlateformePFA.API.Services
             var utilisateur = await _context.Utilisateurs
                 .FirstOrDefaultAsync(u => u.Email == request.Email && u.EstActif);
 
-            if (utilisateur == null || !BCrypt.Net.BCrypt.Verify(request.MotDePasse, utilisateur.MotDePasseHash))
+            if (utilisateur == null)
+            {
+                _ = BCrypt.Net.BCrypt.Verify(request.MotDePasse, DummyHash);
+                _logger.LogWarning("[AuthService] Tentative échouée pour : {Email}", request.Email);
+                return null;
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(request.MotDePasse, utilisateur.MotDePasseHash))
             {
                 _logger.LogWarning("[AuthService] Tentative échouée pour : {Email}", request.Email);
                 return null;

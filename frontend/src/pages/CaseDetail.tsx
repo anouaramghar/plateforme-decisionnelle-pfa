@@ -94,7 +94,13 @@ export default function CaseDetail() {
   if (isLoading) return <div className="cap" style={{ color: 'var(--text-3)' }}>Chargement…</div>
   if (isError || !c) return <div className="cap" style={{ color: 'var(--bad)' }}>Cas introuvable.</div>
 
-  const nextStates = CASE_TRANSITIONS[c.etat] ?? []
+  // When the case is InProgress the only way to reach Resolved is through the
+  // outreach flow (meeting held → RecordMeeting). Remove it from the generic
+  // transition menu to avoid a confusing rejection from the backend.
+  const rawNextStates = CASE_TRANSITIONS[c.etat] ?? []
+  const nextStates = c.etat === 'InProgress'
+    ? rawNextStates.filter(s => s !== 'Resolved')
+    : rawNextStates
 
   return (
     <div className="space-y-4">
@@ -153,7 +159,7 @@ export default function CaseDetail() {
         </details>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TasksCard caseId={caseId} onChange={invalidate} />
         <NotesCard caseId={caseId} onChange={invalidate} />
       </div>
@@ -241,9 +247,11 @@ function TasksCard({ caseId, onChange }: { caseId: number; onChange: () => void 
         {tasks.map(t => (
           <div key={t.id} className="flex items-center gap-2 text-[12.5px]">
             <button
+              type="button"
               onClick={() => !t.done && done.mutate(t.id)}
               disabled={t.done}
               title={t.done ? 'Terminée' : 'Marquer terminée'}
+              aria-label={t.done ? `${t.titre} terminée` : `Marquer ${t.titre} comme terminée`}
             >
               <Icon name="check" size={14} style={{ color: t.done ? 'var(--ok)' : 'var(--text-3)' }} />
             </button>
@@ -261,7 +269,7 @@ function TasksCard({ caseId, onChange }: { caseId: number; onChange: () => void 
           className="input flex-1" placeholder="Nouvelle tâche…"
           value={titre} onChange={e => setTitre(e.target.value)}
         />
-        <button className="btn btn-sm btn-primary" disabled={!titre.trim() || add.isPending}>
+        <button className="btn btn-sm btn-accent" disabled={!titre.trim() || add.isPending} aria-label="Ajouter la tâche">
           <Icon name="plus" size={13} />
         </button>
       </form>
@@ -311,7 +319,7 @@ function NotesCard({ caseId, onChange }: { caseId: number; onChange: () => void 
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
             Note privée (Admin/Responsable)
           </label>
-          <button className="btn btn-sm btn-primary" disabled={!contenu.trim() || add.isPending}>
+          <button className="btn btn-sm btn-accent" disabled={!contenu.trim() || add.isPending}>
             <Icon name="plus" size={13} /> Ajouter
           </button>
         </div>
@@ -359,7 +367,7 @@ function CommunicationsCard({ caseId, onChange }: { caseId: number; onChange: ()
           {templates.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
         </select>
         <button
-          className="btn btn-sm btn-primary"
+          className="btn btn-sm btn-accent"
           onClick={() => { if (templateId) setConfirmSendOpen(true) }}
           disabled={!templateId || send.isPending}
         >
@@ -374,7 +382,7 @@ function CommunicationsCard({ caseId, onChange }: { caseId: number; onChange: ()
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn btn-sm" onClick={() => setConfirmSendOpen(false)}>Annuler</button>
           <button
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm btn-accent"
             onClick={() => send.mutate()}
             disabled={send.isPending}
           >

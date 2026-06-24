@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
@@ -81,6 +82,7 @@ async function downloadRapport(row: RapportRow): Promise<void> {
 }
 
 function formatTaille(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—'
   if (bytes < 1024) return `${bytes} o`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`
   return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`
@@ -95,10 +97,13 @@ function formatDate(iso: string): string {
 }
 
 export default function Reports() {
-  const [picked, setPicked] = useState('perf-globale')
+  const location = useLocation()
+  const initialTemplateId = (location.state as { templateId?: string } | null)?.templateId
+  const initialTpl = TEMPLATES.find(t => t.id === initialTemplateId)
+  const [picked, setPicked] = useState(initialTpl?.id ?? 'perf-globale')
   const [periode, setPeriode] = useState(PERIODES[0])
   const [filiere, setFiliere] = useState('TOUS')
-  const [format, setFormat] = useState<Format>('PDF')
+  const [format, setFormat] = useState<Format>(initialTpl?.format ?? 'PDF')
   const queryClient = useQueryClient()
 
   const { data: rapports = [], isLoading: listLoading } = useQuery({
@@ -152,15 +157,17 @@ export default function Reports() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {TEMPLATES.map(t => (
           <button
+            type="button"
             key={t.id}
             onClick={() => {
               setPicked(t.id)
               setFormat(t.format)
             }}
             className="card p-4 text-left transition"
+            aria-pressed={picked === t.id}
             style={{
               borderColor: picked === t.id ? 'var(--accent-500)' : 'var(--border)',
               boxShadow:
@@ -189,8 +196,8 @@ export default function Reports() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card p-4 col-span-1">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="card p-4">
           <SectionHeader title="Paramètres" subtitle="Configurez le rapport avant export" />
           <div className="space-y-3">
             <Field label="Période">
@@ -204,11 +211,13 @@ export default function Reports() {
               </select>
             </Field>
             <Field label="Format de sortie">
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5" role="radiogroup" aria-label="Format de sortie">
                 {FORMATS.map(f => (
                   <button
                     key={f}
                     type="button"
+                    role="radio"
+                    aria-checked={format === f}
                     onClick={() => setFormat(f)}
                     className="flex-1 px-3 py-1.5 rounded-md text-[12px] transition"
                     style={{
@@ -235,7 +244,7 @@ export default function Reports() {
         </div>
 
         {/* preview */}
-        <div className="col-span-2">
+        <div className="lg:col-span-2">
           <SectionHeader title="Aperçu" subtitle="Couverture du document — généré à la demande" />
           <div
             className="card p-0 overflow-hidden"
@@ -322,7 +331,8 @@ export default function Reports() {
             <div className="cap mt-0.5">{rapports.length} document{rapports.length > 1 ? 's' : ''} généré{rapports.length > 1 ? 's' : ''}</div>
           </div>
         </div>
-        <table className="tbl">
+        <div className="overflow-x-auto" role="region" aria-label="Rapports récents" tabIndex={0}>
+        <table className="tbl min-w-[760px]">
           <thead>
             <tr>
               <th>ID</th>
@@ -363,8 +373,10 @@ export default function Reports() {
                   <td>
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         className="btn btn-sm btn-ghost"
                         title="Télécharger"
+                        aria-label={`Télécharger ${r.titre || `le rapport ${r.id}`}`}
                         onClick={() => downloadMutation.mutate(r)}
                         disabled={downloadMutation.isPending}
                       >
@@ -377,6 +389,7 @@ export default function Reports() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

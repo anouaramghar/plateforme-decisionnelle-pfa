@@ -33,7 +33,16 @@ namespace PlateformePFA.API.Services
             [CaseWorkflowState.Closed]         = new[] { CaseWorkflowState.InProgress },                            // reopen only
         };
 
-        public readonly record struct CaseFacts(bool HasOwner, bool HasOutcome, bool HasReason, bool MonitoringComplete);
+        public readonly record struct CaseFacts(
+            bool HasOwner,
+            bool HasOutcome,
+            bool HasReason,
+            bool MonitoringComplete,
+            // True when at least one outreach meeting has been recorded as Held
+            // for this case. Required to resolve through the generic endpoint,
+            // mirroring the dedicated outreach flow (RecordMeeting sets Resolved
+            // only after attendance = Held).
+            bool MeetingHeld = false);
 
         /// <returns>(true, null) if allowed; (false, reason) otherwise.</returns>
         public static (bool ok, string? error) CanTransition(string from, string to, CaseFacts facts)
@@ -47,6 +56,12 @@ namespace PlateformePFA.API.Services
 
             if (to == CaseWorkflowState.Resolved && !facts.HasOutcome)
                 return (false, "Un résultat et un résumé de résolution sont requis.");
+
+            // Every generic transition into Resolved requires a held meeting.
+            // Applying the invariant to the target (rather than one source
+            // state) prevents bypasses such as InProgress -> Monitoring -> Resolved.
+            if (to == CaseWorkflowState.Resolved && !facts.MeetingHeld)
+                return (false, "L'entretien doit avoir été réalisé avant de résoudre ce cas.");
 
             if (to == CaseWorkflowState.Closed && !facts.MonitoringComplete)
                 return (false, "La période de suivi n'est pas terminée ; clôture impossible avant la date de suivi.");

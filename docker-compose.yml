@@ -36,6 +36,44 @@ services:
       # reach the DB; only backend (on pfa_internal_db) and the host can.
       - pfa_db_host
 
+  # 1b. DB backup sidecar — periodic full backups of PFA_DB + PFA_DW with
+  # retention pruning. Shares the mssql/server image (for its bundled sqlcmd)
+  # but does NOT run sqlservr: entrypoint is cleared and a backup loop runs
+  # instead. Backups land on the db_backups named volume so they survive
+  # sidecar restarts. Back that volume up OFF-HOST (S3 / NAS / tape) for real
+  # disaster recovery — a backup on the same host as the DB is not DR.
+  db-backup:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    entrypoint: [""]
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "db-backup starting: interval=$${BACKUP_INTERVAL_SECONDS}s retention=$${BACKUP_RETENTION_DAYS}d"
+        # Run one backup immediately so a fresh deploy has a baseline, then loop.
+        /backup.sh || true
+        while true; do
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+          /backup.sh || true
+        done
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${SA_PASSWORD}
+      - DB_HOST=db
+      - BACKUP_DIR=/backups
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - BACKUP_INTERVAL_SECONDS=${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./database/backup.sh:/backup.sh:ro
+      - db_backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      # Only needs to reach `db` on the DB plane — never internet-facing.
+      - pfa_internal_db
+
   # 2. Backend ASP.NET Core 8
   backend:
     build:
@@ -98,7 +136,17 @@ services:
     environment:
       - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN}
       - MODEL_DIR=/app/saved_models
-      - DW_CONNECTION_STRING=DRIVER={ODBC Driver 18 for SQL Server};SERVER=db;DATABASE=PFA_DW;UID=pfa_app;PWD=${APP_DB_PASSWORD};TrustServerCertificate=yes;
+      # Read-only DW access: the ML service only LOADS training data from PFA_DW,
+      # it never writes. Using the dedicated pfa_app_readonly login (db_datareader
+      # on PFA_DW only, no PFA_DB access) instead of pfa_app drops the ML service
+      # to true least-privilege — a compromise of the ML container cannot mutate
+      # the warehouse or reach OLTP data.
+      - DW_CONNECTION_STRING=DRIVER={ODBC Driver 18 for SQL Server};SERVER=db;DATABASE=PFA_DW;UID=pfa_app_readonly;PWD=${READONLY_DB_PASSWORD};TrustServerCertificate=yes;
+      # MLflow tracking URI — when set, every training run logs params/metrics/
+      # artifacts to the mlflow service. Best-effort: training proceeds with
+      # joblib-on-disk if mlflow is down or this is empty.
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-pfa_student_risk}
     volumes:
       # Persist trained .joblib models across container restarts and re-deploys.
       # Without this, every restart forces a full retrain from DW data (or falls
@@ -122,6 +170,37 @@ services:
     networks:
       - pfa_internal_ml
       - pfa_internal_db
+
+  # 3b. MLflow tracking server — model lineage for the ML service.
+  # Every training run (startup auto-train + /predict/retrain) logs params,
+  # metrics, tags, and the .joblib artifact here when MLFLOW_TRACKING_URI is
+  # set on ml-service. The UI is reachable from the host at 127.0.0.1:5001 for
+  # the soutenance demo; it is NOT proxied by nginx (internal only) so it is
+  # never internet-facing. ml-service is intentionally NOT gated on this
+  # service: training degrades gracefully to joblib-on-disk if MLflow is down.
+  mlflow:
+    build:
+      context: ./mlflow
+    volumes:
+      - mlflow_data:/mlflow
+    ports:
+      # Host-only UI access for the demo — bound to 127.0.0.1 so it is not
+      # reachable from the LAN/internet. Remove in hardened deployments.
+      - "127.0.0.1:5001:5000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      # ml-service reaches mlflow on the internal ML plane.
+      - pfa_internal_ml
+      # Non-internal bridge whose sole member is mlflow, so the published
+      # 127.0.0.1:5001 host port works (a container on only internal networks
+      # cannot publish host ports). Mirrors the pfa_db_host pattern for the DB.
+      - pfa_mlflow_host
 
   # 6. CopilotKit runtime (Node 20 / Express + @copilotkit/runtime v2)
   # Serves the CopilotKit sidebar's runtime endpoint. nginx proxies
@@ -178,25 +257,65 @@ services:
 
   # 5. Reverse Proxy Nginx
   nginx:
-    image: nginx:1.27-alpine
+    # Built from ./nginx — the image bakes in an HTTP-only and a TLS config
+    # and picks one at startup via 05-tls-select.sh based on ENABLE_TLS. This
+    # avoids envsubst templating (which would risk clobbering nginx's own
+    # $host variables) and keeps dev mode byte-identical to the pre-TLS setup.
+    build:
+      context: ./nginx
     ports:
+      # HTTP — serves traffic when ENABLE_TLS=false, or 301-redirects to
+      # HTTPS when ENABLE_TLS=true.
       - "80:80"
+      # HTTPS — only listened on when ENABLE_TLS=true. Publishing 443 on the
+      # host unconditionally is harmless: in HTTP-only mode nginx doesn't bind
+      # 443 so connections are simply refused, and flipping ENABLE_TLS needs
+      # no compose change.
+      - "443:443"
+    environment:
+      - ENABLE_TLS=${ENABLE_TLS:-false}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Certs, read-only. Required only when ENABLE_TLS=true, but always
+      # mounted — in HTTP-only mode the directory may be empty. Put your
+      # fullchain.pem + privkey.pem here (see nginx/generate-dev-certs.sh for
+      # a self-signed dev cert, or use Let's Encrypt / your CA for production).
+      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       frontend:
         condition: service_healthy
       backend:
         condition: service_healthy
+    # Healthcheck: nginx:alpine ships wget, so probe the index page. Catches
+    # config-reload failures (nginx -t can pass but runtime can still 500 on
+    # a bad upstream block) and container-level issues without waiting for an
+    # external client to notice a black page.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--timeout=3", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     networks:
       - pfa_public
 
 networks:
-  # Public-facing traffic: only nginx, frontend, backend.
+  # ─── Five isolated Docker networks ─────────────────────────────
+  # pfa_public:        internet-facing. nginx + frontend + backend + copilot-runtime.
+  # pfa_internal_db:   DB plane, internal=true (no internet). backend ↔ db ↔ ml-service.
+  # pfa_internal_ml:   ML plane, internal=true (no internet). backend ↔ ml-service ↔ mlflow.
+  # pfa_db_host:       NON-internal bridge whose SOLE member is `db`, so the
+  #                    published 127.0.0.1:1433 port is reachable from the host for
+  #                    SSMS / Azure Data Studio. A container attached only to
+  #                    internal networks cannot publish host ports (Docker silently
+  #                    drops the binding), so this fourth network exists purely to
+  #                    make the host port binding work without exposing the DB to
+  #                    any other service. frontend/nginx are NOT on it.
+  # pfa_mlflow_host:   NON-internal bridge whose sole member is mlflow, so the
+  #                    published 127.0.0.1:5001 port works for the demo UI.
   pfa_public:
     driver: bridge
-  # DB plane: only backend ↔ db. No external access, no ML reach.
+  # DB plane: only backend ↔ db ↔ ml-service. No external access.
   pfa_internal_db:
     driver: bridge
     internal: true
@@ -204,11 +323,17 @@ networks:
   # 127.0.0.1:1433 port works for SSMS. db is its sole member.
   pfa_db_host:
     driver: bridge
-  # ML plane: only backend ↔ ml-service.
+  # ML plane: only backend ↔ ml-service ↔ mlflow.
   pfa_internal_ml:
     driver: bridge
     internal: true
+  # Host-access plane for MLflow only — NOT internal, so the published
+  # 127.0.0.1:5001 port works for the demo UI. mlflow is its sole member.
+  pfa_mlflow_host:
+    driver: bridge
 
 volumes:
   sqlserver_data:
   ml_models_data:   # persists ML .joblib files across ml-service restarts
+  db_backups:       # SQL Server .bak files written by the db-backup sidecar
+  mlflow_data:      # MLflow SQLite store + artifact root (runs, params, metrics)

@@ -8,6 +8,8 @@ Usage:
     python models/train_clustering.py
 """
 
+import json
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -16,10 +18,13 @@ from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 import joblib
 
+from models.auto_train import SAVED_MODELS_DIR
+
 RANDOM_SEED = 42
 N_SAMPLES = 1000
 K = 4  # number of clusters (chosen via elbow method below)
-MODEL_PATH = Path(__file__).parent.parent / "saved_models" / "cluster_model.joblib"
+MODEL_VERSION = "1.8.0"
+MODEL_PATH = SAVED_MODELS_DIR / "cluster_model.joblib"
 
 
 # ─── 1. Generate synthetic student data ───────────────────────────────────────
@@ -76,7 +81,7 @@ def elbow_method(df: pd.DataFrame) -> None:
     plt.ylabel("Inertia (sum of squared distances)")
     plt.title("Elbow Method — choose K where the curve bends")
     plt.tight_layout()
-    out = Path(__file__).parent.parent / "saved_models" / "elbow_plot.png"
+    out = SAVED_MODELS_DIR / "elbow_plot.png"
     plt.savefig(out)
     print(f"Elbow plot saved -> {out}")
 
@@ -135,9 +140,50 @@ def train(df: pd.DataFrame, k: int) -> Pipeline:
 # ─── 4. Save the trained pipeline to disk ─────────────────────────────────────
 
 def save(pipeline: Pipeline) -> None:
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, MODEL_PATH)
-    print(f"\nModel saved -> {MODEL_PATH}")
+    save_with_metadata(pipeline, k=K, n_samples=0)
+
+
+def save_with_metadata(
+    pipeline: Pipeline,
+    k: int,
+    n_samples: int,
+    models_dir: Path | None = None,
+) -> None:
+    out_dir = models_dir or MODEL_PATH.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    model_file = out_dir / "cluster_model.joblib"
+    joblib.dump(pipeline, model_file)
+    print(f"\nModel saved -> {model_file}")
+
+    metadata = {
+        "model_version": MODEL_VERSION,
+        "k": k,
+        "n_samples": n_samples,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+    }
+    meta_path = out_dir / "cluster_metadata.json"
+    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(f"Metadata saved -> {meta_path}")
+
+    # ── MLflow tracking (best-effort, unsupervised — params + artifacts only) ─
+    from mlflow_client import start_run, log_params, log_tags, log_artifact
+
+    km = pipeline.named_steps.get("kmeans")
+    km_params = km.get_params() if km is not None else {}
+
+    with start_run("cluster_model"):
+        log_params({
+            "model_version": MODEL_VERSION,
+            "k": k,
+            "n_samples": n_samples,
+            "n_init": km_params.get("n_init"),
+            "max_iter": km_params.get("max_iter"),
+            "random_state": km_params.get("random_state"),
+        })
+        log_tags({"model_name": "cluster_model", "task": "unsupervised"})
+        log_artifact(model_file)
+        log_artifact(meta_path)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

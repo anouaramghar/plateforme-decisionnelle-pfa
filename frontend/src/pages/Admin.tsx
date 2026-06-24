@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import type { AxiosError } from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
-import { Icon } from '../components/ui/Icon'
+import { Icon, type IconName } from '../components/ui/Icon'
 import { Pill } from '../components/ui/Pill'
 import { Avatar } from '../components/ui/Avatar'
 import { PasswordInput } from '../components/ui/PasswordInput'
@@ -140,7 +140,7 @@ export default function Admin() {
             { id: 'users',     label: 'Utilisateurs',   icon: 'students' },
             { id: 'etudiants', label: 'Étudiants',      icon: 'user'     },
             { id: 'dw',        label: 'Data Warehouse', icon: 'database' },
-          ] as { id: Tab; label: string; icon: string }[]
+          ] as { id: Tab; label: string; icon: IconName }[]
         ).filter(item => isAdmin || item.id === 'etudiants'
         ).map(t => (
           <button
@@ -217,7 +217,7 @@ function UsersTab() {
         />
       )}
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto" role="region" aria-label="Utilisateurs" tabIndex={0}>
         {isLoading && (
           <div className="px-4 py-8 text-center cap">Chargement…</div>
         )}
@@ -230,7 +230,7 @@ function UsersTab() {
           <>
             {/* Header */}
             <div
-              className="grid px-4 py-2.5 text-[11px] uppercase tracking-wider"
+              className="grid min-w-[640px] px-4 py-2.5 text-[11px] uppercase tracking-wider"
               style={{
                 gridTemplateColumns: '1fr 1.5fr 1fr',
                 color: 'var(--text-3)',
@@ -246,7 +246,7 @@ function UsersTab() {
             {data?.items.map((u, i) => (
               <div
                 key={u.id}
-                className="grid items-center px-4 py-3"
+                className="grid min-w-[640px] items-center px-4 py-3"
                 style={{
                   gridTemplateColumns: '1fr 1.5fr 1fr',
                   borderBottom: i < (data.items.length - 1) ? '1px solid var(--border)' : 'none',
@@ -343,7 +343,7 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="cap">Prénom</span>
           <input className="input" placeholder="Mohamed" value={form.prenom} onChange={set('prenom')} required />
@@ -359,7 +359,7 @@ function CreateUserForm({ onSubmit, onCancel, isPending, error }: CreateUserForm
         <input className="input" type="email" placeholder="m.aitali@eniad.ma" value={form.email} onChange={set('email')} required />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="cap">Rôle</span>
           <select className="input" value={form.role} onChange={set('role')}>
@@ -735,7 +735,7 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="cap">Prénom</span>
           <input className="input" placeholder="Amine" value={form.prenom} onChange={set('prenom')} required />
@@ -746,7 +746,7 @@ function EtudiantForm({ title, filieres, loadingFil, initial, onSubmit, onCancel
         </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="cap">Matricule</span>
           <input className="input" placeholder="ENI-2025-001" value={form.matricule} onChange={set('matricule')} required maxLength={20} />
@@ -918,17 +918,17 @@ function DwTab() {
       </div>
 
       {/* Info grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
           {
             title: 'PFA_DB (OLTP)',
             desc: 'Base opérationnelle — données quotidiennes (étudiants, notes, modules, absences)',
-            icon: 'doc',
+            icon: 'doc' as IconName,
           },
           {
             title: 'PFA_DW (Data Warehouse)',
             desc: 'Schéma en étoile — FaitNotes + DimEtudiant + DimModule + DimTemps',
-            icon: 'database',
+            icon: 'database' as IconName,
           },
         ].map(c => (
           <div key={c.title} className="card p-4 flex gap-3">

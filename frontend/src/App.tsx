@@ -42,21 +42,21 @@ export default function App() {
           }
         >
           <Route index element={<RoleHome />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="dashboard" element={<RoleRoute roles={['Admin', 'Responsable']}><Dashboard /></RoleRoute>} />
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
           <Route path="alerts" element={<RoleRoute roles={['Admin', 'Responsable']}><Alertes /></RoleRoute>} />
           <Route path="triage" element={<Navigate to="/alerts" replace />} />
           <Route path="cases" element={<RoleRoute roles={['Admin', 'Responsable']}><Cases /></RoleRoute>} />
           <Route path="cases/:id" element={<RoleRoute roles={['Admin', 'Responsable']}><CaseDetail /></RoleRoute>} />
-          <Route path="predictions" element={<Predictions />} />
+          <Route path="predictions" element={<RoleRoute roles={['Admin', 'Responsable']}><Predictions /></RoleRoute>} />
           <Route path="reports" element={<Reports />} />
           <Route path="admin" element={<RoleRoute roles={['Admin', 'Responsable']}><Admin /></RoleRoute>} />
           <Route path="enseignant" element={<RoleRoute roles={['Admin', 'Enseignant']}><Enseignant /></RoleRoute>} />
           <Route path="responsable" element={<RoleRoute roles={['Admin', 'Responsable']}><Responsable /></RoleRoute>} />
           <Route path="settings" element={<Settings />} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<RoleHome />} />
       </Routes>
     </BrowserRouter>
   )

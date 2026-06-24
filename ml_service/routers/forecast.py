@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import numpy as np
@@ -6,7 +8,16 @@ import pandas as pd
 from dependencies import verify_internal_token
 from schemas.prediction_schema import ForecastRequest, ForecastResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
+
+
+def _clamp_nb_modules(nb_modules: int) -> int:
+    if nb_modules > 11:
+        logger.warning("nb_modules=%d clamped to 11 (training range 3-11)", nb_modules)
+        return 11
+    return nb_modules
 
 
 def _get_forecast_model(request: Request) -> Pipeline:
@@ -44,7 +55,7 @@ def forecast_grade(
     features = pd.DataFrame([{
         "moyenne_actuelle": payload.moyenne_actuelle,
         "taux_absence":     payload.taux_absence,
-        "nb_modules":       payload.nb_modules,
+        "nb_modules":       _clamp_nb_modules(payload.nb_modules),
     }])
 
     # predict() returns a 1D numpy array — we take index [0].

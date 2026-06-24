@@ -1,6 +1,4 @@
-import numpy as np
 import pandas as pd
-import pytest
 from models.train_risk import train, generate_data
 
 def test_risk_training_splits_out_of_time():

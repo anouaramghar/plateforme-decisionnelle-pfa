@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
+import { Skeleton } from '../components/ui/Skeleton'
 import { ChartRadial, ChartShap } from '../components/charts'
 import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
@@ -122,7 +122,8 @@ export default function Students() {
     setPage(1)
   }, [filiere, niveau, risque, statut, q])
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await import('xlsx')
     const rows = filtered.map(e => ({
       Matricule: e.matricule,
       Nom: e.nom,
@@ -146,7 +147,7 @@ export default function Students() {
     if (!file) return
     setImporting(true)
     try {
-      const rows = parseStudentCsv(await file.text())
+      const rows = await parseStudentCsv(await file.text())
       const response = await api.post<StudentImportResult>('/etudiants/import', rows)
       setImportMessage(`${response.data.imported} étudiant(s) importé(s) avec succès.`)
       setImportErrors([])
@@ -339,8 +340,50 @@ export default function Students() {
       </div>
 
       {isLoading ? (
-        <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
-          Chargement des étudiants…
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 p-3" style={{ borderBottom: '1px solid var(--border)' }}>
+            <Skeleton w={260} h={32} radius={7} />
+            <Skeleton w={120} h={30} radius={7} />
+            <Skeleton w={120} h={30} radius={7} />
+            <Skeleton w={120} h={30} radius={7} />
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Étudiant</th>
+                <th>Matricule</th>
+                <th>Filière</th>
+                <th>Niveau</th>
+                <th>Moy.</th>
+                <th>Modules</th>
+                <th>Absences</th>
+                <th>Score ML</th>
+                <th>Statut</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i}>
+                  <td>
+                    <div className="flex items-center gap-2.5">
+                      <Skeleton w={28} h={28} radius={6} />
+                      <Skeleton w={140} h={14} />
+                    </div>
+                  </td>
+                  <td><Skeleton w={70} h={12} /></td>
+                  <td><Skeleton w={40} h={18} radius={999} /></td>
+                  <td><Skeleton w={36} h={12} /></td>
+                  <td><Skeleton w={32} h={14} /></td>
+                  <td><Skeleton w={36} h={14} /></td>
+                  <td><Skeleton w={28} h={14} /></td>
+                  <td><Skeleton w={80} h={8} radius={999} /></td>
+                  <td><Skeleton w={60} h={18} radius={999} /></td>
+                  <td><Skeleton w={18} h={18} radius={7} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : isError ? (
         <div className="card p-8 text-center" style={{ color: 'var(--bad)' }}>
@@ -351,12 +394,10 @@ export default function Students() {
         </div>
       ) : (
       <div className="card overflow-hidden">
-        <table className="tbl">
+        <div className="overflow-x-auto" role="region" aria-label="Liste des étudiants" tabIndex={0}>
+        <table className="tbl min-w-[920px]">
           <thead>
             <tr>
-              <th style={{ width: 32 }}>
-                <input type="checkbox" className="rounded border-stone-300" />
-              </th>
               <th>Étudiant</th>
               <th>Matricule</th>
               <th>Filière</th>
@@ -372,9 +413,6 @@ export default function Students() {
           <tbody>
             {slice.map(e => (
               <tr key={e.id} onClick={() => setSelected(e)} style={{ cursor: 'pointer' }}>
-                <td onClick={ev => ev.stopPropagation()}>
-                  <input type="checkbox" className="rounded border-stone-300" />
-                </td>
                 <td>
                   <div className="flex items-center gap-2.5">
                     <Avatar name={e.nomComplet} />
@@ -406,7 +444,11 @@ export default function Students() {
                   </Pill>
                 </td>
                 <td>
-                  <button className="btn btn-sm btn-ghost">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    aria-label={`Voir la fiche de ${e.nomComplet}`}
+                  >
                     <Icon name="chevRight" size={13} />
                   </button>
                 </td>
@@ -414,6 +456,7 @@ export default function Students() {
             ))}
           </tbody>
         </table>
+        </div>
         <div
           className="flex items-center justify-between px-4 py-2.5"
           style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}
@@ -427,6 +470,8 @@ export default function Students() {
             <button
               onClick={() => setPage(Math.max(1, page - 1))}
               className="btn btn-sm btn-ghost"
+              disabled={page <= 1}
+              aria-label="Page précédente"
             >
               <Icon name="chevLeft" size={13} />
             </button>
@@ -436,6 +481,8 @@ export default function Students() {
             <button
               onClick={() => setPage(Math.min(pages, page + 1))}
               className="btn btn-sm btn-ghost"
+              disabled={page >= pages}
+              aria-label="Page suivante"
             >
               <Icon name="chevRight" size={13} />
             </button>
@@ -635,7 +682,7 @@ function StudentDrawer({
         aria-modal="true"
         aria-label={`Fiche étudiant — ${student.nomComplet}`}
         onClick={e => e.stopPropagation()}
-        className="drawer absolute right-0 top-0 bottom-0 w-[640px] flex flex-col"
+        className="drawer drawer-panel absolute right-0 top-0 bottom-0 flex flex-col"
         style={{ background: 'var(--surface)' }}
       >
         <div
@@ -665,7 +712,7 @@ function StudentDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-thin p-5 space-y-5">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { l: 'Moyenne', v: moyenne.toFixed(2), s: '/20', t: moyenne >= 10 ? 'ok' : 'bad' },
               { l: 'Modules validés', v: student.modulesValides, s: `/${student.modulesTotal}` },
@@ -761,7 +808,7 @@ function StudentDrawer({
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {(['noteTD', 'noteTP', 'noteExamen', 'noteFinal'] as const).map((field, i) => (
                     <div key={field}>
                       <div className="cap mb-1 text-[11px]">{['CC', 'TP', 'Examen', 'Finale'][i]}</div>

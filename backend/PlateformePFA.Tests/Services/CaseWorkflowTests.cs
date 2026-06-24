@@ -6,8 +6,18 @@ namespace PlateformePFA.Tests.Services;
 
 public class CaseWorkflowTests
 {
-    private static CaseWorkflow.CaseFacts Facts(bool owner = true, bool outcome = true, bool reason = true, bool monitoring = true)
-        => new(HasOwner: owner, HasOutcome: outcome, HasReason: reason, MonitoringComplete: monitoring);
+    private static CaseWorkflow.CaseFacts Facts(
+        bool owner = true,
+        bool outcome = true,
+        bool reason = true,
+        bool monitoring = true,
+        bool meetingHeld = true)
+        => new(
+            HasOwner: owner,
+            HasOutcome: outcome,
+            HasReason: reason,
+            MonitoringComplete: monitoring,
+            MeetingHeld: meetingHeld);
 
     [Fact]
     public void Open_to_InProgress_needs_owner()
@@ -20,7 +30,17 @@ public class CaseWorkflowTests
     public void Resolve_needs_outcome_and_summary()
     {
         CaseWorkflow.CanTransition("InProgress", "Resolved", Facts(outcome: false)).ok.Should().BeFalse();
+        CaseWorkflow.CanTransition("InProgress", "Resolved", Facts(outcome: true, meetingHeld: false)).ok.Should().BeFalse();
         CaseWorkflow.CanTransition("InProgress", "Resolved", Facts(outcome: true)).ok.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Monitoring")]
+    [InlineData("Escalated")]
+    public void Every_path_to_resolved_requires_a_held_meeting(string from)
+    {
+        CaseWorkflow.CanTransition(from, "Resolved", Facts(meetingHeld: false)).ok.Should().BeFalse();
+        CaseWorkflow.CanTransition(from, "Resolved", Facts(meetingHeld: true)).ok.Should().BeTrue();
     }
 
     [Fact]

@@ -469,6 +469,12 @@ namespace PlateformePFA.API.Data
                    AND COL_LENGTH('dbo.InterventionCases', 'MeetingHeldAt') IS NULL
                     ALTER TABLE InterventionCases ADD MeetingHeldAt DATETIME2 NULL;
             ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NOT NULL
+                   AND COL_LENGTH('dbo.CaseCommunications', 'ConcurrencyToken') IS NULL
+                    ALTER TABLE CaseCommunications ADD ConcurrencyToken UNIQUEIDENTIFIER NOT NULL
+                        CONSTRAINT DF_CaseCommunications_ConcurrencyToken DEFAULT NEWID();
+            ");
 
             // Widen the communication-status CHECK to admit 'Draft'. Drop and
             // recreate by name so existing volumes (constraint = Queued/Sent/Failed)

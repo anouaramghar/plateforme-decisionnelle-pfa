@@ -1,4 +1,8 @@
-FROM mcr.microsoft.com/mssql/server:2022-latest
+# Pinned to a specific Cumulative Update for reproducible builds. The floating
+# "2022-latest" tag silently re-resolves to a newer CU on every pull, which can
+# trigger unexpected "script upgrade mode" boots on existing volumes. Bump
+# deliberately by editing this tag and re-testing the entrypoint wait loop.
+FROM mcr.microsoft.com/mssql/server:2022-CU15-ubuntu-22.04
 
 USER root
 

@@ -291,7 +291,9 @@ namespace PlateformePFA.API.Controllers
                             && !string.IsNullOrWhiteSpace(dto.ResolutionSummary ?? c.ResolutionSummary),
                 HasReason:  !string.IsNullOrWhiteSpace(dto.Raison),
                 // Monitoring is "done" when no follow-up date was set, or it has passed.
-                MonitoringComplete: c.FollowUpDate == null || c.FollowUpDate <= DateTime.UtcNow);
+                MonitoringComplete: c.FollowUpDate == null || c.FollowUpDate <= DateTime.UtcNow,
+                // A meeting is held when the case itself records Held attendance.
+                MeetingHeld: c.MeetingAttendance == "Held");
 
             var (ok, error) = CaseWorkflow.CanTransition(from, to, facts);
             if (!ok) return BadRequest(new { message = error });

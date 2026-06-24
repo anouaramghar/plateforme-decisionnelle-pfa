@@ -23,17 +23,28 @@ public sealed class FakeEmailSender : IEmailSender
     public bool ShouldSucceed { get; set; } = true;
     public string FailureReason { get; set; } = "SMTP indisponible";
     public List<(string to, string subject, string body)> Sent { get; } = new();
+    public TaskCompletionSource<bool>? Started { get; set; }
+    public TaskCompletionSource<bool>? Continue { get; set; }
 
-    public void Reset() { ShouldSucceed = true; FailureReason = "SMTP indisponible"; Sent.Clear(); }
-
-    public Task<(bool ok, string? error)> SendAsync(string to, string subject, string body, CancellationToken ct = default)
+    public void Reset()
     {
+        ShouldSucceed = true;
+        FailureReason = "SMTP indisponible";
+        Sent.Clear();
+        Started = null;
+        Continue = null;
+    }
+
+    public async Task<(bool ok, string? error)> SendAsync(string to, string subject, string body, CancellationToken ct = default)
+    {
+        Started?.TrySetResult(true);
+        if (Continue != null) await Continue.Task.WaitAsync(ct);
         if (ShouldSucceed)
         {
             Sent.Add((to, subject, body));
-            return Task.FromResult<(bool, string?)>((true, null));
+            return (true, null);
         }
-        return Task.FromResult<(bool, string?)>((false, FailureReason));
+        return (false, FailureReason);
     }
 }
 
@@ -148,6 +159,8 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
         entity.FindProperty("MeetingLocation").Should().NotBeNull();
         entity.FindProperty("MeetingAttendance").Should().NotBeNull();
         entity.FindProperty("MeetingHeldAt").Should().NotBeNull();
+        db.Model.FindEntityType(typeof(CaseCommunication))!
+            .FindProperty("ConcurrencyToken")!.IsConcurrencyToken.Should().BeTrue();
     }
 
     // ── Task 3: draft lifecycle ───────────────────────────────────────────────
@@ -324,6 +337,39 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task Concurrent_send_requests_deliver_only_once_and_persist_schedule_before_smtp()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+        var requested = DateTime.UtcNow.AddDays(2);
+        _factory.Email.Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _factory.Email.Continue = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = requested, location = "Salle B12" });
+        await _factory.Email.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using (var duringSend = _factory.CreateContext())
+        {
+            duringSend.CaseCommunications.Single(c => c.Id == commId).Status.Should().Be(CommunicationStatus.Queued);
+            var intervention = duringSend.InterventionCases.Single(c => c.Id == caseId);
+            intervention.MeetingScheduledFor.Should().BeCloseTo(requested, TimeSpan.FromSeconds(1));
+            intervention.MeetingLocation.Should().Be("Salle B12");
+            duringSend.CaseTimelineEvents.Should().Contain(e => e.CaseId == caseId && e.Action == "MeetingScheduled");
+        }
+
+        var second = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = requested.AddDays(1), location = "Salle C1" });
+        second.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Conflict);
+
+        _factory.Email.Continue.TrySetResult(true);
+        (await first).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _factory.Email.Sent.Should().ContainSingle();
+    }
+
     // ── Task 5: record meeting attendance ─────────────────────────────────────
 
     private async Task<int> CreateScheduledOutreachAsync(HttpClient client)
@@ -354,6 +400,37 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
         saved.Etat.Should().Be(CaseWorkflowState.WaitingStudent);
         saved.MeetingAttendance.Should().Be(attendance);
         saved.MeetingHeldAt.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Absent")]
+    [InlineData("Cancelled")]
+    public async Task Non_held_meeting_can_be_rescheduled(string attendance)
+    {
+        var client = await AuthedClientAsync();
+        var caseId = await CreateScheduledOutreachAsync(client);
+        (await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/meeting-result",
+            new { attendance })).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var draftResponse = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft",
+            new { subject = "Nouveau rendez-vous", body = "Bonjour, replanifions notre entretien." });
+        draftResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await draftResponse.Content.ReadFromJsonAsync<CaseCommunication>();
+
+        using (var afterDraft = _factory.CreateContext())
+        {
+            var intervention = afterDraft.InterventionCases.Single(c => c.Id == caseId);
+            intervention.Etat.Should().Be(CaseWorkflowState.InProgress);
+            intervention.MeetingAttendance.Should().BeNull();
+            intervention.MeetingScheduledFor.Should().BeNull();
+        }
+
+        var send = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{draft!.Id}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(4), location = "Salle C1" });
+        send.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]

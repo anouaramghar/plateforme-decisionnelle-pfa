@@ -198,11 +198,23 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
+        private static readonly HashSet<string> AllowedTypes =
+            new() { "RisqueEchec", "AbsenceExcessive", "NoteFaible", "Abandon" };
+        private static readonly HashSet<string> AllowedNiveaux =
+            new() { "Faible", "Moyen", "Eleve", "Critique" };
+
         // POST: api/alertes
         [Authorize(Roles = "Admin")]
         [HttpPost]
         public async Task<ActionResult<Alerte>> PostAlerte(CreateAlerteDto dto)
         {
+            if (!AllowedTypes.Contains(dto.Type))
+                return BadRequest(new { message = "Type d'alerte invalide." });
+            if (!AllowedNiveaux.Contains(dto.Niveau))
+                return BadRequest(new { message = "Niveau d'alerte invalide." });
+            if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId))
+                return NotFound(new { message = "Etudiant introuvable." });
+
             var alerte = new Alerte
             {
                 EtudiantId = dto.EtudiantId,
@@ -290,6 +302,9 @@ namespace PlateformePFA.API.Controllers
         {
             var alerte = await _context.Alertes.FindAsync(id);
             if (alerte == null) return NotFound(new { message = "Alerte introuvable." });
+
+            if (alerte.CaseId != null)
+                return Conflict(new { message = "Impossible de supprimer une alerte liée à un cas." });
 
             _context.Alertes.Remove(alerte);
             await _context.SaveChangesAsync();

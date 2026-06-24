@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -16,7 +16,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
 
@@ -29,11 +29,16 @@ export default function Login() {
     defaultValues: { email: '', password: '' },
   })
 
+  // Navigate only after React has committed the authenticated user. Navigating
+  // directly from login() races ProtectedRoute's token read on fast responses.
+  useEffect(() => {
+    if (user) navigate(homeFor(user.role), { replace: true })
+  }, [navigate, user])
+
   const onSubmit = async ({ email, password }: FormValues) => {
     try {
       setError(null)
-      const role = await login(email, password)
-      navigate(homeFor(role))
+      await login(email, password)
     } catch {
       setError('Email ou mot de passe incorrect.')
     }
@@ -159,6 +164,7 @@ export default function Login() {
 
           {error && (
             <div
+              role="alert"
               className="mb-3 text-[12.5px] rounded-md px-3 py-2"
               style={{
                 background: 'color-mix(in oklch, var(--bad) 8%, transparent)',
@@ -183,9 +189,13 @@ export default function Login() {
             <Field
               label="Mot de passe"
               hint={
-                <button type="button" className="hover:underline" style={{ color: 'var(--accent-600)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
+                <a
+                  href="mailto:admin@eniad.ma?subject=Demande%20de%20r%C3%A9initialisation%20de%20mot%20de%20passe"
+                  className="hover:underline"
+                  style={{ color: 'var(--accent-600)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}
+                >
                   Mot de passe oublié&nbsp;?
-                </button>
+                </a>
               }
               required
               error={errors.password?.message}
@@ -212,9 +222,13 @@ export default function Login() {
 
           <p className="mt-6 text-[11.5px] text-center" style={{ color: 'var(--text-3)' }}>
             Pas de compte ?{' '}
-            <button type="button" className="hover:underline" style={{ color: 'var(--accent-600)', fontWeight: 500, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
+            <a
+              href="mailto:admin@eniad.ma?subject=Demande%20d%27acc%C3%A8s%20%C3%A0%20la%20plateforme%20d%C3%A9cisionnelle"
+              className="hover:underline"
+              style={{ color: 'var(--accent-600)', fontWeight: 500, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}
+            >
               Demander un accès au responsable
-            </button>
+            </a>
           </p>
         </form>
       </div>

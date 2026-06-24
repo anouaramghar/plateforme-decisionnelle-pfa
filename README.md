@@ -28,20 +28,24 @@ Internet → nginx:80 (pfa_public)
 copilot-runtime:4000 → backend:8080   (tool callbacks via /api/copilot/tool/*)
 backend:8080         → ml-service:8000 (pfa_internal_ml)
 backend:8080         → db:1433         (pfa_internal_db)
+ml-service:8000      → db:1433 (PFA_DW read-only via pfa_app_readonly, pfa_internal_db)
+db:1433              → host:1433       (pfa_db_host — published 127.0.0.1 port for SSMS)
 ```
 
-Three isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`. ML service and database are unreachable from the public internet (`internal: true`).
+Four isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`, and `pfa_db_host`. The ML service and database are unreachable from the public internet (`internal: true`); `pfa_db_host` is a non-internal bridge whose sole member is `db`, so its `127.0.0.1:1433` published port is reachable from the host for SSMS without exposing the DB to frontend/nginx.
 
 ---
 
 ## Quick Start
 
 ```bash
-cp .env.example .env   # fill in JWT_SECRET, SA_PASSWORD, APP_DB_PASSWORD, ML_INTERNAL_TOKEN, NVIDIA_NIM_API_KEY
+cp .env.example .env   # fill in JWT_SECRET, SA_PASSWORD, APP_DB_PASSWORD,
+                       # READONLY_DB_PASSWORD, ML_INTERNAL_TOKEN,
+                       # AGENT_INTERNAL_TOKEN, NVIDIA_NIM_API_KEY
 docker compose up --build
 ```
 
-First admin account: `admin@eniad.dz` / `Admin@ENIAD2025` (seeded by `DataSeeder`).
+First admin account is created at backend startup by `DataSeeder`, driven by the `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` env vars (see `.env.example` — set them before first boot; the seeder refuses a placeholder/short password). There is **no** `/api/auth/register` endpoint. Example credentials are placeholders only — do not use them in production.
 
 ```bash
 docker compose down -v  # wipe DB volumes — needed after schema changes
@@ -54,9 +58,9 @@ docker compose down -v  # wipe DB volumes — needed after schema changes
 cd backend/PlateformePFA.API
 dotnet restore && dotnet build
 dotnet run                    # http://localhost:5135  (Swagger at /swagger)
-dotnet ef migrations add <Name>
-dotnet ef database update
 ```
+
+Schema evolution is handled by `RuntimeMigrations.cs` (idempotent `CREATE TABLE` / `ALTER TABLE` blocks run on every startup), **not** EF Core migrations — there is no `Migrations/` folder, so `dotnet ef migrations add` / `dotnet ef database update` are not used.
 
 Tests:
 ```bash
@@ -105,15 +109,6 @@ npm run build
 - Automatic alerts: low grade (< 10), excessive absences (> 20h), high ML risk score
 - Polling every 30s, bulk resolve, XLSX export
 
-### Interventions & Student Outreach
-- Risk-driven triage queue: students sorted by predicted risk, one click to open an intervention
-- Four-stage workflow: À contacter → Email préparé → Entretien planifié → Entretien réalisé
-- Editable email drafts with optional AI-assisted drafting (deterministic French fallback when the AI service is unavailable)
-- Schedule a meeting and send the invitation exactly once — Queued state prevents duplicate sends, Failed emails are retryable
-- Record meeting attendance (Held / Absent / Cancelled) — only a Held meeting with outcome + summary resolves the intervention
-- One active intervention per student (duplicate prevention redirects to the existing case)
-- Funnel metrics on the Responsable dashboard: contacted-eligible %, email delivery success %, meeting-held %, median alert-to-email delay
-
 ### Predictions ML
 - Batch prediction for any filière/niveau cohort
 - Risk scatter plot (average vs absences)
@@ -154,8 +149,9 @@ ETL: `POST /api/admin/sync-dw` executes `database/etl.sql` MERGE statements.
 ### Environment Variables
 See `.env.example` for the full annotated list. Required at minimum:
 - `JWT_SECRET` (≥ 32 chars)
-- `SA_PASSWORD`, `APP_DB_PASSWORD`
+- `SA_PASSWORD`, `APP_DB_PASSWORD`, `READONLY_DB_PASSWORD`
 - `ML_INTERNAL_TOKEN`, `AGENT_INTERNAL_TOKEN`
+- `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD` (first-boot admin)
 - `NVIDIA_NIM_API_KEY` (for Copilot)
 
 ### Operations

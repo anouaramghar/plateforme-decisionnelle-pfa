@@ -228,8 +228,14 @@ BEGIN
     -- app credential; CHECK_EXPIRATION = OFF prevents an automatic password
     -- expiry from silently bricking the backend when the app account is
     -- non-interactive (rotation must be done deliberately, via redeploy).
+    -- sqlcmd substitutes $(APP_PASSWORD) verbatim into the batch text; the
+    -- REPLACE only doubles embedded single quotes so the @pw literal parses.
+    -- QUOTENAME then escapes the value correctly for the dynamic statement
+    -- (parameterized instead of nested-quote string concatenation).
+    DECLARE @pw NVARCHAR(128) = REPLACE('$(APP_PASSWORD)', '''', '''''');
     DECLARE @sql NVARCHAR(MAX) =
-        N'CREATE LOGIN pfa_app WITH PASSWORD = ''' + REPLACE('$(APP_PASSWORD)', '''', '''''') + ''', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
+        N'CREATE LOGIN pfa_app WITH PASSWORD = ' + QUOTENAME(@pw, '''') +
+        N', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;';
     EXEC sp_executesql @sql;
 END
 GO
@@ -248,16 +254,28 @@ GO
 
 ALTER ROLE db_datareader ADD MEMBER pfa_app;
 ALTER ROLE db_datawriter ADD MEMBER pfa_app;
--- ddladmin lets RuntimeMigrations.cs run idempotent CREATE TABLE / ALTER
--- TABLE blocks on every backend startup without needing a separate sa
--- connection. Required for additive schema changes (Rapports, AuditEntries,
--- Predictions.Niveau backfill) to land cleanly on existing volumes.
+-- db_ddladmin is REQUIRED for RuntimeMigrations.cs, the canonical schema-
+-- evolution path (EF migrations are NOT used — there is no Migrations/ folder).
+-- RuntimeMigrations runs idempotent CREATE TABLE / ALTER TABLE / CREATE INDEX
+-- blocks on every backend startup to roll forward additive schema changes
+-- (Rapports, AuditEntries, Predictions.Niveau backfill, new indexes) onto
+-- existing volumes without needing a separate sa connection.
+--
+-- To REMOVE db_ddladmin (tighter least-privilege): retire RuntimeMigrations.cs
+-- in favor of explicit, reviewable migration scripts run by an operator with sa
+-- during deploys, then grant pfa_app only db_datareader + db_datawriter. New
+-- tables/columns would then need specific per-object GRANTs (or the app would
+-- lose access to objects it can no longer create). Do NOT drop ddladmin while
+-- RuntimeMigrations.cs is still in the startup path — the backend will fail to
+-- apply schema changes and report /ready as unhealthy on stale volumes.
 ALTER ROLE db_ddladmin ADD MEMBER pfa_app;
 GO
 
--- NOTE: No admin user seeded here. Create the first admin account via
--- the backend registration endpoint (which writes a real bcrypt hash),
--- or run a one-shot script with a freshly generated hash.
+-- NOTE: No admin user is seeded in SQL. The first Admin account is created at
+-- backend startup by DataSeeder (backend/PlateformePFA.API/Services/DataSeeder),
+-- driven by the ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD env vars (see .env.example).
+-- There is NO /api/auth/register endpoint — DataSeeder is the only first-admin
+-- path. After first boot, change the password via the API.
 
 -- ─── Schema readiness marker ──────────────────────────────────
 -- Written at the very end of init.sql so it is set only after

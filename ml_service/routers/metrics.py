@@ -19,12 +19,13 @@ from sklearn.metrics import (
 )
 
 from dependencies import verify_internal_token
+from models.auto_train import SAVED_MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/metrics", tags=["Metrics"])
 
-_SAVED_DIR = Path(__file__).parent.parent / "saved_models"
+_SAVED_DIR = SAVED_MODELS_DIR
 _EVAL_PARQUET = _SAVED_DIR / "eval_set.parquet"
 _METADATA_JSON = _SAVED_DIR / "metadata.json"
 

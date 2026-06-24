@@ -1,7 +1,7 @@
+import asyncio
 import logging
-import threading
+import time
 
-import shap
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
@@ -20,7 +20,9 @@ router = APIRouter(prefix="/predict", tags=["Prediction"])
 # globals in train_risk / train_clustering / train_regression; two concurrent
 # retrains would interleave those patches and the finally-restore, writing
 # models to the wrong directory and silently destroying the originals.
-_retrain_lock = threading.Lock()
+_retrain_async_lock = asyncio.Lock()
+_last_retrain_at: float = 0.0
+_RETRAIN_COOLDOWN_S: float = 60.0
 
 
 def _get_risk_model(request: Request) -> Pipeline:
@@ -35,6 +37,36 @@ def _get_risk_model(request: Request) -> Pipeline:
             detail="Risk model is not loaded. Check startup logs."
         )
     return model
+
+
+def _positive_class_index(request: Request, model: Pipeline) -> int:
+    """
+    Returns the column index of the positive (at-risk) class in
+    model.predict_proba output, cached on app.state. Falls back to 1
+    with a warning if class 1 isn't present.
+    """
+    idx = getattr(request.app.state, "risk_positive_class_idx", None)
+    if idx is not None:
+        return idx
+    classes = getattr(model, "classes_", None)
+    if classes is None:
+        logger.warning("Model has no classes_ attribute; falling back to positive-class index 1.")
+        return 1
+    try:
+        idx = int(list(classes).index(1))
+    except ValueError:
+        logger.warning("Class 1 not found in model.classes_=%s; falling back to index 1.", classes)
+        idx = 1
+    request.app.state.risk_positive_class_idx = idx
+    return idx
+
+
+def _clamp_nb_modules(nb_modules: int) -> int:
+    """Clamps nb_modules to the model's training range (3–11)."""
+    if nb_modules > 11:
+        logger.warning("nb_modules=%d clamped to 11 (training range 3-11)", nb_modules)
+        return 11
+    return nb_modules
 
 
 def _score_to_label(probability: float) -> str:
@@ -76,13 +108,15 @@ def predict_risk(
     """
     model: Pipeline = _get_risk_model(request)
 
+    nb_modules = _clamp_nb_modules(payload.nb_modules)
     features = pd.DataFrame([{
         "moyenne_generale": payload.moyenne_generale,
         "taux_absence":     payload.taux_absence,
-        "nb_modules":       payload.nb_modules,
+        "nb_modules":       nb_modules,
     }])
 
-    probability = float(model.predict_proba(features)[0][1])
+    pos_idx = _positive_class_index(request, model)
+    probability = float(model.predict_proba(features)[0][pos_idx])
 
     return PredictionResponse(
         probabilite=round(probability, 4),
@@ -119,20 +153,34 @@ def explain_risk(
     """
     model: Pipeline = _get_risk_model(request)
 
+    nb_modules = _clamp_nb_modules(payload.nb_modules)
     features = pd.DataFrame([{
         "moyenne_generale": payload.moyenne_generale,
         "taux_absence":     payload.taux_absence,
-        "nb_modules":       payload.nb_modules,
+        "nb_modules":       nb_modules,
     }])
 
-    probability = float(model.predict_proba(features)[0][1])
+    pos_idx = _positive_class_index(request, model)
+    probability = float(model.predict_proba(features)[0][pos_idx])
+
+    try:
+        import shap
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="SHAP is not installed on the ML service.",
+        )
+
+    explainer = getattr(request.app.state, "shap_explainer", None)
+    if explainer is None:
+        classifier = model.named_steps["classifier"]
+        explainer = shap.TreeExplainer(classifier)
+        request.app.state.shap_explainer = explainer
 
     # Scale through the pipeline's preprocessor, then run SHAP on the classifier.
     scaler     = model.named_steps["scaler"]
-    classifier = model.named_steps["classifier"]
     X_scaled   = pd.DataFrame(scaler.transform(features), columns=_FEATURE_NAMES)
 
-    explainer   = shap.TreeExplainer(classifier)
     shap_values = explainer.shap_values(X_scaled)
     sv          = shap_values[0]          # shape (3,) — one value per feature
 
@@ -180,16 +228,18 @@ def predict_batch(
 
     model: Pipeline = _get_risk_model(request)
 
-    features = pd.DataFrame([
+    rows = [
         {
             "moyenne_generale": p.moyenne_generale,
             "taux_absence":     p.taux_absence,
-            "nb_modules":       p.nb_modules,
+            "nb_modules":       _clamp_nb_modules(p.nb_modules),
         }
         for p in payloads
-    ])
+    ]
+    features = pd.DataFrame(rows)
 
-    probabilities = model.predict_proba(features)[:, 1]
+    pos_idx = _positive_class_index(request, model)
+    probabilities = model.predict_proba(features)[:, pos_idx]
 
     return [
         PredictionResponse(
@@ -203,7 +253,7 @@ def predict_batch(
 # ─── Retrain on demand ────────────────────────────────────────────────────────
 
 @router.post("/retrain")
-def retrain_models(
+async def retrain_models(
     request: Request,
     _: None = Depends(verify_internal_token),
 ) -> dict:
@@ -215,87 +265,98 @@ def retrain_models(
     previous models stay live and `/predict` keeps serving — instead of being
     bricked with deleted files and no replacements (the old behavior).
 
+    Rate-limited to one call per 60 seconds (in-memory, process-local) to keep
+    a misbehaving client from thrashing the trainer.
+
     Called by the admin after running ETL sync:
         POST /predict/retrain
         Header: X-Internal-Token: <secret>
     """
+    global _last_retrain_at
+
+    async with _retrain_async_lock:
+        now = time.monotonic()
+        if now - _last_retrain_at < _RETRAIN_COOLDOWN_S:
+            raise HTTPException(
+                status_code=429,
+                detail="Retrain en cours ou trop récent",
+            )
+        _last_retrain_at = now
+        result = await asyncio.to_thread(_do_retrain, request)
+
+    return result
+
+
+def _do_retrain(request: Request) -> dict:
     import os
     import shutil
     import joblib
     from models import auto_train, train_risk, train_clustering, train_regression
 
-    # Non-blocking acquire: if another retrain is already running, fail fast
-    # with 409 rather than queue up and risk interleaving global patches.
-    if not _retrain_lock.acquire(blocking=False):
-        raise HTTPException(
-            status_code=409,
-            detail="A retrain is already in progress. Try again once it completes.",
-        )
+    saved_dir   = auto_train.SAVED_MODELS_DIR
+    staging_dir = saved_dir / "staging"
 
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    # Each train_*.py script writes through its own module-level MODEL_PATH.
+    # Redirect all four module-level paths at the staging dir for the duration
+    # of this call; restore them afterwards in a finally so a partial run can't
+    # leave the modules pointing at staging. The surrounding _retrain_async_lock
+    # guarantees no other request can observe or overwrite these patches.
+    originals = {
+        "auto_train":      auto_train.SAVED_MODELS_DIR,
+        "train_risk":      train_risk.MODEL_PATH,
+        "train_clustering": train_clustering.MODEL_PATH,
+        "train_regression": train_regression.MODEL_PATH,
+    }
     try:
-        saved_dir   = auto_train.SAVED_MODELS_DIR
-        staging_dir = saved_dir / "staging"
-
-        if staging_dir.exists():
-            shutil.rmtree(staging_dir)
-        staging_dir.mkdir(parents=True, exist_ok=True)
-
-        # Each train_*.py script writes through its own module-level MODEL_PATH.
-        # Redirect all four module-level paths at the staging dir for the duration
-        # of this call; restore them afterwards in a finally so a partial run can't
-        # leave the modules pointing at staging. The surrounding _retrain_lock
-        # guarantees no other request can observe or overwrite these patches.
-        originals = {
-            "auto_train":      auto_train.SAVED_MODELS_DIR,
-            "train_risk":      train_risk.MODEL_PATH,
-            "train_clustering": train_clustering.MODEL_PATH,
-            "train_regression": train_regression.MODEL_PATH,
-        }
-        try:
-            auto_train.SAVED_MODELS_DIR     = staging_dir
-            train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
-            train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
-            train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
-            auto_train.ensure_all_models()
-        except Exception:
-            shutil.rmtree(staging_dir, ignore_errors=True)
-            logger.exception("Retraining failed; previous models left in place.")
-            raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
-        finally:
-            auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
-            train_risk.MODEL_PATH           = originals["train_risk"]
-            train_clustering.MODEL_PATH     = originals["train_clustering"]
-            train_regression.MODEL_PATH     = originals["train_regression"]
-
-        # Atomically swap each freshly-trained file over the live one.
-        # Includes .joblib models plus eval artefacts (.parquet, .json).
-        saved_dir.mkdir(parents=True, exist_ok=True)
-        for new_file in staging_dir.iterdir():
-            if new_file.suffix in (".joblib", ".parquet", ".json"):
-                target = saved_dir / new_file.name
-                os.replace(new_file, target)        # atomic on same filesystem
-                logger.info("Promoted %s into saved_models/.", new_file.name)
+        auto_train.SAVED_MODELS_DIR     = staging_dir
+        train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
+        train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
+        train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
+        auto_train.ensure_all_models()
+    except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
-
-        # Reload into app.state.
-        risk_path     = saved_dir / "risk_model.joblib"
-        cluster_path  = saved_dir / "cluster_model.joblib"
-        forecast_path = saved_dir / "forecast_model.joblib"
-
-        request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
-        request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
-        request.app.state.forecast_model = joblib.load(forecast_path) if forecast_path.exists() else None
-
-        logger.info("All models retrained and reloaded.")
-
-        return {
-            "status": "ok",
-            "message": "All models retrained and reloaded.",
-            "models": {
-                "risk_model":     request.app.state.risk_model     is not None,
-                "cluster_model":  request.app.state.cluster_model  is not None,
-                "forecast_model": request.app.state.forecast_model is not None,
-            },
-        }
+        logger.exception("Retraining failed; previous models left in place.")
+        raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
     finally:
-        _retrain_lock.release()
+        auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
+        train_risk.MODEL_PATH           = originals["train_risk"]
+        train_clustering.MODEL_PATH     = originals["train_clustering"]
+        train_regression.MODEL_PATH     = originals["train_regression"]
+
+    # Atomically swap each freshly-trained file over the live one.
+    # Includes .joblib models plus eval artefacts (.parquet, .json).
+    saved_dir.mkdir(parents=True, exist_ok=True)
+    for new_file in staging_dir.iterdir():
+        if new_file.suffix in (".joblib", ".parquet", ".json"):
+            target = saved_dir / new_file.name
+            os.replace(new_file, target)        # atomic on same filesystem
+            logger.info("Promoted %s into saved_models/.", new_file.name)
+    shutil.rmtree(staging_dir, ignore_errors=True)
+
+    # Reload into app.state and invalidate per-request caches tied to the old
+    # classifier (positive-class index, SHAP TreeExplainer).
+    risk_path     = saved_dir / "risk_model.joblib"
+    cluster_path  = saved_dir / "cluster_model.joblib"
+    forecast_path = saved_dir / "forecast_model.joblib"
+
+    request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
+    request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
+    request.app.state.forecast_model = joblib.load(forecast_path) if forecast_path.exists() else None
+    request.app.state.risk_positive_class_idx = None
+    request.app.state.shap_explainer = None
+
+    logger.info("All models retrained and reloaded.")
+
+    return {
+        "status": "ok",
+        "message": "All models retrained and reloaded.",
+        "models": {
+            "risk_model":     request.app.state.risk_model     is not None,
+            "cluster_model":  request.app.state.cluster_model  is not None,
+            "forecast_model": request.app.state.forecast_model is not None,
+        },
+    }

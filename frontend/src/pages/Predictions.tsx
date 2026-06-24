@@ -13,6 +13,7 @@ import { ChartScatter } from '../components/charts'
 import { api } from '../services/api'
 import { ConfirmCard } from '../components/copilot/ConfirmCard'
 import type { ConfirmData } from '../components/copilot/ConfirmCard'
+import { Modal } from '../components/ui/Modal'
 import { useAuth } from '../context/AuthContext'
 
 const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
@@ -187,6 +188,7 @@ export default function Predictions() {
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
   const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
+  const [confirmRetrain, setConfirmRetrain] = useState(false)
   const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -335,20 +337,12 @@ export default function Predictions() {
         <div className="flex items-center gap-2">
           <button
             className="btn btn-sm"
-            onClick={() => retrainMutation.mutate()}
+            onClick={() => setConfirmRetrain(true)}
             disabled={retrainMutation.isPending}
-            title="Relance l'entraînement et atomically swap les artefacts"
+            title="Relancer l'entraînement du modèle"
           >
             <Icon name="refresh" size={13} />
             {retrainMutation.isPending ? 'Ré-entraînement…' : 'Ré-entraîner'}
-          </button>
-          <button
-            className="btn btn-sm btn-accent"
-            onClick={() => batchMutation.mutate()}
-            disabled={batchMutation.isPending}
-          >
-            <Icon name="spark" size={13} />
-            {batchMutation.isPending ? 'En cours…' : 'Lancer une prédiction batch'}
           </button>
         </div>
       </div>
@@ -381,7 +375,7 @@ export default function Predictions() {
           borderColor: 'var(--accent-200)',
         }}
       >
-        <div className="flex items-center gap-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
           <div
             className="w-12 h-12 rounded-xl flex items-center justify-center"
             style={{
@@ -402,7 +396,7 @@ export default function Predictions() {
               déclenche les alertes pour les étudiants au-dessus du seuil.
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={filiere} onChange={setFiliere} options={FILIERES} label="Filière" />
             <Select value={niveau} onChange={setNiveau} options={NIVEAUX} label="Niveau" />
             <button
@@ -430,7 +424,7 @@ export default function Predictions() {
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Étudiants évalués" value={kpis.evalues} hint="Cohorte courante" />
         <KpiCard
           label="Risque élevé"
@@ -449,7 +443,7 @@ export default function Predictions() {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="card p-4 col-span-2">
           <SectionHeader
             title="Cartographie du risque"
@@ -544,7 +538,7 @@ export default function Predictions() {
               runs.map(r => (
                 <tr key={r.id}>
                   <td className="font-mono cap">{r.id}</td>
-                  <td>{r.date}</td>
+                  <td>{new Date(r.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</td>
                   <td>
                     <Pill tone="neutral">{r.filiere}</Pill>
                   </td>
@@ -562,7 +556,7 @@ export default function Predictions() {
                     )}
                   </td>
                   <td>
-                    <button className="btn btn-sm btn-ghost">
+                    <button type="button" className="btn btn-sm btn-ghost" aria-label={`Actions pour le lot ${r.id}`}>
                       <Icon name="more" size={14} />
                     </button>
                   </td>
@@ -572,6 +566,24 @@ export default function Predictions() {
           </tbody>
         </table>
       </div>
+
+      <Modal open={confirmRetrain} onClose={() => setConfirmRetrain(false)} title="Ré-entraîner le modèle">
+        <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
+          Cette opération relance l'entraînement sur les données disponibles et peut prendre plusieurs minutes.
+          Les prédictions existantes restent visibles pendant le traitement.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="btn btn-sm" onClick={() => setConfirmRetrain(false)}>Annuler</button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => { setConfirmRetrain(false); retrainMutation.mutate() }}
+            disabled={retrainMutation.isPending}
+          >
+            Confirmer le ré-entraînement
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -6,9 +6,12 @@ xgboost==2.0.3
 pandas==2.2.2
 numpy==1.26.4
 joblib==1.4.2
-matplotlib==3.9.0
 pyodbc==5.1.0
 pyarrow==16.1.0
 shap==0.44.1
 pytest==8.2.2
 httpx==0.27.0
+# Client-only MLflow tracking — skinny variant avoids pulling heavy ML deps
+# that could conflict with the pinned numpy/scikit-learn above. The tracking
+# SERVER runs in its own container (mlflow/Dockerfile) with the full package.
+mlflow-skinny==2.14.3

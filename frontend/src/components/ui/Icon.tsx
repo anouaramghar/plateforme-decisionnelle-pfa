@@ -49,7 +49,7 @@ const ICONS: Record<string, ReactElement> = {
 export type IconName = keyof typeof ICONS
 
 interface IconProps {
-  name: IconName | string
+  name: IconName
   size?: number
   className?: string
   strokeWidth?: number

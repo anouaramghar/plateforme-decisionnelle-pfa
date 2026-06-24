@@ -11,3 +11,12 @@ README.md
 .env
 .env.*
 !.env.example
+
+# Keep dev/local secrets OUT of the image. Only the base appsettings.json
+# (environment-agnostic defaults) is allowed into the build context — every
+# environment-specific override (Development, Local, Production, ...) is
+# excluded so real connection strings / JWT keys never bake into the layer.
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.*.json
+!**/appsettings.json

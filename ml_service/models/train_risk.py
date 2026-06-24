@@ -27,12 +27,13 @@ from sklearn.pipeline import Pipeline
 import xgboost as xgb
 import joblib
 
+from models.auto_train import SAVED_MODELS_DIR
+
 RANDOM_SEED = 42
 N_SAMPLES = 1000
 MODEL_VERSION = "1.7.0"
 
-ML_MODELS_DIR = Path(__file__).parent.parent / "saved_models"
-MODEL_PATH = ML_MODELS_DIR / "risk_model.joblib"
+MODEL_PATH = SAVED_MODELS_DIR / "risk_model.joblib"
 
 
 # ─── 1. Generate synthetic student data ───────────────────────────────────────
@@ -245,6 +246,37 @@ def save_with_metadata(
     meta_path = out_dir / "metadata.json"
     meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(f"Metadata saved -> {meta_path}")
+
+    # ── MLflow tracking (best-effort) ──────────────────────────
+    # Logs params, metrics, tags, and artifacts to the MLflow tracking server
+    # when MLFLOW_TRACKING_URI is set. No-op (and never fatal) if unset/down.
+    from mlflow_client import start_run, log_params, log_metrics, log_tags, log_artifact
+
+    clf = pipeline.named_steps.get("classifier")
+    clf_params = clf.get_params() if clf is not None else {}
+
+    with start_run("risk_model"):
+        log_params({
+            "model_version": MODEL_VERSION,
+            "data_source": data_source,
+            "split_strategy": split_strategy,
+            "n_samples": len(eval_df),
+            "n_students_train": int(getattr(pipeline, "n_students_train", 0)),
+            "n_students_test": int(getattr(pipeline, "n_students_test", 0)),
+            "n_estimators": clf_params.get("n_estimators"),
+            "max_depth": clf_params.get("max_depth"),
+            "learning_rate": clf_params.get("learning_rate"),
+            "random_state": clf_params.get("random_state"),
+        })
+        log_metrics({"auc": auc, "f1": f1, "precision": precision, "recall": recall})
+        log_tags({
+            "model_name": "risk_model",
+            "train_periods": ",".join(str(p) for p in getattr(pipeline, "train_periods", [])),
+            "test_periods": ",".join(str(p) for p in getattr(pipeline, "test_periods", [])),
+        })
+        log_artifact(model_file)
+        log_artifact(eval_path)
+        log_artifact(meta_path)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ const wrappedTailwind = {
   plugins: tailwind.plugins.map(p => {
     return (root, result) => {
       const file = root.source?.input?.file;
-      if (file && (file.includes('node_modules') || file.includes('node_modules'))) {
+      if (file && file.includes('node_modules')) {
         return;
       }
       return p(root, result);

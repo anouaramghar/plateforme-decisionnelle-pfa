@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { parseStudentCsv } from './studentImport'
 
 describe('parseStudentCsv', () => {
-  it('normalizes BOM headers and preserves quoted comma values', () => {
+  it('normalizes BOM headers and preserves quoted comma values', async () => {
     const csv = '\uFEFFmatricule,nom,prenom,filiere,niveau,annee\nE1,"Doe, Jr",Jane,GI,CI1,2025/2026'
 
-    expect(parseStudentCsv(csv)).toEqual([
+    expect(await parseStudentCsv(csv)).toEqual([
       {
         rowNumber: 2,
         matricule: 'E1',
@@ -19,10 +19,10 @@ describe('parseStudentCsv', () => {
     ])
   })
 
-  it('parses semicolon-delimited CSV', () => {
+  it('parses semicolon-delimited CSV', async () => {
     const csv = 'matricule;nom;prenom;filière;niveau;annee\nE2;Ali;Sara;IA;CI2;2025/2026'
 
-    expect(parseStudentCsv(csv)[0]).toMatchObject({
+    expect((await parseStudentCsv(csv))[0]).toMatchObject({
       matricule: 'E2',
       filiereCode: 'IA',
       niveau: 'CI2',

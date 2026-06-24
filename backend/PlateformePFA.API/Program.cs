@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.Health;
@@ -91,6 +95,38 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddMemoryCache();
+
+// Rate limiting — defence-in-depth behind nginx's own limit_req. Two policies:
+//   "login"  : strict, applied to POST /api/auth/login. 5 attempts / 60 s / IP —
+//              blunts credential stuffing even if nginx is bypassed (direct
+//              backend access in dev) or misconfigured. Permits a small burst so
+//              a human typo-retry isn't 429'd on the second attempt.
+//   "global" : permissive default for every other endpoint. 200 req / 60 s / IP —
+//              only catches runaway loops, never a legitimate user.
+// Both are keyed on the remote IP from UseForwardedHeaders (so colleagues behind
+// the same NAT share a budget — the limit tolerates a small office, unlike a
+// per-token limiter). Disable in the Testing environment so integration tests
+// that fire many logins back-to-back aren't throttled.
+if (!isTestEnv)
+{
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.AddFixedWindowLimiter("login", opt =>
+        {
+            opt.PermitLimit = 5;
+            opt.Window = TimeSpan.FromSeconds(60);
+            opt.QueueLimit = 0;
+        });
+        options.AddFixedWindowLimiter("global", opt =>
+        {
+            opt.PermitLimit = 200;
+            opt.Window = TimeSpan.FromSeconds(60);
+            opt.QueueLimit = 0;
+        });
+    });
+}
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -178,13 +214,25 @@ builder.Services.AddAuthentication(options =>
             }
 
             var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-            var account = await db.Utilisateurs
-                .AsNoTracking()
-                .Where(u => u.Id == userId)
-                .Select(u => new { u.EstActif, u.Role })
-                .FirstOrDefaultAsync();
+            var cache = ctx.HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            var cacheKey = $"user:{userId}:state";
+            if (!cache.TryGetValue(cacheKey, out (bool EstActif, string Role) account))
+            {
+                var fetched = await db.Utilisateurs
+                    .AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => new { u.EstActif, u.Role })
+                    .FirstOrDefaultAsync();
+                if (fetched is null)
+                {
+                    ctx.Fail("Account is no longer active or its role has changed.");
+                    return;
+                }
+                account = (fetched.EstActif, fetched.Role);
+                cache.Set(cacheKey, account, TimeSpan.FromSeconds(20));
+            }
 
-            if (account is null || !account.EstActif || account.Role != roleClaim)
+            if (!account.EstActif || account.Role != roleClaim)
             {
                 ctx.Fail("Account is no longer active or its role has changed.");
             }
@@ -215,7 +263,37 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
+{
+    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    var correlationId = Guid.NewGuid();
+    var logger = ctx.RequestServices.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Unhandled exception (correlationId={CorrelationId})", correlationId);
+
+    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    ctx.Response.ContentType = "application/problem+json";
+    var problem = new ProblemDetails
+    {
+        Title   = "Erreur interne.",
+        Status  = StatusCodes.Status500InternalServerError,
+        Detail  = app.Environment.IsDevelopment() ? ex?.ToString() : null,
+        Instance = ctx.Request.Path,
+    };
+    problem.Extensions["correlationId"] = correlationId.ToString();
+    await ctx.Response.WriteAsJsonAsync(problem);
+}));
+
 app.UseCors("FrontendPolicy");
+
+// Apply rate limiting to every endpoint, with a permissive default. Endpoints
+// can opt into a stricter policy via [EnableRateLimiting("login")]. Placed
+// after UseCors (so preflight OPTIONS aren't throttled) and before
+// UseAuthentication (so unauthenticated login attempts ARE counted).
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    app.UseRateLimiter();
+}
 
 if (app.Environment.IsDevelopment())
 {
