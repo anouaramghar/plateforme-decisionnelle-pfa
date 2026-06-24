@@ -323,4 +323,78 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
             $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/retry", null))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    // ── Task 5: record meeting attendance ─────────────────────────────────────
+
+    private async Task<int> CreateScheduledOutreachAsync(HttpClient client)
+    {
+        var (caseId, commId) = await CreateDraftAsync(client);
+        var send = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(2), location = "Salle B12" });
+        send.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        return caseId;
+    }
+
+    [Theory]
+    [InlineData("Absent")]
+    [InlineData("Cancelled")]
+    public async Task Non_held_meeting_stays_active(string attendance)
+    {
+        var client = await AuthedClientAsync();
+        var caseId = await CreateScheduledOutreachAsync(client);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/meeting-result",
+            new { attendance });
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verify = _factory.CreateContext();
+        var saved = verify.InterventionCases.Single(x => x.Id == caseId);
+        saved.Etat.Should().Be(CaseWorkflowState.WaitingStudent);
+        saved.MeetingAttendance.Should().Be(attendance);
+        saved.MeetingHeldAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Held_meeting_requires_outcome_and_resolves()
+    {
+        var client = await AuthedClientAsync();
+        var caseId = await CreateScheduledOutreachAsync(client);
+        var heldAt = DateTime.UtcNow.AddMinutes(-10);
+
+        var invalid = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/meeting-result",
+            new { attendance = "Held", heldAt, outcome = "Improved", summary = "" });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var valid = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/meeting-result",
+            new { attendance = "Held", heldAt, outcome = "Improved", summary = "Entretien réalisé." });
+        valid.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verify = _factory.CreateContext();
+        var saved = verify.InterventionCases.Single(x => x.Id == caseId);
+        saved.Etat.Should().Be(CaseWorkflowState.Resolved);
+        saved.MeetingAttendance.Should().Be("Held");
+        saved.ResolutionSummary.Should().Be("Entretien réalisé.");
+
+        // Audit attribution: the actor is recorded on the timeline event.
+        var held = verify.CaseTimelineEvents.Single(x => x.CaseId == caseId && x.Action == "MeetingHeld");
+        held.UtilisateurId.Should().HaveValue();
+        held.UtilisateurNom.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Enseignant_cannot_record_a_meeting_result()
+    {
+        var admin = await AuthedClientAsync();
+        var caseId = await CreateScheduledOutreachAsync(admin);
+
+        var teacher = await TeacherClientAsync();
+        var res = await teacher.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/meeting-result",
+            new { attendance = "Absent" });
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

@@ -160,6 +160,61 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
+        // POST: api/intervention-cases/5/outreach/meeting-result
+        // Records attendance. Held resolves the case (requires outcome + summary);
+        // Absent/Cancelled keep it active for a reschedule.
+        [HttpPost("meeting-result")]
+        public async Task<IActionResult> RecordMeeting(int caseId, RecordMeetingDto dto)
+        {
+            var c = await _db.InterventionCases.FirstOrDefaultAsync(x => x.Id == caseId);
+            if (c == null) return NotFound(new { message = "Cas introuvable." });
+
+            var allowed = new[] { "Held", "Absent", "Cancelled" };
+            if (!allowed.Contains(dto.Attendance))
+                return BadRequest(new { message = "Présence invalide." });
+
+            if (c.Etat != CaseWorkflowState.WaitingStudent)
+                return BadRequest(new { message = "Aucun rendez-vous en attente pour cette intervention." });
+
+            if (dto.Attendance == "Held" &&
+                (!dto.HeldAt.HasValue || dto.HeldAt > DateTime.UtcNow ||
+                 string.IsNullOrWhiteSpace(dto.Outcome) || string.IsNullOrWhiteSpace(dto.Summary)))
+                return BadRequest(new { message = "La date, le résultat et le résumé sont requis." });
+
+            var (userId, userName) = CurrentUser();
+            c.MeetingAttendance = dto.Attendance;
+
+            if (dto.Attendance == "Held")
+            {
+                c.MeetingHeldAt      = dto.HeldAt!.Value.ToUniversalTime();
+                c.Outcome           = dto.Outcome;
+                c.ResolutionSummary = dto.Summary;
+                c.Etat              = CaseWorkflowState.Resolved;
+                _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+                {
+                    CaseId = caseId, Action = "MeetingHeld", Description = dto.Summary,
+                    UtilisateurId = userId, UtilisateurNom = userName,
+                });
+            }
+            else
+            {
+                // Absent/Cancelled: the intervention stays active — a later
+                // reschedule/send is required before it can resolve.
+                c.MeetingHeldAt = null;
+                _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+                {
+                    CaseId = caseId,
+                    Action = dto.Attendance == "Absent" ? "MeetingAbsent" : "MeetingCancelled",
+                    Description = dto.Attendance == "Absent" ? "Étudiant absent au rendez-vous." : "Rendez-vous annulé.",
+                    UtilisateurId = userId, UtilisateurNom = userName,
+                });
+            }
+
+            await _db.SaveChangesAsync();
+            await _audit.LogAsync($"Meeting{dto.Attendance}", "InterventionCase", caseId, dto.Summary, userId, userName);
+            return NoContent();
+        }
+
         // Marks Queued, sends, then persists the authoritative outcome. The case
         // only advances to WaitingStudent on a confirmed Sent.
         private async Task DeliverAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
