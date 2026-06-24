@@ -3,6 +3,16 @@ using System.Text.Json.Serialization;
 
 namespace PlateformePFA.API.Models
 {
+    // Lifecycle of an outbound case email. Draft is outreach-only (editable
+    // before send); legacy generic communications start at Queued.
+    public static class CommunicationStatus
+    {
+        public const string Draft = "Draft";
+        public const string Queued = "Queued";
+        public const string Sent = "Sent";
+        public const string Failed = "Failed";
+    }
+
     // An outbound email tied to a case. The rendered subject/body are stored as
     // sent, so later template edits never rewrite history. Retry re-sends the
     // stored text — it does not re-render.

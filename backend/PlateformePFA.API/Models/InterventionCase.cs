@@ -41,6 +41,13 @@ namespace PlateformePFA.API.Models
         public string? ResolutionSummary { get; set; }
         public DateTime? FollowUpDate { get; set; }
 
+        // Single scheduled outreach meeting + its recorded outcome. One case
+        // drives one meeting at a time; rescheduling overwrites these fields.
+        public DateTime? MeetingScheduledFor { get; set; }
+        [MaxLength(200)] public string? MeetingLocation { get; set; }
+        [MaxLength(20)] public string? MeetingAttendance { get; set; } // Held | Absent | Cancelled
+        public DateTime? MeetingHeldAt { get; set; }
+
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
         public int? CreeParId { get; set; }
         public DateTime? ClotureLe { get; set; }

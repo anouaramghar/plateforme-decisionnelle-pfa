@@ -446,6 +446,60 @@ namespace PlateformePFA.API.Data
                         ADD CONSTRAINT CK_CaseCommunications_Status
                         CHECK (Status IN ('Queued','Sent','Failed'));
             ");
+
+            // 18. Outreach (Release 2) — single scheduled meeting + recorded
+            //     attendance on the case, and a Draft state for editable emails.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND COL_LENGTH('dbo.InterventionCases', 'MeetingScheduledFor') IS NULL
+                    ALTER TABLE InterventionCases ADD MeetingScheduledFor DATETIME2 NULL;
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND COL_LENGTH('dbo.InterventionCases', 'MeetingLocation') IS NULL
+                    ALTER TABLE InterventionCases ADD MeetingLocation NVARCHAR(200) NULL;
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND COL_LENGTH('dbo.InterventionCases', 'MeetingAttendance') IS NULL
+                    ALTER TABLE InterventionCases ADD MeetingAttendance NVARCHAR(20) NULL;
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND COL_LENGTH('dbo.InterventionCases', 'MeetingHeldAt') IS NULL
+                    ALTER TABLE InterventionCases ADD MeetingHeldAt DATETIME2 NULL;
+            ");
+
+            // Widen the communication-status CHECK to admit 'Draft'. Drop and
+            // recreate by name so existing volumes (constraint = Queued/Sent/Failed)
+            // roll forward idempotently.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM sys.check_constraints
+                               WHERE name = 'CK_CaseCommunications_Status'
+                                 AND parent_object_id = OBJECT_ID('dbo.CaseCommunications'))
+                    ALTER TABLE CaseCommunications DROP CONSTRAINT CK_CaseCommunications_Status;
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseCommunications', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_CaseCommunications_Status'
+                                     AND parent_object_id = OBJECT_ID('dbo.CaseCommunications'))
+                    ALTER TABLE CaseCommunications
+                        ADD CONSTRAINT CK_CaseCommunications_Status
+                        CHECK (Status IN ('Draft','Queued','Sent','Failed'));
+            ");
+
+            // Constrain meeting attendance to the recorded outcomes (NULL = not yet held).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints
+                                   WHERE name = 'CK_InterventionCases_MeetingAttendance'
+                                     AND parent_object_id = OBJECT_ID('dbo.InterventionCases'))
+                    ALTER TABLE InterventionCases
+                        ADD CONSTRAINT CK_InterventionCases_MeetingAttendance
+                        CHECK (MeetingAttendance IS NULL OR MeetingAttendance IN ('Held','Absent','Cancelled'));
+            ");
         }
     }
 }
