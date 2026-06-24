@@ -35,6 +35,12 @@ namespace PlateformePFA.API.Services
                 ["case_resolution"] = new("case_resolution", "Clôture de l'accompagnement",
                     "Clôture de votre accompagnement — ENIAD",
                     "Bonjour {{Prenom}} {{Nom}},\n\nVotre dossier d'accompagnement a été clôturé. Nous restons à votre disposition si besoin.\n\nCordialement,\nL'équipe pédagogique ENIAD"),
+
+                // Deterministic meeting-invitation fallback. Carries the scheduled
+                // date/time/location so the outreach flow has a safe non-AI default.
+                ["meeting_outreach"] = new("meeting_outreach", "Invitation à un entretien (rendez-vous)",
+                    "Invitation à un entretien — ENIAD",
+                    "Bonjour {{Prenom}} {{Nom}},\n\nNous souhaitons vous rencontrer afin de faire le point sur votre parcours et vous proposer un accompagnement adapté.\n\nRendez-vous : {{Date}} à {{Time}}\nLieu : {{Location}}\n\nCordialement,\nL'équipe pédagogique ENIAD"),
             });
 
         public static (string sujet, string corps) Render(EmailTemplate t, string prenom, string nom, string matricule)
@@ -43,6 +49,20 @@ namespace PlateformePFA.API.Services
                 .Replace("{{Prenom}}", prenom)
                 .Replace("{{Nom}}", nom)
                 .Replace("{{Matricule}}", matricule);
+            return (Fill(t.Sujet), Fill(t.Corps));
+        }
+
+        // Meeting variant: also fills {{Date}}, {{Time}}, {{Location}}. Separate
+        // method so existing Render callers are untouched.
+        public static (string sujet, string corps) RenderMeeting(
+            EmailTemplate t, string prenom, string nom, string date, string time, string location)
+        {
+            string Fill(string s) => s
+                .Replace("{{Prenom}}", prenom)
+                .Replace("{{Nom}}", nom)
+                .Replace("{{Date}}", date)
+                .Replace("{{Time}}", time)
+                .Replace("{{Location}}", location);
             return (Fill(t.Sujet), Fill(t.Corps));
         }
     }
