@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig, loadEnv } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // `process` is a Node global at config-evaluation time; we don't pull in
@@ -16,7 +17,9 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
-      globals: true,
+      globals: false,
+      // Playwright owns e2e/*.spec.ts; keep them out of the vitest run.
+      exclude: [...configDefaults.exclude, 'e2e/**'],
     },
     server: {
       port: 5173,

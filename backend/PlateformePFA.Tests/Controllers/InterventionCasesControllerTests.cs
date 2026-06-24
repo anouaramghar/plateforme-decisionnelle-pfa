@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.Models;
@@ -37,8 +38,25 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         return client;
     }
 
-    private static int StudentId(AppDbContext ctx) =>
-        ctx.Etudiants.First(e => e.Matricule == "E10001").Id;
+    // Provisions a FRESH student per call. The one-active-case-per-student guard
+    // means reusing a single seeded student would make sibling tests collide in
+    // this class's shared InMemory store. Placed in the GI/CI1 cohort so the
+    // teacher-scope tests still match. Static counter keeps matricules unique
+    // across test methods (xUnit builds a new test-class instance per test).
+    private static int _studentSeq;
+    private static int StudentId(AppDbContext ctx)
+    {
+        var fil = ctx.Filieres.First(f => f.Code == "GI");
+        var seq = System.Threading.Interlocked.Increment(ref _studentSeq);
+        var e = new Etudiant
+        {
+            Matricule = $"EDUP{seq:D5}", Nom = "Dup", Prenom = $"Stud{seq}",
+            FiliereId = fil.Id, Niveau = "CI1", Annee = "2025/2026",
+        };
+        ctx.Etudiants.Add(e);
+        ctx.SaveChanges();
+        return e.Id;
+    }
 
     private record CaseResponse(int Id);
 
@@ -213,6 +231,26 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
             new { alerteIds = Array.Empty<int>() });
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Create_case_returns_conflict_with_existing_active_case()
+    {
+        var client = await AuthedClientAsync();
+        int studentId;
+        using (var db = _factory.CreateContext()) studentId = StudentId(db);
+        var existingId = await CreateCaseAsync(client, studentId);
+
+        var response = await client.PostAsJsonAsync("/api/intervention-cases", new
+        {
+            etudiantId = studentId,
+            motif = "Second outreach",
+            priorite = "High"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("existingCaseId").GetInt32().Should().Be(existingId);
     }
 
     [Fact]

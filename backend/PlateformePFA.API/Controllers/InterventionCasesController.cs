@@ -134,6 +134,26 @@ namespace PlateformePFA.API.Controllers
                 .FirstOrDefaultAsync(e => e.Id == dto.EtudiantId);
             if (etudiant == null) return BadRequest(new { message = "Étudiant introuvable." });
 
+            // One active intervention per student: a second open case fragments
+            // the outreach workflow and duplicates emails. Point the caller at the
+            // existing case instead (frontend redirects on 409).
+            var terminal = new[] { CaseWorkflowState.Resolved, CaseWorkflowState.Closed };
+            var existingCaseId = await _context.InterventionCases.AsNoTracking()
+                .Where(c => c.EtudiantId == dto.EtudiantId && !terminal.Contains(c.Etat))
+                .OrderByDescending(c => c.CreeLe)
+                .Select(c => (int?)c.Id)
+                .FirstOrDefaultAsync();
+            if (existingCaseId.HasValue)
+            {
+                await _audit.LogAsync("DuplicateCasePrevented", "InterventionCase", existingCaseId.Value,
+                    $"Doublon évité pour étudiant {dto.EtudiantId}", CurrentUser().id, CurrentUser().name);
+                return Conflict(new
+                {
+                    message = "Une intervention active existe déjà pour cet étudiant.",
+                    existingCaseId = existingCaseId.Value,
+                });
+            }
+
             var (userId, userName) = CurrentUser();
 
             var newCase = new InterventionCase

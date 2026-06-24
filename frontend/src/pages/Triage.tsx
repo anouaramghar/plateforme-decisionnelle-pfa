@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { AxiosError } from 'axios'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
@@ -27,6 +28,8 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
     refetchInterval: 30_000,
   })
 
+  const [startError, setStartError] = useState<string | null>(null)
+
   const openCase = useMutation({
     mutationFn: (g: TriageGroup) => createCase({
       etudiantId: g.etudiantId,
@@ -36,7 +39,13 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
     }),
     onSuccess: async (created) => {
       await qc.invalidateQueries({ queryKey: ['triage'] })
+      await qc.invalidateQueries({ queryKey: ['alertes'] })
       navigate(`/cases/${created.id}`)
+    },
+    onError: (error: AxiosError<{ existingCaseId?: number }>) => {
+      const existing = error.response?.data.existingCaseId
+      if (error.response?.status === 409 && existing) navigate(`/cases/${existing}`)
+      else setStartError('Impossible de démarrer cette intervention.')
     },
   })
 
@@ -48,6 +57,7 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
     onSuccess: () => {
       setDismissId(null)
       qc.invalidateQueries({ queryKey: ['triage'] })
+      qc.invalidateQueries({ queryKey: ['alertes'] })
     },
   })
 
@@ -63,6 +73,12 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
         {!embedded && <h1 className="text-[22px] font-semibold tracking-tight">Triage des signaux</h1>}
       </div>
 
+      {startError && (
+        <div className="card px-4 py-2 text-[13px]" style={{ color: 'var(--bad)' }} role="alert">
+          {startError}
+        </div>
+      )}
+
       <div className="card overflow-hidden">
         {isLoading && (
           <div className="px-4 py-8 text-center cap" style={{ color: 'var(--text-3)' }}>
@@ -75,7 +91,7 @@ export default function Triage({ embedded = false }: { embedded?: boolean } = {}
           </div>
         )}
         {!isLoading && !isError && groups.length === 0 && (
-          <Empty title="File vide" hint="Aucun signal en attente de triage." />
+          <Empty title="File vide" hint="Aucun signal en attente de triage." icon="bell" />
         )}
         {!isLoading && !isError && groups.map((g, i) => (
           <div

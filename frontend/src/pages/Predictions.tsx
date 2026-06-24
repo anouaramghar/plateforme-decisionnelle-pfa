@@ -183,6 +183,7 @@ function DraftAlertCard({ result }: { result: string }) {
 
 export default function Predictions() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [filiere, setFiliere] = useState('TOUS')
   const [niveau, setNiveau] = useState('Toutes')
   const [highlightedMatricule, setHighlightedMatricule] = useState<string | null>(null)
@@ -314,7 +315,7 @@ export default function Predictions() {
           className="card p-3 text-[12.5px] flex items-center gap-3 mb-4"
           style={{ background: 'var(--accent-50)', borderColor: 'var(--accent-300)', color: 'var(--accent-700)' }}
         >
-          <Icon name="warning" size={14} />
+          <Icon name="alert" size={14} />
           <span>
             Modèle de démonstration entraîné sur des données synthétiques — ne pas utiliser pour une décision pédagogique.
           </span>
@@ -496,6 +497,7 @@ export default function Predictions() {
           <button
             className="btn btn-sm w-full mt-3"
             style={{ background: 'var(--surface-2)', border: 'none' }}
+            onClick={() => navigate('/reports', { state: { templateId: 'risque' } })}
           >
             Générer le rapport · {topARisque.length} étudiants
           </button>
@@ -513,7 +515,7 @@ export default function Predictions() {
               Regroupé par jour × filière — 10 derniers lots
             </div>
           </div>
-          <button className="btn btn-sm btn-ghost">
+          <button className="btn btn-sm btn-ghost" onClick={() => navigate('/reports')}>
             Voir tout <Icon name="arrowRight" size={12} />
           </button>
         </div>

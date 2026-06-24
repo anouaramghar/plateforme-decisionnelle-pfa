@@ -8,6 +8,8 @@ import { Avatar } from '../components/ui/Avatar'
 import { RiskBar } from '../components/ui/RiskBar'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { MiniKpi } from '../components/ui/KpiCard'
+import { Skeleton } from '../components/ui/Skeleton'
+import { useDialog } from '../components/ui/useDialog'
 import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
 import { api } from '../services/api'
 import { useFiliere } from '../context/FiliereContext'
@@ -173,6 +175,8 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<Period>('S2')
   const [showFeatures, setShowFeatures] = useState(false)
   const [showJournal, setShowJournal] = useState(false)
+  const journalPanelRef = useDialog(showJournal, () => setShowJournal(false))
+  const featuresPanelRef = useDialog(showFeatures, () => setShowFeatures(false))
 
   const { data: allActivity = [], isFetching: journalLoading } = useQuery({
     queryKey: ['dashboard-activity-full'],
@@ -264,8 +268,48 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
-        Chargement du tableau de bord…
+      <div className="space-y-6">
+        <div className="flex items-end justify-between gap-8 pb-2">
+          <div className="flex-1">
+            <Skeleton w={140} h={14} className="mb-3" />
+            <Skeleton w={260} h={32} className="mb-2" />
+            <Skeleton w={400} h={18} />
+          </div>
+          <Skeleton w={240} h={30} radius={7} />
+        </div>
+        <div className="grid grid-cols-12 gap-4">
+          <div className="card-feature col-span-5 p-6">
+            <Skeleton w={120} h={12} className="mb-5" />
+            <Skeleton w={180} h={56} className="mb-5" />
+            <Skeleton w="100%" h={38} />
+          </div>
+          <div className="col-span-7 grid grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card p-5 flex flex-col justify-between" style={{ minHeight: 124 }}>
+                <Skeleton w={80} h={11} className="mb-4" />
+                <Skeleton w={90} h={32} />
+              </div>
+            ))}
+            <div className="card p-4 col-span-3">
+              <Skeleton w={160} h={13} className="mb-3" />
+              <Skeleton w="100%" h={10} radius={999} />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-4">
+          <div className="card col-span-8 p-5">
+            <Skeleton w={180} h={14} className="mb-4" />
+            <Skeleton w="100%" h={232} radius={8} />
+          </div>
+          <div className="card col-span-4 p-5">
+            <Skeleton w={180} h={14} className="mb-4" />
+            <Skeleton w="100%" h={232} radius={8} />
+          </div>
+        </div>
+        <div className="card p-5">
+          <Skeleton w={200} h={14} className="mb-4" />
+          <Skeleton w="100%" h={200} radius={8} />
+        </div>
       </div>
     )
   }
@@ -290,6 +334,32 @@ export default function Dashboard() {
   const absTrend = data.absenceTrend
   const top = data.topARisque
   const totalRisk = risk.reduce((a, b) => a + b.n, 0)
+
+  const handleExport = async () => {
+    const XLSX = await import('xlsx')
+    const wb = XLSX.utils.book_new()
+    const kpiSheet = XLSX.utils.json_to_sheet([
+      { Indicateur: 'Étudiants suivis', Valeur: k.nbEtudiants, Variation: `${k.nbEtudiantsDelta.toFixed(1)}%` },
+      { Indicateur: 'Moyenne globale /20', Valeur: k.moyGlobale, Variation: `${k.moyGlobaleDelta.toFixed(1)}%` },
+      { Indicateur: 'Taux de réussite (%)', Valeur: k.tauxReussite, Variation: `${k.tauxReussiteDelta.toFixed(1)}%` },
+      { Indicateur: 'Alertes actives', Valeur: k.alertesActives, Variation: `${k.alertesActivesDelta.toFixed(1)}%` },
+    ])
+    XLSX.utils.book_append_sheet(wb, kpiSheet, 'KPIs')
+    const topSheet = XLSX.utils.json_to_sheet(
+      top.map(e => ({
+        Matricule: e.matricule,
+        Étudiant: e.nomComplet,
+        Filière: e.filiere,
+        Niveau: e.niveau,
+        Moyenne: e.moyenne,
+        'Absences (h)': e.absences,
+        'Score risque': Math.round(e.scoreRisque * 100) / 100,
+      })),
+    )
+    XLSX.utils.book_append_sheet(wb, topSheet, 'Étudiants à risque')
+    const fil = filiere === 'TOUS' ? 'toutes' : filiere
+    XLSX.writeFile(wb, `tableau-de-bord-${fil}-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
 
   return (
     <div className="space-y-6">
@@ -351,7 +421,7 @@ export default function Dashboard() {
           >
             <Icon name="refresh" size={13} />
           </button>
-          <button className="btn btn-sm">
+          <button className="btn btn-sm" onClick={handleExport}>
             <Icon name="download" size={13} />
             Exporter
           </button>
@@ -738,16 +808,20 @@ export default function Dashboard() {
           onClick={() => setShowJournal(false)}
         >
           <div
+            ref={journalPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dashboard-journal-title"
             className="card-feature flex flex-col"
             style={{ width: 640, maxWidth: '95vw', maxHeight: '80vh' }}
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
               <div>
-                <div className="text-[14px] font-semibold">Journal d'activité</div>
+                <div id="dashboard-journal-title" className="text-[14px] font-semibold">Journal d'activité</div>
                 <div className="cap mt-0.5">Toutes les entrées d'audit de la plateforme</div>
               </div>
-              <button className="btn btn-sm" onClick={() => setShowJournal(false)}>✕</button>
+              <button className="btn btn-sm" onClick={() => setShowJournal(false)} aria-label="Fermer">✕</button>
             </div>
             <div className="overflow-y-auto flex-1 p-5">
               {journalLoading ? (
@@ -795,12 +869,16 @@ export default function Dashboard() {
           onClick={() => setShowFeatures(false)}
         >
           <div
+            ref={featuresPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dashboard-features-title"
             className="card-feature p-6 w-[420px] max-w-full"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="text-[14px] font-semibold">Features du modèle XGBoost</div>
-              <button className="btn btn-sm" onClick={() => setShowFeatures(false)}>✕</button>
+              <div id="dashboard-features-title" className="text-[14px] font-semibold">Features du modèle XGBoost</div>
+              <button className="btn btn-sm" onClick={() => setShowFeatures(false)} aria-label="Fermer">✕</button>
             </div>
             <div className="flex flex-col gap-3">
               {[
