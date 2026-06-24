@@ -105,5 +105,86 @@ namespace PlateformePFA.API.Controllers
             await _audit.LogAsync("EmailDraftEdited", "InterventionCase", caseId, comm.Sujet, userId, userName);
             return NoContent();
         }
+
+        // POST: api/intervention-cases/5/outreach/draft/9/send
+        // Schedules the meeting and sends the (reviewed) draft exactly once.
+        [HttpPost("draft/{commId:int}/send")]
+        public async Task<IActionResult> ScheduleAndSend(int caseId, int commId, ScheduleAndSendDto dto)
+        {
+            var comm = await _db.CaseCommunications.FirstOrDefaultAsync(x => x.Id == commId && x.CaseId == caseId);
+            if (comm == null) return NotFound(new { message = "Brouillon introuvable." });
+
+            // Only a fresh draft or a previously failed send may be (re)sent here.
+            // Queued means a send is in flight / its outcome is unknown — never resend.
+            if (comm.Status != CommunicationStatus.Draft && comm.Status != CommunicationStatus.Failed)
+                return BadRequest(new { message = "Cet email a déjà été traité." });
+
+            var c = await _db.InterventionCases.FirstOrDefaultAsync(x => x.Id == caseId);
+            if (c == null) return NotFound(new { message = "Cas introuvable." });
+            if (c.Etat != CaseWorkflowState.InProgress)
+                return BadRequest(new { message = "L'intervention doit être en cours pour envoyer l'invitation." });
+            if (dto.ScheduledFor <= DateTime.UtcNow)
+                return BadRequest(new { message = "La date du rendez-vous doit être dans le futur." });
+            if (string.IsNullOrWhiteSpace(dto.Location))
+                return BadRequest(new { message = "Le lieu du rendez-vous est requis." });
+
+            var (userId, userName) = CurrentUser();
+            c.MeetingScheduledFor = dto.ScheduledFor.ToUniversalTime();
+            c.MeetingLocation = dto.Location.Trim();
+            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = caseId, Action = "MeetingScheduled",
+                Description = $"Rendez-vous le {c.MeetingScheduledFor:dd/MM/yyyy HH:mm} — {c.MeetingLocation}",
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+
+            await DeliverAsync(c, comm, userId, userName);
+            return NoContent();
+        }
+
+        // POST: api/intervention-cases/5/outreach/draft/9/retry
+        // Re-sends the STORED text + STORED meeting details after a failure.
+        [HttpPost("draft/{commId:int}/retry")]
+        public async Task<IActionResult> Retry(int caseId, int commId)
+        {
+            var comm = await _db.CaseCommunications.FirstOrDefaultAsync(x => x.Id == commId && x.CaseId == caseId);
+            if (comm == null) return NotFound(new { message = "Communication introuvable." });
+            if (comm.Status != CommunicationStatus.Failed)
+                return BadRequest(new { message = "Seules les communications échouées peuvent être renvoyées." });
+
+            var c = await _db.InterventionCases.FirstOrDefaultAsync(x => x.Id == caseId);
+            if (c == null) return NotFound(new { message = "Cas introuvable." });
+
+            var (userId, userName) = CurrentUser();
+            await DeliverAsync(c, comm, userId, userName);
+            return NoContent();
+        }
+
+        // Marks Queued, sends, then persists the authoritative outcome. The case
+        // only advances to WaitingStudent on a confirmed Sent.
+        private async Task DeliverAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
+        {
+            comm.Status = CommunicationStatus.Queued;
+            comm.Erreur = null;
+            await _db.SaveChangesAsync(); // persist Queued + meeting details before the attempt
+
+            var (ok, error) = await _email.SendAsync(comm.Destinataire, comm.Sujet, comm.Corps);
+            comm.Status = ok ? CommunicationStatus.Sent : CommunicationStatus.Failed;
+            comm.Erreur = error;
+            if (ok)
+            {
+                comm.EnvoyeLe = DateTime.UtcNow;
+                c.Etat = CaseWorkflowState.WaitingStudent;
+            }
+            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = c.Id,
+                Action = ok ? "EmailSent" : "EmailFailed",
+                Description = ok ? comm.Sujet : $"Échec : {comm.Sujet}",
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
+            await _db.SaveChangesAsync();
+            await _audit.LogAsync(ok ? "EmailSent" : "EmailFailed", "InterventionCase", c.Id, comm.Sujet, userId, userName);
+        }
     }
 }

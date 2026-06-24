@@ -208,4 +208,119 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
             new { subject = "Interdit", body = "Bonjour." });
         res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    // ── Task 4: schedule and send exactly once ────────────────────────────────
+
+    private async Task<(int caseId, int commId)> CreateDraftAsync(HttpClient client)
+    {
+        var caseId = await CreateCaseAsync(client, FreshStudentId());
+        var res = await client.PostAsJsonAsync($"/api/intervention-cases/{caseId}/outreach/draft",
+            new { subject = "Invitation", body = "Bonjour, rendez-vous à l'ENIAD." });
+        res.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await res.Content.ReadFromJsonAsync<CaseCommunication>();
+        return (caseId, draft!.Id);
+    }
+
+    [Fact]
+    public async Task Schedule_and_send_delivers_and_advances_to_waiting_student()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+        var requested = DateTime.UtcNow.AddDays(2);
+
+        var res = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = requested, location = "Salle B12" });
+        res.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verify = _factory.CreateContext();
+        var saved = verify.InterventionCases.Single(x => x.Id == caseId);
+        saved.MeetingScheduledFor.Should().BeCloseTo(requested, TimeSpan.FromSeconds(1));
+        saved.MeetingLocation.Should().Be("Salle B12");
+        saved.Etat.Should().Be(CaseWorkflowState.WaitingStudent);
+        var comm = verify.CaseCommunications.Single(x => x.Id == commId);
+        comm.Status.Should().Be(CommunicationStatus.Sent);
+        var timeline = verify.CaseTimelineEvents.Where(x => x.CaseId == caseId).ToList();
+        timeline.Should().Contain(x => x.Action == "MeetingScheduled");
+        timeline.Should().Contain(x => x.Action == "EmailSent");
+        _factory.Email.Sent.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Send_rejects_a_past_date()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+
+        var res = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(-1), location = "Salle B12" });
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Send_rejects_blank_location()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+
+        var res = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(2), location = "   " });
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Failed_send_keeps_draft_then_retry_succeeds()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+
+        _factory.Email.ShouldSucceed = false;
+        var send = await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(2), location = "Salle B12" });
+        send.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var verify = _factory.CreateContext())
+        {
+            verify.InterventionCases.Single(x => x.Id == caseId).Etat.Should().Be(CaseWorkflowState.InProgress);
+            var comm = verify.CaseCommunications.Single(x => x.Id == commId);
+            comm.Status.Should().Be(CommunicationStatus.Failed);
+            comm.Sujet.Should().Be("Invitation"); // stored text unchanged
+            comm.Corps.Should().Be("Bonjour, rendez-vous à l'ENIAD.");
+        }
+
+        _factory.Email.ShouldSucceed = true;
+        var retry = await client.PostAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/retry", null);
+        retry.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var after = _factory.CreateContext();
+        after.InterventionCases.Single(x => x.Id == caseId).Etat.Should().Be(CaseWorkflowState.WaitingStudent);
+        after.CaseCommunications.Single(x => x.Id == commId).Status.Should().Be(CommunicationStatus.Sent);
+    }
+
+    [Fact]
+    public async Task A_sent_email_cannot_be_resent_or_retried()
+    {
+        var client = await AuthedClientAsync();
+        var (caseId, commId) = await CreateDraftAsync(client);
+
+        (await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(2), location = "Salle B12" }))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Second send: rejected (comm Sent, case already WaitingStudent).
+        (await client.PostAsJsonAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
+            new { scheduledFor = DateTime.UtcNow.AddDays(3), location = "Salle C1" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Retry: only Failed is retryable.
+        (await client.PostAsync(
+            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/retry", null))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

@@ -471,6 +471,12 @@ namespace PlateformePFA.API.Controllers
             var c = await _context.InterventionCases.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             if (c == null) return NotFound(new { message = "Cas introuvable." });
 
+            // The student-outreach email has its own reviewed-draft + schedule flow
+            // (CaseOutreachController). Never let it be sent through the generic path,
+            // which would bypass the meeting scheduling and send-once guard.
+            if (dto.TemplateId == "student_outreach")
+                return BadRequest(new { message = "Utilisez le flux d'intervention pour l'email d'accompagnement." });
+
             if (!EmailTemplates.All.TryGetValue(dto.TemplateId, out var template))
                 return BadRequest(new { message = "Modèle d'email inconnu." });
 
