@@ -72,7 +72,7 @@ export function Sidebar() {
     ...(isAdmin || isResp ? [{ to: '/dashboard', label: 'Tableau de bord', icon: 'dashboard' as IconName }] : []),
     { to: '/students', label: 'Étudiants', icon: 'students', badge: etudiantsCount },
     ...(mayAccessAlerts ? [{ to: '/alerts', label: 'Alertes', icon: 'bell' as IconName, badge: alertesData, badgeTone: 'bad' as const }] : []),
-    ...(mayAccessAlerts ? [{ to: '/cases',  label: "Cas d'intervention", icon: 'bookmark' as IconName }] : []),
+    ...(mayAccessAlerts ? [{ to: '/cases',  label: 'Interventions', icon: 'bookmark' as IconName }] : []),
     ...(!isEns ? [{ to: '/predictions', label: 'Prédictions ML', icon: 'brain' as IconName }] : []),
     { to: '/reports', label: 'Rapports', icon: 'doc' },
   ]

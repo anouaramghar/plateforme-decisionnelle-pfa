@@ -215,6 +215,10 @@ export const recordMeetingResult = (caseId: number, body: MeetingResultBody) =>
 export const fetchTemplates = () =>
   api.get<EmailTemplate[]>('/email-templates').then(r => r.data)
 
+export interface FiliereRef { id: number; code: string; intitule?: string }
+export const fetchFilieres = () =>
+  api.get<Paginated<FiliereRef>>('/filieres?pageSize=100').then(r => r.data.items)
+
 export interface InterventionKpis {
   triageQueue: number; openCases: number; unassignedCases: number
   escalatedCases: number; overdueCases: number; overdueTasks: number; failedEmails: number

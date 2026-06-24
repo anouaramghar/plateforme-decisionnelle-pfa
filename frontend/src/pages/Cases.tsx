@@ -1,21 +1,36 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
-import { fetchCases, ETAT_LABELS, PRIORITE_LABELS } from '../services/interventions'
+import {
+  fetchCases, fetchFilieres, ETAT_LABELS, PRIORITE_LABELS,
+  type InterventionCase,
+} from '../services/interventions'
 
 const PRIORITE_TONE: Record<string, PillTone> = {
   Critical: 'bad', High: 'bad', Medium: 'warn', Low: 'neutral',
 }
-const ACTIVE = ['Open', 'InProgress', 'WaitingStudent', 'Monitoring', 'Escalated']
 
-type Tab = 'active' | 'closed' | 'all'
+// The four outreach stages the queue is organized around. Each maps a backend
+// state to the staff-facing action label. Non-primary states (Escalated,
+// Monitoring, Closed) are shown in a separate section so existing cases are
+// never hidden.
+const PRIMARY_STAGES = [
+  { state: 'Open',           label: 'À contacter' },
+  { state: 'InProgress',     label: 'Email préparé' },
+  { state: 'WaitingStudent', label: 'Entretien planifié' },
+  { state: 'Resolved',       label: 'Entretien réalisé' },
+] as const
+
+const SECONDARY_STATES = ['Escalated', 'Monitoring', 'Closed']
+
+type OwnerFilter = 'all' | 'assigned' | 'unassigned'
+type StageFilter = 'all' | 'Open' | 'InProgress' | 'WaitingStudent' | 'Resolved'
 
 export default function Cases() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('active')
 
   const { data: cases = [], isLoading, isError } = useQuery({
     queryKey: ['cases'],
@@ -23,74 +38,175 @@ export default function Cases() {
     refetchInterval: 30_000,
   })
 
-  const filtered = cases.filter(c => {
-    if (tab === 'active') return ACTIVE.includes(c.etat)
-    if (tab === 'closed') return c.etat === 'Resolved' || c.etat === 'Closed'
-    return true
+  const { data: filieres = [] } = useQuery({
+    queryKey: ['filieres'],
+    queryFn: fetchFilieres,
+    staleTime: 5 * 60_000,
   })
+
+  const [owner, setOwner] = useState<OwnerFilter>('all')
+  const [filiereCode, setFiliereCode] = useState<string>('all')
+  const [priorite, setPriorite] = useState<string>('all')
+  const [stage, setStage] = useState<StageFilter>('all')
+
+  // filiereId → code map so the dropdown can filter cases by their FiliereId.
+  const filiereIdByCode = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const f of filieres) m.set(f.code, f.id)
+    return m
+  }, [filieres])
+
+  const passCommon = (c: InterventionCase) => {
+    if (owner === 'assigned'   && c.ownerId == null) return false
+    if (owner === 'unassigned' && c.ownerId != null) return false
+    if (priorite !== 'all' && c.priorite !== priorite) return false
+    if (filiereCode !== 'all') {
+      const wantId = filiereIdByCode.get(filiereCode)
+      if (wantId == null || c.filiereId !== wantId) return false
+    }
+    return true
+  }
+
+  const primaryColumns = PRIMARY_STAGES.map(s => ({
+    ...s,
+    items: cases
+      .filter(c => c.etat === s.state && passCommon(c) && (stage === 'all' || stage === s.state))
+      .sort((a, b) => +new Date(b.creeLe) - +new Date(a.creeLe)),
+  }))
+
+  const secondary = cases
+    .filter(c => SECONDARY_STATES.includes(c.etat) && passCommon(c))
+    .sort((a, b) => +new Date(b.creeLe) - +new Date(a.creeLe))
 
   return (
     <div className="space-y-4">
       <div>
         <div className="cap mb-1">Suivi des interventions</div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Cas d'intervention</h1>
+        <h1 className="text-[22px] font-semibold tracking-tight">Interventions</h1>
       </div>
 
-      <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
-        {([
-          { id: 'active', label: 'Actifs',   n: cases.filter(c => ACTIVE.includes(c.etat)).length },
-          { id: 'closed', label: 'Clôturés', n: cases.filter(c => c.etat === 'Resolved' || c.etat === 'Closed').length },
-          { id: 'all',    label: 'Tous',     n: cases.length },
-        ] as { id: Tab; label: string; n: number }[]).map(t => (
+      <div className="card p-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="cap">Assigné</span>
+          <select className="input" value={owner} onChange={e => setOwner(e.target.value as OwnerFilter)}>
+            <option value="all">Tous</option>
+            <option value="assigned">Assignés</option>
+            <option value="unassigned">Non assignés</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Filière</span>
+          <select className="input" value={filiereCode} onChange={e => setFiliereCode(e.target.value)}>
+            <option value="all">Toutes</option>
+            {filieres.map(f => <option key={f.id} value={f.code}>{f.code}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Priorité</span>
+          <select className="input" value={priorite} onChange={e => setPriorite(e.target.value)}>
+            <option value="all">Toutes</option>
+            {Object.entries(PRIORITE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="cap">Étape</span>
+          <select className="input" value={stage} onChange={e => setStage(e.target.value as StageFilter)}>
+            <option value="all">Toutes les étapes</option>
+            {PRIMARY_STAGES.map(s => <option key={s.state} value={s.state}>{s.label}</option>)}
+          </select>
+        </label>
+        {(owner !== 'all' || filiereCode !== 'all' || priorite !== 'all' || stage !== 'all') && (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className="px-3 py-2 text-[12.5px] flex items-center gap-1.5"
-            style={{
-              color: tab === t.id ? 'var(--text)' : 'var(--text-3)',
-              fontWeight: tab === t.id ? 500 : 400,
-              borderBottom: tab === t.id ? '2px solid var(--accent-500)' : '2px solid transparent',
-              marginBottom: -1,
-            }}
+            className="btn btn-sm btn-ghost"
+            onClick={() => { setOwner('all'); setFiliereCode('all'); setPriorite('all'); setStage('all') }}
           >
-            {t.label} <span className="cap font-mono">{t.n}</span>
+            <Icon name="x" size={12} /> Réinitialiser
           </button>
-        ))}
-      </div>
-
-      <div className="card overflow-hidden">
-        {isLoading && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--text-3)' }}>Chargement…</div>}
-        {isError && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>Impossible de charger les cas.</div>}
-        {!isLoading && !isError && filtered.length === 0 && (
-          <Empty title="Aucun cas" hint="Les cas ouverts depuis la file de triage apparaîtront ici." />
         )}
-        {!isLoading && !isError && filtered.map((c, i) => (
-          <button
-            key={c.id}
-            onClick={() => navigate(`/cases/${c.id}`)}
-            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-2)]"
-            style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
+      </div>
+
+      {isError && (
+        <div className="card px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>
+          Impossible de charger les interventions.
+        </div>
+      )}
+
+      <div className="grid grid-cols-4 gap-3">
+        {primaryColumns.map(col => (
+          <section
+            key={col.state}
+            role="region"
+            aria-label={`${col.label}`}
+            className="card overflow-hidden flex flex-col"
+            style={{ minHeight: 200 }}
           >
-            <Pill tone={PRIORITE_TONE[c.priorite] ?? 'neutral'} dot>
-              {PRIORITE_LABELS[c.priorite] ?? c.priorite}
-            </Pill>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium truncate">{c.motif}</div>
-              <div className="cap">
-                {c.etudiant ? `${c.etudiant.prenom} ${c.etudiant.nom}` : `Étudiant #${c.etudiantId}`}
-                {c.ownerId == null && ' · non assigné'}
-              </div>
+            <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="text-[13px] font-semibold">{col.label}</h2>
+              <span className="cap font-mono">{col.items.length}</span>
             </div>
-            <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>
-            {c.dueDate && (
-              <span className="cap" style={{ minWidth: 90, textAlign: 'right' }}>
-                échéance {new Date(c.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-              </span>
-            )}
-            <Icon name="chevRight" size={14} style={{ color: 'var(--text-3)' }} />
-          </button>
+            <div className="flex-1">
+              {isLoading && <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Chargement…</div>}
+              {!isLoading && col.items.length === 0 && (
+                <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Aucune intervention.</div>
+              )}
+              {col.items.map(c => (
+                <CaseCard key={c.id} c={c} onClick={() => navigate(`/cases/${c.id}`)} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
+
+      {secondary.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+            <h2 className="text-[13px] font-semibold">Autres états — Suivi / Escaladé / Clôturé</h2>
+            <span className="cap font-mono">{secondary.length}</span>
+          </div>
+          {secondary.map(c => (
+            <CaseCard key={c.id} c={c} onClick={() => navigate(`/cases/${c.id}`)} list />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && !isError && cases.length === 0 && (
+        <Empty title="Aucune intervention" hint="Les cas ouverts depuis la file de triage apparaîtront ici." icon="bookmark" />
+      )}
     </div>
+  )
+}
+
+function CaseCard({ c, onClick, list }: { c: InterventionCase; onClick: () => void; list?: boolean }) {
+  const student = c.etudiant ? `${c.etudiant.prenom} ${c.etudiant.nom}` : `Étudiant #${c.etudiantId}`
+  const meeting = c.meetingScheduledFor
+  const due = c.dueDate
+  return (
+    <button
+      onClick={onClick}
+      aria-label={student}
+      className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-2)]"
+      style={{ borderBottom: list ? '1px solid var(--border)' : '1px solid var(--border)' }}
+    >
+      <Pill tone={PRIORITE_TONE[c.priorite] ?? 'neutral'} dot>
+        {PRIORITE_LABELS[c.priorite] ?? c.priorite}
+      </Pill>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12.5px] font-medium truncate">{c.motif}</div>
+        <div className="cap truncate">{student}{c.ownerId == null && ' · non assigné'}</div>
+        {meeting && (
+          <div className="cap" style={{ color: 'var(--text-3)' }}>
+            <Icon name="clock" size={11} /> {new Date(meeting).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+            {c.meetingLocation && ` · ${c.meetingLocation}`}
+          </div>
+        )}
+        {!meeting && due && (
+          <div className="cap" style={{ color: 'var(--text-3)' }}>
+            échéance {new Date(due).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+          </div>
+        )}
+      </div>
+      {!list && <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>}
+      <Icon name="chevRight" size={13} style={{ color: 'var(--text-3)', marginTop: 2 }} />
+    </button>
   )
 }
