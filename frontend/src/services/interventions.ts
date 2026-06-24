@@ -18,6 +18,8 @@ export interface TimelineEvent {
   creeLe: string
 }
 
+export type MeetingAttendance = 'Held' | 'Absent' | 'Cancelled'
+
 export interface InterventionCase {
   id: number
   etudiantId: number
@@ -31,6 +33,10 @@ export interface InterventionCase {
   outcome: string | null
   resolutionSummary: string | null
   followUpDate: string | null
+  meetingScheduledFor: string | null
+  meetingLocation: string | null
+  meetingAttendance: MeetingAttendance | null
+  meetingHeldAt: string | null
   creeLe: string
   clotureLe: string | null
   etudiant?: EtudiantRef | null
@@ -89,7 +95,7 @@ export interface CaseCommunication {
   templateId: string
   sujet: string
   corps: string
-  status: 'Queued' | 'Sent' | 'Failed'
+  status: 'Draft' | 'Queued' | 'Sent' | 'Failed'
   erreur: string | null
   creeLe: string
   envoyeLe: string | null
@@ -118,9 +124,12 @@ export const CASE_TRANSITIONS: Record<string, string[]> = {
   Closed:         ['InProgress'],
 }
 
+// Outreach-flavoured labels: the four primary stages read as the action loop
+// (À contacter → Email préparé → Entretien planifié → Entretien réalisé).
+// Monitoring/Escalated/Closed keep their operational names.
 export const ETAT_LABELS: Record<string, string> = {
-  Open: 'Ouvert', InProgress: 'En cours', WaitingStudent: 'En attente étudiant',
-  Monitoring: 'Suivi', Escalated: 'Escaladé', Resolved: 'Résolu', Closed: 'Clôturé',
+  Open: 'À contacter', InProgress: 'Email préparé', WaitingStudent: 'Entretien planifié',
+  Monitoring: 'Suivi', Escalated: 'Escaladé', Resolved: 'Entretien réalisé', Closed: 'Clôturé',
 }
 
 export const PRIORITE_LABELS: Record<string, string> = {
@@ -180,6 +189,28 @@ export const sendCommunication = (id: number, templateId: string) =>
   api.post(`/intervention-cases/${id}/communications`, { templateId })
 export const retryCommunication = (id: number, commId: number) =>
   api.post(`/intervention-cases/${id}/communications/${commId}/retry`)
+
+// ── Student outreach (CaseOutreachController) ──────────────────────────────────
+
+export interface SaveDraftBody { subject: string; body: string }
+export interface ScheduleAndSendBody { scheduledFor: string; location: string }
+export interface MeetingResultBody {
+  attendance: MeetingAttendance
+  heldAt?: string
+  outcome?: string
+  summary?: string
+}
+
+export const createOutreachDraft = (caseId: number, body: SaveDraftBody) =>
+  api.post<CaseCommunication>(`/intervention-cases/${caseId}/outreach/draft`, body).then(r => r.data)
+export const updateOutreachDraft = (caseId: number, commId: number, body: SaveDraftBody) =>
+  api.put(`/intervention-cases/${caseId}/outreach/draft/${commId}`, body)
+export const scheduleAndSendOutreach = (caseId: number, commId: number, body: ScheduleAndSendBody) =>
+  api.post(`/intervention-cases/${caseId}/outreach/draft/${commId}/send`, body)
+export const retryOutreach = (caseId: number, commId: number) =>
+  api.post(`/intervention-cases/${caseId}/outreach/draft/${commId}/retry`)
+export const recordMeetingResult = (caseId: number, body: MeetingResultBody) =>
+  api.post(`/intervention-cases/${caseId}/outreach/meeting-result`, body)
 
 export const fetchTemplates = () =>
   api.get<EmailTemplate[]>('/email-templates').then(r => r.data)
