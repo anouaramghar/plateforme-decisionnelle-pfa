@@ -8,3 +8,16 @@ import { cleanup } from '@testing-library/react'
 afterEach(() => {
   cleanup()
 })
+
+// jsdom (as of 29.x) does not implement <dialog>.showModal() / .close().
+// Polyfill enough behaviour for the Modal component's useEffect to work:
+// toggle the `open` property so the dialog becomes queryable.
+if (typeof HTMLDialogElement !== 'undefined') {
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>
+  if (typeof proto.showModal !== 'function') {
+    proto.showModal = function (this: HTMLDialogElement) { this.open = true }
+  }
+  if (typeof proto.close !== 'function') {
+    proto.close = function (this: HTMLDialogElement) { this.open = false }
+  }
+}

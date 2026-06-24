@@ -4,6 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Modal } from '../components/ui/Modal'
+import { OutreachComposer } from '../components/interventions/OutreachComposer'
+import { MeetingOutcomeForm } from '../components/interventions/MeetingOutcomeForm'
+import { useAuth } from '../context/AuthContext'
 import type { AxiosError } from 'axios'
 import {
   fetchCase, transitionCase, fetchTasks, createTask, completeTask,
@@ -15,19 +18,32 @@ const PRIORITE_TONE: Record<string, PillTone> = {
   Critical: 'bad', High: 'bad', Medium: 'warn', Low: 'neutral',
 }
 
+// Primary outreach states use the dedicated composer + meeting form instead of
+// the generic transition buttons. Other states keep the manual controls.
+const PRIMARY_OUTREACH_STATES = ['Open', 'InProgress', 'WaitingStudent', 'Resolved']
+
 export default function CaseDetail() {
   const { id } = useParams()
   const caseId = Number(id)
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const canManage = user?.role === 'Admin' || user?.role === 'Responsable'
 
   const { data: c, isLoading, isError } = useQuery({
     queryKey: ['case', caseId],
     queryFn: () => fetchCase(caseId),
   })
 
+  const { data: comms = [] } = useQuery({
+    queryKey: ['case', caseId, 'comms'],
+    queryFn: () => fetchCommunications(caseId),
+    enabled: !isNaN(caseId),
+  })
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['case', caseId] })
+    qc.invalidateQueries({ queryKey: ['case', caseId, 'comms'] })
     qc.invalidateQueries({ queryKey: ['cases'] })
   }
 
@@ -37,12 +53,13 @@ export default function CaseDetail() {
   const [form, setForm] = useState<{ outcome: string; summary: string; raison: string }>(
     { outcome: OUTCOMES[0], summary: '', raison: '' },
   )
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const transition = useMutation({
     mutationFn: (body: Parameters<typeof transitionCase>[1]) => transitionCase(caseId, body),
     onSuccess: () => { setDialog(null); invalidate() },
     onError: (e) =>
-      alert((e as AxiosError<{ message?: string }>).response?.data?.message ?? 'Transition refusée.'),
+      setErrorMessage((e as AxiosError<{ message?: string }>).response?.data?.message ?? 'Transition refusée.'),
   })
 
   const startTransition = (to: string) => {
@@ -82,7 +99,7 @@ export default function CaseDetail() {
   return (
     <div className="space-y-4">
       <button className="btn btn-sm btn-ghost" onClick={() => navigate('/cases')}>
-        <Icon name="chevLeft" size={13} /> Cas
+        <Icon name="chevLeft" size={13} /> Interventions
       </button>
 
       {/* Header */}
@@ -104,20 +121,37 @@ export default function CaseDetail() {
         {c.outcome && (
           <div className="cap mt-2">Résultat : {c.outcome} — {c.resolutionSummary}</div>
         )}
-        <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-          {nextStates.map(s => (
-            <button
-              key={s}
-              className="btn btn-sm"
-              onClick={() => startTransition(s)}
-              disabled={transition.isPending}
-            >
-              {ETAT_LABELS[s] ?? s}
-            </button>
-          ))}
-          {nextStates.length === 0 && <span className="cap">Aucune transition possible.</span>}
-        </div>
       </div>
+
+      {/* Primary outreach path: composer + meeting form replace manual transitions */}
+      {PRIMARY_OUTREACH_STATES.includes(c.etat) && (
+        <OutreachComposer intervention={c} communications={comms} canManage={canManage} onChanged={invalidate} />
+      )}
+      {c.etat === 'WaitingStudent' && (
+        <MeetingOutcomeForm caseId={caseId} canManage={canManage} onChanged={invalidate} />
+      )}
+
+      {/* Advanced management: generic state transitions for non-primary states
+          and manual overrides (reopen, escalate, close). */}
+      {nextStates.length > 0 && (
+        <details className="card p-4">
+          <summary className="text-[13px] font-medium cursor-pointer" style={{ color: 'var(--text-2)' }}>
+            Gestion avancée
+          </summary>
+          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+            {nextStates.map(s => (
+              <button
+                key={s}
+                className="btn btn-sm"
+                onClick={() => startTransition(s)}
+                disabled={transition.isPending}
+              >
+                {ETAT_LABELS[s] ?? s}
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <TasksCard caseId={caseId} onChange={invalidate} />
@@ -175,6 +209,13 @@ export default function CaseDetail() {
           >
             Confirmer
           </button>
+        </div>
+      </Modal>
+
+      <Modal open={errorMessage !== null} onClose={() => setErrorMessage(null)} title="Transition refusée">
+        <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>{errorMessage}</p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-sm" onClick={() => setErrorMessage(null)}>Fermer</button>
         </div>
       </Modal>
     </div>
@@ -284,10 +325,11 @@ function NotesCard({ caseId, onChange }: { caseId: number; onChange: () => void 
 function CommunicationsCard({ caseId, onChange }: { caseId: number; onChange: () => void }) {
   const qc = useQueryClient()
   const [templateId, setTemplateId] = useState('')
+  const [confirmSendOpen, setConfirmSendOpen] = useState(false)
   const { data: comms = [] } = useQuery({ queryKey: ['case', caseId, 'comms'], queryFn: () => fetchCommunications(caseId) })
   const { data: templates = [] } = useQuery({ queryKey: ['email-templates'], queryFn: fetchTemplates })
 
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['case', caseId, 'comms'] }); onChange() }
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['case', caseId, 'comms'] }); setConfirmSendOpen(false); onChange() }
   const send = useMutation({ mutationFn: () => sendCommunication(caseId, templateId), onSuccess: refresh })
   const retry = useMutation({ mutationFn: (commId: number) => retryCommunication(caseId, commId), onSuccess: refresh })
 
@@ -318,12 +360,28 @@ function CommunicationsCard({ caseId, onChange }: { caseId: number; onChange: ()
         </select>
         <button
           className="btn btn-sm btn-primary"
-          onClick={() => { if (templateId && window.confirm('Envoyer cet email à l\'étudiant ?')) send.mutate() }}
+          onClick={() => { if (templateId) setConfirmSendOpen(true) }}
           disabled={!templateId || send.isPending}
         >
           <Icon name="send" size={13} /> Envoyer
         </button>
       </div>
+
+      <Modal open={confirmSendOpen} onClose={() => setConfirmSendOpen(false)} title="Envoyer l'email">
+        <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
+          Envoyer cet email à l'étudiant ?
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-sm" onClick={() => setConfirmSendOpen(false)}>Annuler</button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => send.mutate()}
+            disabled={send.isPending}
+          >
+            Envoyer
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

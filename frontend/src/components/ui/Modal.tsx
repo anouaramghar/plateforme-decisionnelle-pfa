@@ -23,6 +23,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       onCancel={e => { e.preventDefault(); onClose() }}
       onClick={e => { if (e.target === ref.current) onClose() }} // click outside the panel closes
       style={{
