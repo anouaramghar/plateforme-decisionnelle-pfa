@@ -33,7 +33,8 @@ vi.mock('react-apexcharts', () => ({
   default: () => <div data-testid="mock-chart" />,
 }))
 
-// Mock Copilot hooks
+// Mock Copilot hooks (useCopilotReadable/useCopilotAction live on the main
+// entry, not /v2 — see Students.tsx for the same import).
 vi.mock('@copilotkit/react-core', () => ({
   useCopilotReadable: vi.fn(),
   useCopilotAction: vi.fn(),

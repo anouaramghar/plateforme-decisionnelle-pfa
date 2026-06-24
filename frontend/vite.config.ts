@@ -31,6 +31,11 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_COPILOT_PROXY_TARGET || 'http://localhost:4000',
           changeOrigin: true,
         },
+        // Outreach AI drafting also lives on the copilot-runtime, not the backend.
+        '/api/outreach': {
+          target: env.VITE_COPILOT_PROXY_TARGET || 'http://localhost:4000',
+          changeOrigin: true,
+        },
         // Default target = the backend dev server (`dotnet run` listens on 5135).
         // Set VITE_API_PROXY_TARGET=http://localhost:80 when using the full docker stack.
         '/api': {

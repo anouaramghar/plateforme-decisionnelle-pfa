@@ -2,7 +2,9 @@ import "dotenv/config";
 import express from "express";
 import { CopilotRuntime, BuiltInAgent, createCopilotExpressHandler } from "@copilotkit/runtime/v2";
 import { createOpenAI } from "@ai-sdk/openai";
+import { generateText } from "ai";
 import { authStore, serverTools } from "./tools.js";
+import { createOutreachDraft, outreachInput } from "./outreach.js";
 
 const nim = createOpenAI({
   baseURL: process.env.NVIDIA_NIM_BASE_URL ?? "https://integrate.api.nvidia.com/v1",
@@ -90,6 +92,49 @@ app.use(
     mode: "single-route",
   })
 );
+
+// ── Optional AI drafting for the student-outreach flow ──────────────────────
+// Same httpOnly-cookie verification as /api/copilotkit. The backend remains
+// authoritative for persistence/delivery; this only suggests draft text, and
+// the frontend always has a deterministic French fallback if this is down.
+app.use("/api/outreach", (req, res, next) => {
+  if (req.method === "OPTIONS") return next();
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies.pfa_copilot_session;
+  if (!token) return res.status(401).json({ error: "Missing session cookie" });
+  try {
+    verifyCopilotToken(token);
+  } catch (err: any) {
+    console.error("JWT validation error:", err.message);
+    return res.status(401).json({ error: "Invalid or expired session cookie" });
+  }
+  next();
+});
+
+app.post("/api/outreach/draft", express.json(), async (req, res) => {
+  const parsed = outreachInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+
+  try {
+    const draft = await createOutreachDraft(parsed.data, async ({ system, user }) => {
+      const { text } = await generateText({
+        model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
+        system,
+        prompt: user,
+      });
+      return { text };
+    });
+    return res.json(draft);
+  } catch (err: any) {
+    const msg = String(err?.message ?? "");
+    // Bad/unsafe model output → 422 (client falls back). Provider/network → 503.
+    if (msg.startsWith("invalid draft") || msg.startsWith("unsafe draft")) {
+      return res.status(422).json({ error: "Model returned invalid output" });
+    }
+    console.error("Outreach draft generation failed:", msg);
+    return res.status(503).json({ error: "AI provider unavailable" });
+  }
+});
 
 const port = Number(process.env.PORT ?? 4000);
 app.listen(port, () => {
