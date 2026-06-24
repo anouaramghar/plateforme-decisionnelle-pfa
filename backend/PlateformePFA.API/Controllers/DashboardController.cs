@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlateformePFA.API.Data;
 using PlateformePFA.API.DTOs.Dashboard;
+using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
 using System.Globalization;
 
@@ -49,19 +50,101 @@ namespace PlateformePFA.API.Controllers
             var cases = _context.InterventionCases.AsNoTracking();
             var open  = cases.Where(c => !openStates.Contains(c.Etat));
 
+            // ── Existing operational KPIs ────────────────────────────────────────
+            var triageQueue     = await _context.Alertes.AsNoTracking()
+                                      .CountAsync(a => !a.Resolue && a.CaseId == null);
+            var openCases       = await open.CountAsync();
+            var unassignedCases = await open.CountAsync(c => c.OwnerId == null);
+            var escalatedCases  = await cases.CountAsync(c => c.Etat == CaseWorkflowState.Escalated);
+            var overdueCases    = await open.CountAsync(c => c.DueDate != null && c.DueDate < now);
+            var overdueTasks    = await _context.CaseTasks.AsNoTracking()
+                                      .CountAsync(t => !t.Done && t.DueDate != null && t.DueDate < now);
+            var failedEmails    = await _context.CaseCommunications.AsNoTracking()
+                                      .CountAsync(cc => cc.Status == "Failed");
+
+            // ── Outreach funnel counts ───────────────────────────────────────────
+            var needsContact       = await cases.CountAsync(c => c.Etat == CaseWorkflowState.Open);
+            var emailPrepared      = await cases.CountAsync(c => c.Etat == CaseWorkflowState.InProgress);
+            var meetingsScheduled  = await cases.CountAsync(c => c.Etat == CaseWorkflowState.WaitingStudent);
+            var meetingsHeld       = await cases.CountAsync(c => c.MeetingAttendance == "Held");
+            var duplicatePrevented = await _context.AuditEntries.AsNoTracking()
+                                      .CountAsync(a => a.Action == "DuplicateCasePrevented");
+
+            // ── Derived percentages ──────────────────────────────────────────────
+            var sentCount  = await _context.CaseCommunications.AsNoTracking()
+                                .CountAsync(cc => cc.Status == CommunicationStatus.Sent);
+            var emailDeliverySuccessPercent = (sentCount + failedEmails) > 0
+                ? Math.Round((decimal)sentCount / (sentCount + failedEmails) * 100m, 1)
+                : 0m;
+
+            var scheduledMeetings = await cases.CountAsync(c => c.MeetingScheduledFor != null);
+            var meetingHeldPercent = scheduledMeetings > 0
+                ? Math.Round((decimal)meetingsHeld / scheduledMeetings * 100m, 1)
+                : 0m;
+
+            // Eligible = students with an unresolved high-risk alert.
+            // Contacted = eligible students who have a Sent outreach communication.
+            var eligibleStudentIds = await _context.Alertes.AsNoTracking()
+                .Where(a => !a.Resolue && (a.Niveau == "Eleve" || a.Niveau == "Critique"))
+                .Select(a => a.EtudiantId).Distinct().ToListAsync();
+            var contactedStudentIds = await _context.CaseCommunications.AsNoTracking()
+                .Where(cc => cc.Status == CommunicationStatus.Sent && cc.TemplateId == "student_outreach")
+                .Join(_context.InterventionCases, cc => cc.CaseId, c => c.Id, (cc, c) => c.EtudiantId)
+                .Distinct().ToListAsync();
+            var contactedEligible = eligibleStudentIds.Intersect(contactedStudentIds).Count();
+            var contactedEligiblePercent = eligibleStudentIds.Count > 0
+                ? Math.Round((decimal)contactedEligible / eligibleStudentIds.Count * 100m, 1)
+                : 0m;
+
+            // ── Median hours from earliest linked alert to first Sent email ──────
+            var sentOutreachComms = await _context.CaseCommunications.AsNoTracking()
+                .Where(cc => cc.Status == CommunicationStatus.Sent && cc.TemplateId == "student_outreach" && cc.EnvoyeLe != null)
+                .Select(cc => new { cc.CaseId, cc.EnvoyeLe })
+                .ToListAsync();
+            var linkedAlerts = await _context.Alertes.AsNoTracking()
+                .Where(a => a.CaseId != null)
+                .Select(a => new { a.CaseId, a.CreeLe })
+                .ToListAsync();
+            var hoursList = new List<double>();
+            foreach (var comm in sentOutreachComms)
+            {
+                var earliest = linkedAlerts.Where(a => a.CaseId == comm.CaseId)
+                    .Select(a => (DateTime?)a.CreeLe).Min();
+                if (earliest.HasValue && comm.EnvoyeLe.HasValue)
+                    hoursList.Add((comm.EnvoyeLe.Value - earliest.Value).TotalHours);
+            }
+            hoursList.Sort();
+            var medianHoursRiskToEmail = ComputeMedianHours(hoursList);
+
             return new InterventionDashboardDto
             {
-                TriageQueue     = await _context.Alertes.AsNoTracking()
-                                      .CountAsync(a => !a.Resolue && a.CaseId == null),
-                OpenCases       = await open.CountAsync(),
-                UnassignedCases = await open.CountAsync(c => c.OwnerId == null),
-                EscalatedCases  = await cases.CountAsync(c => c.Etat == CaseWorkflowState.Escalated),
-                OverdueCases    = await open.CountAsync(c => c.DueDate != null && c.DueDate < now),
-                OverdueTasks    = await _context.CaseTasks.AsNoTracking()
-                                      .CountAsync(t => !t.Done && t.DueDate != null && t.DueDate < now),
-                FailedEmails    = await _context.CaseCommunications.AsNoTracking()
-                                      .CountAsync(cc => cc.Status == "Failed"),
+                TriageQueue     = triageQueue,
+                OpenCases       = openCases,
+                UnassignedCases = unassignedCases,
+                EscalatedCases  = escalatedCases,
+                OverdueCases    = overdueCases,
+                OverdueTasks    = overdueTasks,
+                FailedEmails    = failedEmails,
+                NeedsContact    = needsContact,
+                EmailPrepared   = emailPrepared,
+                MeetingsScheduled = meetingsScheduled,
+                MeetingsHeld    = meetingsHeld,
+                DuplicateCasesPrevented = duplicatePrevented,
+                ContactedEligiblePercent = contactedEligiblePercent,
+                EmailDeliverySuccessPercent = emailDeliverySuccessPercent,
+                MeetingHeldPercent = meetingHeldPercent,
+                MedianHoursRiskToEmail = medianHoursRiskToEmail,
             };
+        }
+
+        private static decimal ComputeMedianHours(List<double> sortedHours)
+        {
+            if (sortedHours.Count == 0) return 0m;
+            if (sortedHours.Count % 2 == 1)
+                return (decimal)sortedHours[sortedHours.Count / 2];
+            var a = sortedHours[sortedHours.Count / 2 - 1];
+            var b = sortedHours[sortedHours.Count / 2];
+            return (decimal)((a + b) / 2);
         }
 
         // GET: api/dashboard/activity?limit=8

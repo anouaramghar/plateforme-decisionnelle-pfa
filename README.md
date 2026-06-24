@@ -105,6 +105,15 @@ npm run build
 - Automatic alerts: low grade (< 10), excessive absences (> 20h), high ML risk score
 - Polling every 30s, bulk resolve, XLSX export
 
+### Interventions & Student Outreach
+- Risk-driven triage queue: students sorted by predicted risk, one click to open an intervention
+- Four-stage workflow: À contacter → Email préparé → Entretien planifié → Entretien réalisé
+- Editable email drafts with optional AI-assisted drafting (deterministic French fallback when the AI service is unavailable)
+- Schedule a meeting and send the invitation exactly once — Queued state prevents duplicate sends, Failed emails are retryable
+- Record meeting attendance (Held / Absent / Cancelled) — only a Held meeting with outcome + summary resolves the intervention
+- One active intervention per student (duplicate prevention redirects to the existing case)
+- Funnel metrics on the Responsable dashboard: contacted-eligible %, email delivery success %, meeting-held %, median alert-to-email delay
+
 ### Predictions ML
 - Batch prediction for any filière/niveau cohort
 - Risk scatter plot (average vs absences)

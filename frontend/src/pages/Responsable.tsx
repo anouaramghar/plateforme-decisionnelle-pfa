@@ -8,6 +8,7 @@ import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { useAuth } from '../context/AuthContext'
 import { useFiliere } from '../context/FiliereContext'
 import { api } from '../services/api'
+import { fetchInterventionKpis } from '../services/interventions'
 
 interface EtudiantRow {
   id: number; matricule: string; nomComplet: string; nom: string; prenom: string
@@ -46,10 +47,16 @@ export default function Responsable() {
   const { data: alertes = [], isLoading: loadingAlertes } = useQuery({
     queryKey: ['responsable-alertes'], queryFn: fetchAlertes, refetchInterval: 30_000,
   })
+  const { data: kpis } = useQuery({
+    queryKey: ['dashboard', 'interventions'], queryFn: fetchInterventionKpis, refetchInterval: 60_000,
+  })
 
   const resolveMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/alertes/${id}/resoudre`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['responsable-alertes'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['responsable-alertes'] })
+      queryClient.invalidateQueries({ queryKey: ['alertes'] })
+    },
   })
 
   const scopedStudents = useMemo(
@@ -96,6 +103,52 @@ export default function Responsable() {
           </div>
         ))}
       </div>
+
+      {/* Outreach funnel */}
+      {kpis && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[14px] font-semibold">File d'intervention</div>
+            <button className="btn btn-sm btn-ghost" onClick={() => navigate('/cases')}>
+              Voir les interventions <Icon name="arrowRight" size={12} />
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            {([
+              { l: 'À contacter',     v: kpis.needsContact,      t: 'bad' },
+              { l: 'Email préparé',   v: kpis.emailPrepared,     t: 'warn' },
+              { l: 'Entretien planifié', v: kpis.meetingsScheduled, t: 'info' },
+              { l: 'Entretien réalisé',  v: kpis.meetingsHeld,    t: 'ok' },
+            ] as { l: string; v: number; t: string }[]).map(s => (
+              <div key={s.l} className="text-center py-2 px-1 rounded-md" style={{ background: 'var(--surface-2)' }}>
+                <div className="num text-[22px] font-semibold" style={{
+                  color: s.t === 'ok' ? 'var(--ok)' : s.t === 'bad' ? 'var(--bad)' : s.t === 'warn' ? 'var(--warn)' : 'var(--accent-600)',
+                }}>{s.v}</div>
+                <div className="cap mt-0.5">{s.l}</div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-3 mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+            {([
+              { l: 'Étudiants contactés', v: `${kpis.contactedEligiblePercent.toFixed(0)}%`, hint: 'des étudiants à risque' },
+              { l: 'Livraison email',      v: `${kpis.emailDeliverySuccessPercent.toFixed(0)}%`, hint: 'Sent / (Sent + Failed)' },
+              { l: 'Entretiens tenus',     v: `${kpis.meetingHeldPercent.toFixed(0)}%`, hint: 'tenus / planifiés' },
+              { l: 'Délai médian',          v: `${kpis.medianHoursRiskToEmail.toFixed(1)}h`, hint: 'alerte → email' },
+            ] as { l: string; v: string; hint: string }[]).map(s => (
+              <div key={s.l}>
+                <div className="num text-[16px] font-semibold">{s.v}</div>
+                <div className="cap mt-0.5">{s.l}</div>
+                <div className="cap" style={{ color: 'var(--text-3)', fontSize: 10.5 }}>{s.hint}</div>
+              </div>
+            ))}
+          </div>
+          {kpis.duplicateCasesPrevented > 0 && (
+            <div className="cap mt-2" style={{ color: 'var(--text-3)' }}>
+              {kpis.duplicateCasesPrevented} doublon(s) d'intervention évité(s)
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-12 gap-4">
         {/* At-risk students */}

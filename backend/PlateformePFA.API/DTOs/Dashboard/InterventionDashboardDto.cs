@@ -12,5 +12,18 @@ namespace PlateformePFA.API.DTOs.Dashboard
         public int OverdueCases { get; set; }      // DueDate past, still open
         public int OverdueTasks { get; set; }      // incomplete tasks past DueDate
         public int FailedEmails { get; set; }
+
+        // ── Outreach funnel ────────────────────────────────────────────────────
+        // Counts at each stage of the action loop + derived percentages. Powers
+        // the Responsable funnel cards.
+        public int NeedsContact { get; set; }              // cases in Open
+        public int EmailPrepared { get; set; }             // cases in InProgress
+        public int MeetingsScheduled { get; set; }         // cases in WaitingStudent
+        public int MeetingsHeld { get; set; }              // cases with MeetingAttendance=Held
+        public int DuplicateCasesPrevented { get; set; }   // DuplicateCasePrevented audit rows
+        public decimal ContactedEligiblePercent { get; set; }    // contacted / eligible high-risk students
+        public decimal EmailDeliverySuccessPercent { get; set; } // Sent / (Sent + Failed)
+        public decimal MeetingHeldPercent { get; set; }          // Held / scheduled meetings
+        public decimal MedianHoursRiskToEmail { get; set; }      // alert→first Sent email median
     }
 }

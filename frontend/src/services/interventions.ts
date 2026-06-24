@@ -222,6 +222,10 @@ export const fetchFilieres = () =>
 export interface InterventionKpis {
   triageQueue: number; openCases: number; unassignedCases: number
   escalatedCases: number; overdueCases: number; overdueTasks: number; failedEmails: number
+  needsContact: number; emailPrepared: number; meetingsScheduled: number; meetingsHeld: number
+  duplicateCasesPrevented: number
+  contactedEligiblePercent: number; emailDeliverySuccessPercent: number
+  meetingHeldPercent: number; medianHoursRiskToEmail: number
 }
 export const fetchInterventionKpis = () =>
   api.get<InterventionKpis>('/dashboard/interventions').then(r => r.data)
