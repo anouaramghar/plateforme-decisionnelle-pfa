@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PlateformePFA.API.Models
 {
@@ -7,6 +8,7 @@ namespace PlateformePFA.API.Models
     /// A row with Component = 'core' and Version >= 1 means the full OLTP
     /// schema has been successfully initialised — used by the /ready health check.
     /// </summary>
+    [Table("SchemaState")]
     public class SchemaState
     {
         [Key]

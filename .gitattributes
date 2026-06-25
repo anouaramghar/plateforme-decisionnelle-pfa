@@ -1,0 +1,6 @@
+# Force LF line endings for shell scripts and entrypoints on all platforms.
+# Without this, Git on Windows converts \n → \r\n which breaks shebang
+# interpretation inside Linux containers (exit 127 / "not found").
+*.sh        text eol=lf
+*.env*      text eol=lf
+Dockerfile* text eol=lf
