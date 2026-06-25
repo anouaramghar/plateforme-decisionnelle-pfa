@@ -52,20 +52,26 @@ export default function StudentProfile() {
     queryKey: ['etudiants-with-stats'],
     queryFn: fetchStudents,
     select: (list) => list.find(s => s.id === studentId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   const { data: notes = [], isLoading: loadingNotes } = useQuery({
     queryKey: ['etudiant-notes', studentId],
     queryFn: () => fetchNotes(studentId),
     enabled: !!studentId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
-  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules })
+  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 10 * 60 * 1000 })
 
   const { data: shap, isLoading: shapLoading } = useQuery({
     queryKey: ['etudiant-shap', studentId],
     queryFn: () => fetchShap(studentId),
     retry: false,
     enabled: !!studentId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // ── Note form ──────────────────────────────────────────────────────────────

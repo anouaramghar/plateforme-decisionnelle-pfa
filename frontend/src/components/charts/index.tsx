@@ -195,7 +195,6 @@ export function ChartShap({ data }: { data: ShapExplainData }) {
                   height: '100%',
                   borderRadius: '9999px',
                   background: isRisk ? 'var(--bad)' : 'var(--ok)',
-                  transition: 'width 0.45s ease',
                 }}
               />
             </div>
@@ -228,7 +227,7 @@ export function ChartRadial({ value, label, height = 180, color = '#f97316' }: C
   const k = useChartKey(label)
   const options: ApexOptions = {
     ...baseTheme(),
-    chart: { ...baseTheme().chart, type: 'radialBar', height, sparkline: { enabled: true } },
+    chart: { ...baseTheme().chart, type: 'radialBar', height, sparkline: { enabled: true }, animations: { enabled: false } },
     colors: [color],
     plotOptions: {
       radialBar: {
