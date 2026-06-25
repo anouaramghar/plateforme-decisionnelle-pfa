@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CopilotKit } from '@copilotkit/react-core/v2'
@@ -30,6 +30,13 @@ const queryClient = new QueryClient({
 
 function CopilotBridge({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
+  // Memoize so CopilotKit doesn't see a new headers object on every AuthContext
+  // re-render (e.g. when copilotActive toggles). Without this, CopilotKit would
+  // reconnect to the runtime on every auth state change → zigzag animations.
+  const headers = useMemo(
+    () => (token ? { Authorization: `Bearer ${token}` } : {}) as Record<string, string>,
+    [token],
+  )
   return (
     <CopilotKit
       // Remount when auth becomes available so the runtime connection is
@@ -39,7 +46,7 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
       key={token ? 'auth' : 'anon'}
       runtimeUrl={copilotRuntimeUrl}
       useSingleEndpoint
-      headers={token ? { Authorization: `Bearer ${token}` } : {}}
+      headers={headers}
       showDevConsole={import.meta.env.DEV}
     >
       {children}

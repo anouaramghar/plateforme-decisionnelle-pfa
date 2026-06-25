@@ -24,7 +24,6 @@ export function RiskBar({ score, withLabel = true, width = 80 }: RiskBarProps) {
             height: '100%',
             background: colorVar,
             borderRadius: 999,
-            transition: 'width .2s',
           }}
         />
       </div>
