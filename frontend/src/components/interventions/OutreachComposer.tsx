@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon'
 import { Pill } from '../ui/Pill'
 import { Modal } from '../ui/Modal'
 import {
-  createOutreachDraft, updateOutreachDraft, scheduleAndSendOutreach, retryOutreach,
+  createOutreachDraft, updateOutreachDraft, scheduleAndSendOutreach,
   type InterventionCase, type CaseCommunication,
 } from '../../services/interventions'
 import { generateOutreachDraft } from '../../services/outreachDraft'
@@ -57,10 +57,9 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
     onError: () => setError('Impossible de préparer le brouillon.'),
   })
 
-  const send = useMutation({
+  const markSent = useMutation({
     mutationFn: async () => {
-      // Persist the edited text before scheduling — scheduleAndSend uses the
-      // STORED subject/body, not the form values.
+      // Persist the edited text before marking as sent.
       if (comm && (subject !== comm.sujet || body !== comm.corps)) {
         await updateOutreachDraft(intervention.id, comm.id, { subject, body })
       }
@@ -70,13 +69,7 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
       })
     },
     onSuccess: () => { setConfirmOpen(false); setError(null); onChanged() },
-    onError: () => { setConfirmOpen(false); setError('L’envoi a échoué. Vous pouvez réessayer.') },
-  })
-
-  const retry = useMutation({
-    mutationFn: () => retryOutreach(intervention.id, comm!.id),
-    onSuccess: () => { setError(null); onChanged() },
-    onError: () => setError('Le renvoi a échoué.'),
+    onError: () => { setConfirmOpen(false); setError('Une erreur est survenue.') },
   })
 
   // ── Read-only for Enseignant ────────────────────────────────────────────────
@@ -90,7 +83,7 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
         </div>
       )
     }
-    if (status === 'Sent' || status === 'Queued') {
+    if (status === 'Sent') {
       return (
         <div className="card p-4">
           <div className="text-[13px] font-medium mb-1">Email envoyé</div>
@@ -168,11 +161,11 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
             onClick={() => setConfirmOpen(true)}
             disabled={!subject.trim() || !body.trim() || !scheduledFor || !location.trim()}
           >
-            <Icon name="send" size={13} /> Vérifier et envoyer
+            <Icon name="check" size={13} /> Marquer comme envoyé
           </button>
         </div>
 
-        <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirmer l’envoi">
+        <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirmer">
           <div className="space-y-2 text-[12.5px]">
             <div><span className="cap">Destinataire</span><div>{comm?.destinataire}</div></div>
             <div><span className="cap">Sujet</span><div>{subject}</div></div>
@@ -183,41 +176,13 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
             <button className="btn btn-sm" onClick={() => setConfirmOpen(false)}>Annuler</button>
             <button
               className="btn btn-sm btn-accent"
-              onClick={() => send.mutate()}
-              disabled={send.isPending}
+              onClick={() => markSent.mutate()}
+              disabled={markSent.isPending}
             >
-              <Icon name="send" size={13} /> Envoyer l’email
+              <Icon name="check" size={13} /> Marquer comme envoyé
             </button>
           </div>
         </Modal>
-      </div>
-    )
-  }
-
-  // ── Queued: delivery in flight — no retry ───────────────────────────────────
-  if (status === 'Queued') {
-    return (
-      <div className="card p-4">
-        <div className="text-[13px] font-medium mb-1">Email en cours d’envoi</div>
-        <div className="cap" style={{ color: 'var(--text-3)' }}>Vérification de l’envoi en cours…</div>
-        {comm && <ReadOnlyDraft comm={comm} />}
-      </div>
-    )
-  }
-
-  // ── Failed: show error + retry ───────────────────────────────────────────────
-  if (status === 'Failed') {
-    return (
-      <div className="card p-4">
-        <div className="text-[13px] font-medium mb-1">Échec de l’envoi</div>
-        {comm?.erreur && <div className="cap mb-2" style={{ color: 'var(--bad)' }}>{comm.erreur}</div>}
-        {comm && <ReadOnlyDraft comm={comm} />}
-        {error && <div className="cap mt-2" style={{ color: 'var(--bad)' }}>{error}</div>}
-        <div className="flex justify-end mt-3">
-          <button className="btn btn-sm btn-accent" onClick={() => retry.mutate()} disabled={retry.isPending}>
-            <Icon name="refresh" size={13} /> Renvoyer
-          </button>
-        </div>
       </div>
     )
   }
