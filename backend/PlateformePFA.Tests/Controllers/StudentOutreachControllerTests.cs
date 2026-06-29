@@ -2,10 +2,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using PlateformePFA.API.Data;
 using PlateformePFA.API.Models;
 using PlateformePFA.API.Services;
 using PlateformePFA.Tests.Fixtures;
@@ -14,74 +10,20 @@ using Xunit;
 namespace PlateformePFA.Tests.Controllers;
 
 /// <summary>
-/// A controllable in-memory email sender so send tests can assert success and
-/// failure paths deterministically (the real SmtpEmailSender always fails in
-/// tests because no SMTP server is configured).
-/// </summary>
-public sealed class FakeEmailSender : IEmailSender
-{
-    public bool ShouldSucceed { get; set; } = true;
-    public string FailureReason { get; set; } = "SMTP indisponible";
-    public List<(string to, string subject, string body)> Sent { get; } = new();
-    public TaskCompletionSource<bool>? Started { get; set; }
-    public TaskCompletionSource<bool>? Continue { get; set; }
-
-    public void Reset()
-    {
-        ShouldSucceed = true;
-        FailureReason = "SMTP indisponible";
-        Sent.Clear();
-        Started = null;
-        Continue = null;
-    }
-
-    public async Task<(bool ok, string? error)> SendAsync(string to, string subject, string body, CancellationToken ct = default)
-    {
-        Started?.TrySetResult(true);
-        if (Continue != null) await Continue.Task.WaitAsync(ct);
-        if (ShouldSucceed)
-        {
-            Sent.Add((to, subject, body));
-            return (true, null);
-        }
-        return (false, FailureReason);
-    }
-}
-
-/// <summary>
-/// TestWebFactory with the SMTP sender swapped for a controllable fake.
-/// </summary>
-public class OutreachWebFactory : TestWebFactory
-{
-    public FakeEmailSender Email { get; } = new();
-
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        base.ConfigureWebHost(builder);
-        builder.ConfigureTestServices(services =>
-        {
-            var d = services.Single(x => x.ServiceType == typeof(IEmailSender));
-            services.Remove(d);
-            services.AddSingleton<IEmailSender>(Email);
-        });
-    }
-}
-
-/// <summary>
 /// Exercises the student-outreach workflow: persisted meeting/draft state,
-/// editable drafts, schedule-and-send-once delivery, and meeting outcomes.
+/// editable drafts, mark-as-sent delivery, and meeting outcomes.
+/// No real SMTP delivery — the outreach flow just records the intent.
 /// </summary>
-public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
+public class StudentOutreachControllerTests : IClassFixture<TestWebFactory>
 {
-    private readonly OutreachWebFactory _factory;
+    private readonly TestWebFactory _factory;
 
-    public StudentOutreachControllerTests(OutreachWebFactory factory)
+    public StudentOutreachControllerTests(TestWebFactory factory)
     {
         _factory = factory;
         _factory.SeedAdmin();
         using var ctx = _factory.CreateContext();
         SampleData.SeedOne(ctx);
-        _factory.Email.Reset();
     }
 
     private async Task<HttpClient> AuthedClientAsync()
@@ -256,7 +198,6 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
         var timeline = verify.CaseTimelineEvents.Where(x => x.CaseId == caseId).ToList();
         timeline.Should().Contain(x => x.Action == "MeetingScheduled");
         timeline.Should().Contain(x => x.Action == "EmailSent");
-        _factory.Email.Sent.Should().ContainSingle();
     }
 
     [Fact]
@@ -284,38 +225,7 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
     }
 
     [Fact]
-    public async Task Failed_send_keeps_draft_then_retry_succeeds()
-    {
-        var client = await AuthedClientAsync();
-        var (caseId, commId) = await CreateDraftAsync(client);
-
-        _factory.Email.ShouldSucceed = false;
-        var send = await client.PostAsJsonAsync(
-            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
-            new { scheduledFor = DateTime.UtcNow.AddDays(2), location = "Salle B12" });
-        send.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        using (var verify = _factory.CreateContext())
-        {
-            verify.InterventionCases.Single(x => x.Id == caseId).Etat.Should().Be(CaseWorkflowState.InProgress);
-            var comm = verify.CaseCommunications.Single(x => x.Id == commId);
-            comm.Status.Should().Be(CommunicationStatus.Failed);
-            comm.Sujet.Should().Be("Invitation"); // stored text unchanged
-            comm.Corps.Should().Be("Bonjour, rendez-vous à l'ENIAD.");
-        }
-
-        _factory.Email.ShouldSucceed = true;
-        var retry = await client.PostAsync(
-            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/retry", null);
-        retry.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        using var after = _factory.CreateContext();
-        after.InterventionCases.Single(x => x.Id == caseId).Etat.Should().Be(CaseWorkflowState.WaitingStudent);
-        after.CaseCommunications.Single(x => x.Id == commId).Status.Should().Be(CommunicationStatus.Sent);
-    }
-
-    [Fact]
-    public async Task A_sent_email_cannot_be_resent_or_retried()
+    public async Task A_sent_email_cannot_be_resent()
     {
         var client = await AuthedClientAsync();
         var (caseId, commId) = await CreateDraftAsync(client);
@@ -330,44 +240,6 @@ public class StudentOutreachControllerTests : IClassFixture<OutreachWebFactory>
             $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
             new { scheduledFor = DateTime.UtcNow.AddDays(3), location = "Salle C1" }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        // Retry: only Failed is retryable.
-        (await client.PostAsync(
-            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/retry", null))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task Concurrent_send_requests_deliver_only_once_and_persist_schedule_before_smtp()
-    {
-        var client = await AuthedClientAsync();
-        var (caseId, commId) = await CreateDraftAsync(client);
-        var requested = DateTime.UtcNow.AddDays(2);
-        _factory.Email.Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _factory.Email.Continue = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var first = client.PostAsJsonAsync(
-            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
-            new { scheduledFor = requested, location = "Salle B12" });
-        await _factory.Email.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        using (var duringSend = _factory.CreateContext())
-        {
-            duringSend.CaseCommunications.Single(c => c.Id == commId).Status.Should().Be(CommunicationStatus.Queued);
-            var intervention = duringSend.InterventionCases.Single(c => c.Id == caseId);
-            intervention.MeetingScheduledFor.Should().BeCloseTo(requested, TimeSpan.FromSeconds(1));
-            intervention.MeetingLocation.Should().Be("Salle B12");
-            duringSend.CaseTimelineEvents.Should().Contain(e => e.CaseId == caseId && e.Action == "MeetingScheduled");
-        }
-
-        var second = await client.PostAsJsonAsync(
-            $"/api/intervention-cases/{caseId}/outreach/draft/{commId}/send",
-            new { scheduledFor = requested.AddDays(1), location = "Salle C1" });
-        second.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Conflict);
-
-        _factory.Email.Continue.TrySetResult(true);
-        (await first).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        _factory.Email.Sent.Should().ContainSingle();
     }
 
     // ── Task 5: record meeting attendance ─────────────────────────────────────

@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { CopilotChat } from "@copilotkit/react-core/v2";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { CommandPalette } from "./CommandPalette";
 import { Icon } from "../components/ui/Icon";
 import { useAuth } from "../context/AuthContext";
+
+const CopilotChat = lazy(() =>
+  import("@copilotkit/react-core/v2").then((m) => ({ default: m.CopilotChat }))
+);
 
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -183,14 +186,20 @@ export function AppShell() {
 
           {copilotActive ? (
             <div className="min-h-0 flex-1 overflow-hidden">
-              <CopilotChat
-                agentId="default"
-                labels={{
-                  welcomeMessageText:
-                    "Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.",
-                  chatInputPlaceholder: "Posez une question sur les données…",
-                }}
-              />
+              <Suspense fallback={
+                <div className="flex items-center justify-center h-full text-sm" style={{ color: 'var(--text-3)' }}>
+                  Chargement…
+                </div>
+              }>
+                <CopilotChat
+                  agentId="default"
+                  labels={{
+                    welcomeMessageText:
+                      "Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.",
+                    chatInputPlaceholder: "Posez une question sur les données…",
+                  }}
+                />
+              </Suspense>
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">

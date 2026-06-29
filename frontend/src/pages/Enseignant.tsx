@@ -6,7 +6,7 @@ import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
-import { upsertNote } from '../services/notes'
+import { buildNotePayload, upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -128,16 +128,19 @@ export default function Enseignant() {
     if (!activeStudent || !monModule) return
     setNoteSaving(true)
     try {
-      await upsertNote({
-        etudiantId:  activeStudent.id,
-        moduleId:    monModule.moduleId,
-        noteTD:      noteForm.noteTD     ? parseFloat(noteForm.noteTD)     : null,
-        noteTP:      noteForm.noteTP     ? parseFloat(noteForm.noteTP)     : null,
-        noteExamen:  noteForm.noteExamen ? parseFloat(noteForm.noteExamen) : null,
-        noteFinal:   noteForm.noteFinal  ? parseFloat(noteForm.noteFinal)  : null,
-        semestre:    noteForm.semestre,
-        annee:       noteForm.annee,
-      })
+      await upsertNote(buildNotePayload({
+        ...noteForm,
+        etudiantId: activeStudent.id,
+        moduleId: monModule.moduleId,
+        modules: [{
+          id: monModule.moduleId,
+          code: monModule.moduleCode,
+          nom: monModule.moduleNom,
+          filiereId: monModule.filiereId,
+          niveau: monModule.niveau,
+          semestre: monModule.semestre,
+        }],
+      }))
       queryClient.invalidateQueries({ queryKey: ['etudiant-notes', activeStudent.id] })
       setNoteForm(f => ({ ...f, noteTD: '', noteTP: '', noteExamen: '', noteFinal: '' }))
       setNoteSuccess(true)
@@ -373,11 +376,7 @@ export default function Enseignant() {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="flex flex-col gap-1">
                       <span className="cap">Semestre</span>
-                      <select className="input" value={noteForm.semestre}
-                        onChange={e => setNoteForm(f => ({ ...f, semestre: e.target.value }))}>
-                        <option value="S1">S1</option>
-                        <option value="S2">S2</option>
-                      </select>
+                      <input className="input" value={monModule?.semestre ?? noteForm.semestre} readOnly />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="cap">Année</span>

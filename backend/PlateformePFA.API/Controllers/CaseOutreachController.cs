@@ -26,14 +26,12 @@ namespace PlateformePFA.API.Controllers
 
         private readonly AppDbContext _db;
         private readonly IAuditService _audit;
-        private readonly IEmailSender _email;
         private readonly ILogger<CaseOutreachController> _logger;
 
-        public CaseOutreachController(AppDbContext db, IAuditService audit, IEmailSender email, ILogger<CaseOutreachController> logger)
+        public CaseOutreachController(AppDbContext db, IAuditService audit, ILogger<CaseOutreachController> logger)
         {
             _db = db;
             _audit = audit;
-            _email = email;
             _logger = logger;
         }
 
@@ -57,9 +55,7 @@ namespace PlateformePFA.API.Controllers
                 return BadRequest(new { message = "L'étudiant ne possède pas d'adresse email." });
             var hasPendingCommunication = await _db.CaseCommunications.AnyAsync(x =>
                 x.CaseId == caseId && x.TemplateId == OutreachTemplateId &&
-                (x.Status == CommunicationStatus.Draft ||
-                 x.Status == CommunicationStatus.Queued ||
-                 x.Status == CommunicationStatus.Failed));
+                x.Status == CommunicationStatus.Draft);
             if (hasPendingCommunication)
                 return Conflict(new { message = "Un brouillon ou un envoi en attente existe déjà pour cette intervention." });
 
@@ -144,16 +140,15 @@ namespace PlateformePFA.API.Controllers
         }
 
         // POST: api/intervention-cases/5/outreach/draft/9/send
-        // Schedules the meeting and sends the (reviewed) draft exactly once.
+        // Marks the draft as sent (no real SMTP delivery — the responsible staff
+        // sends the email manually outside the platform). The case advances to
+        // WaitingStudent with the meeting details recorded.
         [HttpPost("draft/{commId:int}/send")]
-        public async Task<IActionResult> ScheduleAndSend(int caseId, int commId, ScheduleAndSendDto dto)
+        public async Task<IActionResult> ScheduleAndMarkSent(int caseId, int commId, ScheduleAndSendDto dto)
         {
             var comm = await _db.CaseCommunications.FirstOrDefaultAsync(x => x.Id == commId && x.CaseId == caseId);
             if (comm == null) return NotFound(new { message = "Brouillon introuvable." });
-
-            // Only a fresh draft or a previously failed send may be (re)sent here.
-            // Queued means a send is in flight / its outcome is unknown — never resend.
-            if (comm.Status != CommunicationStatus.Draft && comm.Status != CommunicationStatus.Failed)
+            if (comm.Status != CommunicationStatus.Draft)
                 return BadRequest(new { message = "Cet email a déjà été traité." });
 
             var c = await _db.InterventionCases.FirstOrDefaultAsync(x => x.Id == caseId);
@@ -175,31 +170,8 @@ namespace PlateformePFA.API.Controllers
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
 
-            if (!await DeliverAsync(c, comm, userId, userName))
-                return Conflict(new { message = "Cet email est déjà en cours de traitement." });
-            return NoContent();
-        }
-
-        // POST: api/intervention-cases/5/outreach/draft/9/retry
-        // Re-sends the STORED text + STORED meeting details after a failure.
-        [HttpPost("draft/{commId:int}/retry")]
-        public async Task<IActionResult> Retry(int caseId, int commId)
-        {
-            var comm = await _db.CaseCommunications.FirstOrDefaultAsync(x => x.Id == commId && x.CaseId == caseId);
-            if (comm == null) return NotFound(new { message = "Communication introuvable." });
-            if (comm.Status != CommunicationStatus.Failed)
-                return BadRequest(new { message = "Seules les communications échouées peuvent être renvoyées." });
-
-            var c = await _db.InterventionCases.FirstOrDefaultAsync(x => x.Id == caseId);
-            if (c == null) return NotFound(new { message = "Cas introuvable." });
-
-            var (userId, userName) = CurrentUser();
-            if (c.Etat != CaseWorkflowState.InProgress || c.MeetingScheduledFor == null ||
-                string.IsNullOrWhiteSpace(c.MeetingLocation))
-                return BadRequest(new { message = "Le rendez-vous doit être replanifié avant de renvoyer l'invitation." });
-
-            if (!await DeliverAsync(c, comm, userId, userName))
-                return Conflict(new { message = "Cet email est déjà en cours de traitement." });
+            if (!await MarkAsSentAsync(c, comm, userId, userName))
+                return Conflict(new { message = "Cet email a déjà été marqué comme envoyé." });
             return NoContent();
         }
 
@@ -258,15 +230,23 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
-        // Optimistically claims the send slot (Draft/Failed → Queued). The same
-        // SaveChanges also persists the meeting details and MeetingScheduled
-        // timeline event before SMTP, so an unknown delivery result retains the
-        // schedule staff reviewed.
-        private async Task<bool> DeliverAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
+        // Claims the send slot (Draft → Sent) with optimistic concurrency.
+        // No real SMTP delivery — the staff member sends the email manually.
+        // The case advances to WaitingStudent with the meeting details.
+        private async Task<bool> MarkAsSentAsync(InterventionCase c, CaseCommunication comm, int? userId, string userName)
         {
-            comm.Status = CommunicationStatus.Queued;
+            comm.Status = CommunicationStatus.Sent;
             comm.Erreur = null;
+            comm.EnvoyeLe = DateTime.UtcNow;
             comm.ConcurrencyToken = Guid.NewGuid();
+            c.Etat = CaseWorkflowState.WaitingStudent;
+            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            {
+                CaseId = c.Id,
+                Action = "EmailSent",
+                Description = comm.Sujet,
+                UtilisateurId = userId, UtilisateurNom = userName,
+            });
             try
             {
                 await _db.SaveChangesAsync();
@@ -274,28 +254,12 @@ namespace PlateformePFA.API.Controllers
             catch (DbUpdateConcurrencyException)
             {
                 _logger.LogWarning(
-                    "DeliverAsync: commId={CommId} already claimed by another request — skipping send.",
+                    "MarkAsSentAsync: commId={CommId} already claimed by another request — skipping.",
                     comm.Id);
                 return false;
             }
-
-            var (ok, error) = await _email.SendAsync(comm.Destinataire, comm.Sujet, comm.Corps);
-            comm.Status = ok ? CommunicationStatus.Sent : CommunicationStatus.Failed;
-            comm.Erreur = error;
-            if (ok)
-            {
-                comm.EnvoyeLe = DateTime.UtcNow;
-                c.Etat = CaseWorkflowState.WaitingStudent;
-            }
-            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
-            {
-                CaseId = c.Id,
-                Action = ok ? "EmailSent" : "EmailFailed",
-                Description = ok ? comm.Sujet : $"Échec : {comm.Sujet}",
-                UtilisateurId = userId, UtilisateurNom = userName,
-            });
-            await _db.SaveChangesAsync();
-            await _audit.LogAsync(ok ? "EmailSent" : "EmailFailed", "InterventionCase", c.Id, comm.Sujet, userId, userName);
+            await _audit.LogAsync("EmailSent", "InterventionCase", c.Id, comm.Sujet, userId, userName);
+            _logger.LogInformation("Outreach marqué comme envoyé : caseId={CaseId}, commId={CommId}", c.Id, comm.Id);
             return true;
         }
     }

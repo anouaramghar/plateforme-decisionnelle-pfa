@@ -1,15 +1,22 @@
 using System;
+using System.Text.RegularExpressions;
 
 namespace PlateformePFA.API.Helpers
 {
     public static class AcademicPeriod
     {
-        // Scheduled sessions per module per semester. Used to turn an absence-hour
-        // count into a rate (absenceHours / (nbModules * SessionsPerModule)).
-        // ponytail: single school-wide constant; if modules ever differ in volume,
-        // move this onto the Module row (e.g. a VolumeHoraire column) and read it
-        // per-module. Keep in sync with ml_service/data/db_loader.SESSIONS_PER_MODULE.
         public const double SessionsPerModule = 32.0;
+
+        public static int? SemesterNumber(string? semestre)
+        {
+            if (string.IsNullOrWhiteSpace(semestre))
+                return null;
+
+            var match = Regex.Match(semestre, @"(?:S|Semestre\s*)([1-9])", RegexOptions.IgnoreCase);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var n) && n >= 1 && n <= 9)
+                return n;
+            return null;
+        }
 
         public static (DateTime Start, DateTime End) SemesterDateRange(string annee, string? semestre)
         {
@@ -18,8 +25,18 @@ namespace PlateformePFA.API.Helpers
             {
                 startYear = DateTime.UtcNow.Year;
             }
-            if (semestre == "S1") return (new DateTime(startYear, 9, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(startYear + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc));
-            if (semestre == "S2") return (new DateTime(startYear + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(startYear + 1, 8, 1, 0, 0, 0, DateTimeKind.Utc));
+
+            var semNum = SemesterNumber(semestre);
+            if (semNum.HasValue)
+            {
+                var isFirstHalf = semNum.Value % 2 == 1;
+
+                if (isFirstHalf)
+                    return (new DateTime(startYear, 9, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(startYear + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc));
+                else
+                    return (new DateTime(startYear + 1, 2, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(startYear + 1, 8, 1, 0, 0, 0, DateTimeKind.Utc));
+            }
+
             return (new DateTime(startYear, 9, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(startYear + 1, 8, 1, 0, 0, 0, DateTimeKind.Utc));
         }
 

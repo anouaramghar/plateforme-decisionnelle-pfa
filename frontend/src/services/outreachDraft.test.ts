@@ -8,6 +8,13 @@ const input: OutreachDraftInput = {
   location: 'Salle B12',
 }
 
+vi.mock('./api', () => {
+  const mockPost = vi.fn<(url: string, data: unknown) => Promise<{ data: unknown }>>()
+  return { api: { post: mockPost } }
+})
+
+import { api } from './api'
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -23,28 +30,25 @@ describe('fallbackOutreachDraft', () => {
 
 describe('generateOutreachDraft', () => {
   it('returns the AI draft when the runtime responds with a valid one', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ subject: 'Invitation', body: 'Bonjour Sara, rencontrons-nous.' }),
-    }))
+    vi.mocked(api.post).mockResolvedValue({ data: { subject: 'Invitation', body: 'Bonjour Sara, rencontrons-nous.' } })
     const d = await generateOutreachDraft(input)
     expect(d).toEqual({ subject: 'Invitation', body: 'Bonjour Sara, rencontrons-nous.' })
   })
 
   it('falls back when the runtime returns a non-OK status', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }))
+    vi.mocked(api.post).mockRejectedValue(new Error('503'))
     const d = await generateOutreachDraft(input)
     expect(d).toEqual(fallbackOutreachDraft(input))
   })
 
   it('falls back when the response shape is invalid', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ subject: '' }) }))
+    vi.mocked(api.post).mockResolvedValue({ data: { subject: '' } })
     const d = await generateOutreachDraft(input)
     expect(d).toEqual(fallbackOutreachDraft(input))
   })
 
   it('falls back when fetch rejects (network/timeout)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')))
+    vi.mocked(api.post).mockRejectedValue(new Error('network'))
     const d = await generateOutreachDraft(input)
     expect(d).toEqual(fallbackOutreachDraft(input))
   })

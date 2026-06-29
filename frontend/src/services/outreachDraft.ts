@@ -1,10 +1,11 @@
 // AI-assisted outreach drafting with a deterministic fallback.
 //
-// The copilot-runtime (/api/outreach/draft) suggests a French invitation email.
-// It is OPTIONAL: any failure (provider down, 401/422/503, timeout, bad shape)
-// returns the deterministic fallback so the staff member always has a usable
-// draft. The AI path only ever sees a first name + a short concern summary +
-// the meeting logistics — never grades or risk scores.
+// The backend endpoint (/api/outreach/draft) generates a personalised French
+// invitation email using EmailTemplates.RenderMeeting. It is OPTIONAL: any
+// failure (network, bad shape) returns the deterministic fallback so the staff
+// member always has a usable draft.
+
+import { api } from './api'
 
 export interface OutreachDraftInput {
   firstName: string
@@ -26,25 +27,14 @@ export function fallbackOutreachDraft(input: OutreachDraftInput): OutreachDraft 
   }
 }
 
-function isValidDraft(d: unknown): d is OutreachDraft {
-  return (
-    typeof d === 'object' && d !== null &&
-    typeof (d as OutreachDraft).subject === 'string' && (d as OutreachDraft).subject.length > 0 &&
-    typeof (d as OutreachDraft).body === 'string' && (d as OutreachDraft).body.length > 0
-  )
-}
-
 export async function generateOutreachDraft(input: OutreachDraftInput): Promise<OutreachDraft> {
   try {
-    const res = await fetch('/api/outreach/draft', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
-    if (!res.ok) return fallbackOutreachDraft(input)
-    const data = await res.json()
-    return isValidDraft(data) ? { subject: data.subject, body: data.body } : fallbackOutreachDraft(input)
+    const data = await api.post<OutreachDraft>('/outreach/draft', input).then(r => r.data)
+    if (data && typeof data.subject === 'string' && data.subject.length > 0 &&
+        typeof data.body === 'string' && data.body.length > 0) {
+      return { subject: data.subject, body: data.body }
+    }
+    return fallbackOutreachDraft(input)
   } catch {
     return fallbackOutreachDraft(input)
   }

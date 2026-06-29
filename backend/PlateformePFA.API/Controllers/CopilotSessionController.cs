@@ -13,7 +13,7 @@ namespace PlateformePFA.API.Controllers
 {
     [ApiController]
     [Route("api/copilot/session")]
-    [Authorize]
+    [Authorize(Roles = "Admin,Responsable")]
     public class CopilotSessionController : ControllerBase
     {
         private readonly IConfiguration _configuration;

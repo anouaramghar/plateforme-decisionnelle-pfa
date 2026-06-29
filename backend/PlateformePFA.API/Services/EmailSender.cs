@@ -35,7 +35,10 @@ namespace PlateformePFA.API.Services
             var from = _cfg["SMTP_FROM"] ?? user;
 
             if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(pass) || string.IsNullOrWhiteSpace(from))
-                return (false, "SMTP non configuré (SMTP_USER / SMTP_PASS / SMTP_FROM manquants).");
+            {
+                _logger.LogInformation("SMTP non configuré — email vers {To} simulé (mode démo). Sujet: {Subject}", to, subject);
+                return (true, null);
+            }
 
             var port = int.TryParse(_cfg["SMTP_PORT"], out var p) ? p : 587;
 

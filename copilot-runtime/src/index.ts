@@ -5,10 +5,15 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { authStore, serverTools } from "./tools.js";
 import { createOutreachDraft, outreachInput } from "./outreach.js";
+import { requireEnv } from "./config.js";
+
+const nvidiaApiKey = requireEnv("NVIDIA_NIM_API_KEY");
+requireEnv("JWT_SECRET");
+requireEnv("AGENT_INTERNAL_TOKEN");
 
 const nim = createOpenAI({
   baseURL: process.env.NVIDIA_NIM_BASE_URL ?? "https://integrate.api.nvidia.com/v1",
-  apiKey: process.env.NVIDIA_NIM_API_KEY,
+  apiKey: nvidiaApiKey,
   // Force sequential tool calls. llama-3.3-70b on NIM otherwise emits parallel
   // tool calls that CopilotKit's agent loop fails to reassemble, throwing
   // AI_MissingToolResultsError. Inject parallel_tool_calls:false on tool requests.

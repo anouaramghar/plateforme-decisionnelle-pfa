@@ -3,7 +3,7 @@ import { parseStudentCsv } from './studentImport'
 
 describe('parseStudentCsv', () => {
   it('normalizes BOM headers and preserves quoted comma values', async () => {
-    const csv = '\uFEFFmatricule,nom,prenom,filiere,niveau,annee\nE1,"Doe, Jr",Jane,GI,CI1,2025/2026'
+    const csv = '\uFEFFmatricule,nom,prenom,filiere,niveau,annee\nE1,"Doe, Jr",Jane,GINF,CI1,2025/2026'
 
     expect(await parseStudentCsv(csv)).toEqual([
       {
@@ -12,7 +12,7 @@ describe('parseStudentCsv', () => {
         nom: 'Doe, Jr',
         prenom: 'Jane',
         email: '',
-        filiereCode: 'GI',
+        filiereCode: 'GINF',
         niveau: 'CI1',
         annee: '2025/2026',
       },

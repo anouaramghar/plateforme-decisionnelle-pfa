@@ -473,20 +473,14 @@ namespace PlateformePFA.API.Controllers
             };
         }
 
-        /// <summary>
-        /// Resolves the previous comparable academic period.
-        /// School year flips Sep 1; S1 ≈ Sep–Jan, S2 ≈ Feb–Jul. When we're in
-        /// S2 the comparison is the same year's S1; when we're in S1 it's the
-        /// previous year's S2 (because moving back one slot crosses years).
-        /// </summary>
         private static (string CurrentSem, string PrevAnnee, string PrevSem) ResolvePreviousPeriod()
         {
             var now = DateTime.UtcNow;
             var startYear = now.Month >= 9 ? now.Year : now.Year - 1;
-            var currentSem = now.Month >= 2 && now.Month <= 8 ? "S2" : "S1";
-            if (currentSem == "S2")
-                return (currentSem, $"{startYear}/{startYear + 1}", "S1");
-            return (currentSem, $"{startYear - 1}/{startYear}", "S2");
+            var isFirstHalf = now.Month >= 9 || now.Month <= 1;
+            if (isFirstHalf)
+                return ("S1", $"{startYear - 1}/{startYear}", "S2");
+            return ("S2", $"{startYear}/{startYear + 1}", "S1");
         }
     }
 }

@@ -9,7 +9,7 @@ import { useFiliere } from "../context/FiliereContext";
 import { api } from "../services/api";
 import { useUnresolvedAlertCount } from "../services/useUnresolvedAlertCount";
 
-const FILIERES = ["TOUS", "TCP", "GI", "IA", "ROC", "IRSI"];
+const FILIERES = ["TOUS", "EPSI", "IA", "ROC", "IRSI", "GINF"];
 
 interface NavEntry {
   to: string;
@@ -154,18 +154,24 @@ export function Sidebar() {
         height: "100%",
         minHeight: 0,
         flexShrink: 0,
-        background: "var(--side-bg)",
+        background:
+          "linear-gradient(180deg, var(--side-bg) 0%, var(--side-bg-2) 100%)",
         color: "var(--side-text)",
         borderRight: "1px solid var(--side-border)",
         display: "flex",
         flexDirection: "column",
         transition: "width .18s ease",
+        boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02)",
       }}
     >
       {/* logo */}
       <div
         className="shrink-0 px-3 flex items-center gap-2.5 overflow-hidden"
-        style={{ height: 56, borderBottom: "1px solid var(--side-border)" }}
+        style={{
+          height: 60,
+          borderBottom: "1px solid var(--side-border)",
+          background: "rgba(255,255,255,0.025)",
+        }}
       >
         <img
           src="/eniad-logo.png"

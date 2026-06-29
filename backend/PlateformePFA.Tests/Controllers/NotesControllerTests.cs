@@ -59,14 +59,14 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
             moduleId,
             noteFinal = 15m,
             annee = "2025/2026",
-            semestre = "S2",
+            semestre = "S1",
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var verifyContext = _factory.CreateContext();
         var matching = verifyContext.Notes.Where(n =>
             n.EtudiantId == studentId && n.ModuleId == moduleId &&
-            n.Annee == "2025/2026" && n.Semestre == "S2").ToList();
+            n.Annee == "2025/2026" && n.Semestre == "S1").ToList();
         matching.Should().ContainSingle();
         matching.Single().NoteFinal.Should().Be(15m);
     }
@@ -143,7 +143,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
             moduleId = modBId,
             noteFinal = 12m,
             annee = "2025/2026",
-            semestre = "S2",
+            semestre = "S1",
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -176,7 +176,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
                 ModuleId = modBId,
                 NoteFinal = 10m,
                 Annee = "2025/2026",
-                Semestre = "S2",
+                Semestre = "S1",
             };
             ctx.Notes.Add(otherNote);
             ctx.SaveChanges();
@@ -191,7 +191,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
         {
             noteFinal = 14m,
             annee = "2025/2026",
-            semestre = "S2",
+            semestre = "S1",
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -230,7 +230,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
             moduleId = modBId,
             noteFinal = 14m,
             annee = "2025/2026",
-            semestre = "S2",
+            semestre = "S1",
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -362,7 +362,7 @@ public class NotesControllerTests : IClassFixture<TestWebFactory>
         {
             noteFinal = 15m,
             annee = "2025/2026",
-            semestre = "S2",
+            semestre = "S1",
             rowVersion = base64RowVersion // Stale row version
         });
 

@@ -30,13 +30,19 @@ namespace PlateformePFA.API.Controllers
         private readonly string _internalToken;
         private readonly RiskScorer _riskScorer;
         private readonly IConfiguration _config;
+        private readonly ILogger<CopilotToolController> _logger;
 
-        public CopilotToolController(AppDbContext db, IConfiguration config, RiskScorer riskScorer)
+        public CopilotToolController(
+            AppDbContext db,
+            IConfiguration config,
+            RiskScorer riskScorer,
+            ILogger<CopilotToolController> logger)
         {
             _db = db;
             _internalToken = config["AGENT_INTERNAL_TOKEN"] ?? string.Empty;
             _riskScorer = riskScorer;
             _config = config;
+            _logger = logger;
         }
 
         private int? GetUserId()
@@ -242,7 +248,8 @@ namespace PlateformePFA.API.Controllers
             }
             catch (Exception ex)
             {
-                return new { ok = false, error = $"Erreur d'accès au DW : {ex.Message}", hint = "Vérifiez que la base PFA_DW est accessible." };
+                _logger.LogWarning(ex, "Copilot DW query failed");
+                return new { ok = false, error = "DW unavailable", hint = "Vérifiez que la base PFA_DW est accessible." };
             }
         }
 

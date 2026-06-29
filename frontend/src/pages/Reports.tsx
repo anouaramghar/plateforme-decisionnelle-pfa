@@ -39,8 +39,21 @@ interface RapportRow {
   creeLe: string
 }
 
-const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
-const PERIODES = ['Semestre 2 · 2025/2026', 'Semestre 1 · 2025/2026', 'Année 2024/2025']
+const FILIERES = ['TOUS', 'EPSI', 'IA', 'ROC', 'IRSI', 'GINF']
+const currentAcademicYear = () => {
+  const now = new Date()
+  const start = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1
+  return `${start}/${start + 1}`
+}
+const previousAcademicYear = (annee: string) => {
+  const start = Number(annee.slice(0, 4)) - 1
+  return `${start}/${start + 1}`
+}
+const currentYear = currentAcademicYear()
+const PERIODES = [
+  ...Array.from({ length: 9 }, (_, i) => `Semestre ${i + 1} · ${currentYear}`),
+  `Année ${previousAcademicYear(currentYear)}`,
+]
 const FORMATS: Format[] = ['PDF', 'XLSX', 'CSV']
 
 async function fetchRapports(): Promise<RapportRow[]> {
@@ -129,11 +142,11 @@ export default function Reports() {
   // Static preview chart — keeps the cover artwork without round-tripping for
   // numbers the cover doesn't really need.
   const previewChartData = [
-    { filiere: 'GI',   moyenne: 13.06, color: '#f97316' },
+    { filiere: 'GINF', moyenne: 13.06, color: '#14b8a6' },
     { filiere: 'IA',   moyenne: 13.29, color: '#ec4899' },
     { filiere: 'IRSI', moyenne: 12.83, color: '#0ea5e9' },
     { filiere: 'ROC',  moyenne: 13.15, color: '#a855f7' },
-    { filiere: 'TCP',  moyenne: 12.95, color: '#94a3b8' },
+    { filiere: 'EPSI', moyenne: 12.95, color: '#94a3b8' },
   ]
 
   const pickedTemplate = TEMPLATES.find(t => t.id === picked) ?? TEMPLATES[0]

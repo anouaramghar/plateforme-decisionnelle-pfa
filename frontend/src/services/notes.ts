@@ -25,6 +25,35 @@ export interface NoteUpsertResult {
   created: boolean
 }
 
+interface BuildNotePayloadInput {
+  etudiantId: number
+  moduleId: number
+  noteTD: string
+  noteTP: string
+  noteExamen: string
+  noteFinal: string
+  semestre: string
+  annee: string
+  modules: ModuleOption[]
+}
+
+const toNullableNumber = (value: string): number | null =>
+  value === '' ? null : Number(value)
+
+export function buildNotePayload(input: BuildNotePayloadInput): NoteUpsertPayload {
+  const module = input.modules.find(m => m.id === Number(input.moduleId))
+  return {
+    etudiantId: input.etudiantId,
+    moduleId: input.moduleId,
+    noteTD: toNullableNumber(input.noteTD),
+    noteTP: toNullableNumber(input.noteTP),
+    noteExamen: toNullableNumber(input.noteExamen),
+    noteFinal: toNullableNumber(input.noteFinal),
+    semestre: module?.semestre ?? input.semestre,
+    annee: input.annee,
+  }
+}
+
 export async function fetchModules(): Promise<ModuleOption[]> {
   const response = await api.get<{ items: ModuleOption[] }>('/modules?pageSize=100')
   return response.data.items

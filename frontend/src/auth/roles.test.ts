@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canAccessRolePage, canCreateAlerts, canDeleteStudents, canEnterNotes, canManageStudents, homeFor } from './roles'
+import { canAccessRolePage, canCreateAlerts, canDeleteStudents, canEnterNotes, canManageStudents, canUseCopilot, homeFor } from './roles'
 
 describe('role policies', () => {
   it('allows responsables to manage but not delete students', () => {
@@ -18,6 +18,13 @@ describe('role policies', () => {
     expect(canEnterNotes('Responsable')).toBe(false)
     expect(canCreateAlerts('Admin')).toBe(true)
     expect(canCreateAlerts('Responsable')).toBe(false)
+  })
+
+  it('matches backend authorization for Copilot', () => {
+    expect(canUseCopilot('Admin')).toBe(true)
+    expect(canUseCopilot('Responsable')).toBe(true)
+    expect(canUseCopilot('Enseignant')).toBe(false)
+    expect(canUseCopilot(undefined)).toBe(false)
   })
 
   it('lands each role on its own home', () => {

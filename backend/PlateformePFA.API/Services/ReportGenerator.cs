@@ -536,11 +536,6 @@ namespace PlateformePFA.API.Services
                 : (Math.Round((decimal)n / total * 100m, 1)
                        .ToString("0.0", CultureInfo.InvariantCulture) + " %");
 
-        /// <summary>
-        /// Parses period strings like "Semestre 2 · 2025/2026" or "Année 2024/2025"
-        /// into (annee, semestre) pairs. Defaults to the current academic year
-        /// and no semester filter when the string is unrecognised.
-        /// </summary>
         private static (string Annee, string? Semestre) ParsePeriode(string periode)
         {
             var match = System.Text.RegularExpressions.Regex.Match(
@@ -549,8 +544,9 @@ namespace PlateformePFA.API.Services
             string? sem = null;
             if (!string.IsNullOrEmpty(periode))
             {
-                if      (periode.Contains("Semestre 1") || periode.Contains("S1")) sem = "S1";
-                else if (periode.Contains("Semestre 2") || periode.Contains("S2")) sem = "S2";
+                var semMatch = System.Text.RegularExpressions.Regex.Match(periode, @"[Ss](?:emestre\s+)?([1-9])");
+                if (semMatch.Success)
+                    sem = "S" + semMatch.Groups[1].Value;
             }
             return (annee, sem);
         }

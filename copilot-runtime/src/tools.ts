@@ -1,11 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { defineTool } from "@copilotkit/runtime/v2";
 import { z } from "zod";
+import { requireEnv } from "./config.js";
 
 export const authStore = new AsyncLocalStorage<string>();
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:5135";
-const AGENT_INTERNAL_TOKEN = process.env.AGENT_INTERNAL_TOKEN ?? "";
+const AGENT_INTERNAL_TOKEN = requireEnv("AGENT_INTERNAL_TOKEN");
 
 async function backendToolCall(name: string, args: unknown): Promise<unknown> {
   const token = authStore.getStore() ?? "";
@@ -41,7 +42,7 @@ export const serverTools = [
     name: "list_at_risk",
     description:
       "List students whose risk score is above a threshold. " +
-      "Optionally filter by filière (TCP, GI, IA, ROC, IRSI) or niveau (CP1, CP2, CI1, CI2, CI3).",
+      "Optionally filter by filière (EPSI, IA, ROC, IRSI, GINF) or niveau (CP1, CP2, CI1, CI2, CI3).",
     parameters: z.object({
       threshold: z
         .number()

@@ -47,7 +47,7 @@ CREATE TABLE Etudiants (
     Prenom    NVARCHAR(100) NOT NULL,
     Email     NVARCHAR(200),
     FiliereId INT           NOT NULL REFERENCES Filieres(Id),
-    Niveau    NVARCHAR(10)  NOT NULL,  -- L1 L2 L3 M1 M2
+    Niveau    NVARCHAR(10)  NOT NULL,  -- CP1 CP2 CI1 CI2 CI3
     Annee     NVARCHAR(9)   NOT NULL,  -- ex: 2025/2026
     CreeLe    DATETIME2     NOT NULL DEFAULT GETUTCDATE()
 );

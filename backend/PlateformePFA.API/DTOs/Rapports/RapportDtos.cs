@@ -30,6 +30,6 @@ namespace PlateformePFA.API.DTOs.Rapports
         public string FiliereCode { get; set; } = "TOUS";
 
         [MaxLength(40)]
-        public string Periode { get; set; } = "Semestre 2 · 2025/2026";
+        public string Periode { get; set; } = string.Empty;
     }
 }

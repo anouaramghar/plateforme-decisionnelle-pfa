@@ -8,7 +8,7 @@ import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { ChartRadial, ChartShap } from '../components/charts'
 import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
-import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
+import { buildNotePayload, fetchModules, modulesForStudent, upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
 import { canCreateAlerts, canEnterNotes } from '../auth/roles'
 import { useAuth } from '../context/AuthContext'
@@ -87,16 +87,7 @@ export default function StudentProfile() {
     if (!noteForm.moduleId || !student) return
     setSavingNote(true)
     try {
-      await upsertNote({
-        etudiantId:  student.id,
-        moduleId:    noteForm.moduleId,
-        noteTD:      noteForm.noteTD     ? parseFloat(noteForm.noteTD)     : null,
-        noteTP:      noteForm.noteTP     ? parseFloat(noteForm.noteTP)     : null,
-        noteExamen:  noteForm.noteExamen ? parseFloat(noteForm.noteExamen) : null,
-        noteFinal:   noteForm.noteFinal  ? parseFloat(noteForm.noteFinal)  : null,
-        semestre:    noteForm.semestre,
-        annee:       noteForm.annee,
-      })
+      await upsertNote(buildNotePayload({ ...noteForm, etudiantId: student.id, modules: modulesForStudent(modules, student.filiereId, student.niveau) }))
       queryClient.invalidateQueries({ queryKey: ['etudiant-notes', studentId] })
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       setShowNoteForm(false)
@@ -137,7 +128,7 @@ export default function StudentProfile() {
     if (!notes.length) return null
     const withFinal = notes.filter(n => n.finale !== null)
     if (withFinal.length === 0) return null
-    const key = (annee: string, sem: string) => parseInt(annee.split('/')[0]) * 2 + (sem === 'S2' ? 2 : 1)
+    const key = (annee: string, sem: string) => (parseInt(annee.split('/')[0]) || 0) * 10 + (parseInt(sem.replace(/\D/g, '')) || 0)
     const byKey: Record<number, { sum: number; n: number }> = {}
     withFinal.forEach(n => {
       const k = key(n.annee, n.semestre)
@@ -277,11 +268,7 @@ export default function StudentProfile() {
               </div>
               <div>
                 <div className="cap mb-1">Semestre</div>
-                <select className="input" value={noteForm.semestre}
-                  onChange={e => setNoteForm(f => ({ ...f, semestre: e.target.value }))}>
-                  <option value="S1">S1</option>
-                  <option value="S2">S2</option>
-                </select>
+                <input className="input" value={availableModules.find(m => m.id === Number(noteForm.moduleId))?.semestre ?? noteForm.semestre} readOnly />
               </div>
             </div>
             <div className="grid grid-cols-4 gap-2">

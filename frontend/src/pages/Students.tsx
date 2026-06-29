@@ -12,7 +12,7 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { ChartRadial, ChartShap } from '../components/charts'
 import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
-import { fetchModules, modulesForStudent, upsertNote } from '../services/notes'
+import { buildNotePayload, fetchModules, modulesForStudent, upsertNote } from '../services/notes'
 import type { AxiosError } from 'axios'
 import { parseStudentCsv } from '../services/studentImport'
 import type { StudentImportResult } from '../services/studentImport'
@@ -21,8 +21,8 @@ import { useAuth } from '../context/AuthContext'
 
 
 
-// Match the seed data — TCP, GI, IA, ROC, IRSI — and ENIAD's CP/CI ladder.
-const FILIERES = ['Tous', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
+// Match the seed data — EPSI, IA, ROC, IRSI, GINF — and ENIAD's CP/CI ladder.
+const FILIERES = ['Tous', 'EPSI', 'IA', 'ROC', 'IRSI', 'GINF']
 const NIVEAUX  = ['Tous', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 const RISQUES  = ['Tous', 'faible', 'modere', 'eleve']
 
@@ -190,7 +190,7 @@ export default function Students() {
     name: 'filter_students',
     description: 'Filter the student table by filière, niveau, risk level, or search text.',
     parameters: [
-      { name: 'filiere', type: 'string', description: 'Filière code: TCP, GI, IA, ROC, IRSI, or Tous to clear.', required: false },
+      { name: 'filiere', type: 'string', description: 'Filière code: EPSI, IA, ROC, IRSI, GINF, or Tous to clear.', required: false },
       { name: 'niveau', type: 'string', description: 'Academic level: CP1, CP2, CI1, CI2, CI3, or Tous.', required: false },
       { name: 'risque', type: 'string', description: 'Risk level: faible, modere, eleve, or Tous.', required: false },
       { name: 'search', type: 'string', description: 'Free text search on name or matricule.', required: false },
@@ -252,14 +252,14 @@ export default function Students() {
           </div>
         </div>
       )}
-      <div className="flex items-end justify-between">
+      <div className="page-heading">
         <div>
           <div className="cap mb-1">
             {filtered.length} résultat{filtered.length > 1 ? 's' : ''} · {all.length} au total
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight">Étudiants</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="page-actions">
           {mayManageStudents && <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />}
           {mayManageStudents && (
             <button className="btn btn-sm" onClick={() => csvRef.current?.click()} disabled={importing}>
@@ -543,16 +543,7 @@ function StudentDrawer({
     if (!noteForm.moduleId) return
     setSavingNote(true)
     try {
-      await upsertNote({
-        etudiantId:  student.id,
-        moduleId:    noteForm.moduleId,
-        noteTD:      noteForm.noteTD      ? parseFloat(noteForm.noteTD)      : null,
-        noteTP:      noteForm.noteTP      ? parseFloat(noteForm.noteTP)      : null,
-        noteExamen:  noteForm.noteExamen  ? parseFloat(noteForm.noteExamen)  : null,
-        noteFinal:   noteForm.noteFinal   ? parseFloat(noteForm.noteFinal)   : null,
-        semestre:    noteForm.semestre,
-        annee:       noteForm.annee,
-      })
+      await upsertNote(buildNotePayload({ ...noteForm, etudiantId: student.id, modules: availableModules }))
       queryClient.invalidateQueries({ queryKey: ['etudiant-notes', student.id] })
       queryClient.invalidateQueries({ queryKey: ['etudiants-with-stats'] })
       setShowNoteForm(false)
@@ -606,8 +597,8 @@ function StudentDrawer({
 
     const getSemSortKey = (annee: string, semestre: string) => {
       const startYear = parseInt(annee.split('/')[0]) || 0;
-      const semNum = semestre === 'S2' ? 2 : 1;
-      return startYear * 2 + semNum;
+      const semNum = parseInt(semestre.replace(/\D/g, '')) || 0;
+      return startYear * 10 + semNum;
     };
 
     const semData: { [key: number]: { sum: number; count: number } } = {};
@@ -802,10 +793,7 @@ function StudentDrawer({
                   </div>
                   <div>
                     <div className="cap mb-1">Semestre</div>
-                    <select className="input" value={noteForm.semestre} onChange={e => setNoteForm(f => ({ ...f, semestre: e.target.value }))}>
-                      <option value="S1">S1</option>
-                      <option value="S2">S2</option>
-                    </select>
+                    <input className="input" value={availableModules.find(m => m.id === Number(noteForm.moduleId))?.semestre ?? noteForm.semestre} readOnly />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

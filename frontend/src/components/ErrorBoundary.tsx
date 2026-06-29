@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
             gap: 16,
             padding: 24,
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            color: '#1c1917',
+            color: '#17201c',
             textAlign: 'center',
           }}
         >

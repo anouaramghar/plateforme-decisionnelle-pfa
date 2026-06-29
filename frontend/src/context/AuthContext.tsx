@@ -9,6 +9,7 @@ import {
   setOnTokenRefreshed,
   bumpSession,
 } from '../services/api'
+import { canUseCopilot } from '../auth/roles'
 
 // The Copilot session cookie lives 15 min server-side; renew well before that
 // so the sidebar doesn't silently start returning 401 mid-session.
@@ -115,9 +116,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Copilot is optional. Establish its cookie in the background so a slow or
     // unavailable AI runtime never delays access to the core platform.
     setCopilotActive(false)
-    void api.post('/copilot/session', {}, { withCredentials: true })
-      .then(() => setCopilotActive(true))
-      .catch(() => setCopilotActive(false))
+    if (canUseCopilot(role)) {
+      void api.post('/copilot/session', {}, { withCredentials: true })
+        .then(() => setCopilotActive(true))
+        .catch(() => setCopilotActive(false))
+    }
 
     // Return the role so the caller can route to the right home before the
     // `user` state update has propagated.

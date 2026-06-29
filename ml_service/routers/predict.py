@@ -5,52 +5,44 @@ import time
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sklearn.pipeline import Pipeline
 import pandas as pd
+import numpy as np
 
 from dependencies import verify_internal_token
 from schemas.prediction_schema import (
     PredictionRequest, PredictionResponse,
     ShapContribution, ExplainResponse,
+    GlobalShapResponse,
 )
+from features import FEATURE_COLS, FEATURE_LABELS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
 
-# Serializes /predict/retrain. The handler patches module-level MODEL_PATH
-# globals in train_risk / train_clustering / train_regression; two concurrent
-# retrains would interleave those patches and the finally-restore, writing
-# models to the wrong directory and silently destroying the originals.
 _retrain_async_lock = asyncio.Lock()
 _last_retrain_at: float = 0.0
 _RETRAIN_COOLDOWN_S: float = 60.0
 
 
 def _get_risk_model(request: Request) -> Pipeline:
-    """
-    Pulls the pre-loaded model from app.state.
-    Raises 503 if the model was never loaded (startup failed).
-    """
     model = getattr(request.app.state, "risk_model", None)
     if model is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Risk model is not loaded. Check startup logs."
-        )
+        raise HTTPException(status_code=503, detail="Risk model is not loaded.")
     return model
 
 
+def _get_chosen_threshold(model: Pipeline) -> float:
+    """Returns the optimal threshold stored on the pipeline, or 0.5 as default."""
+    return float(getattr(model, "chosen_threshold", 0.5))
+
+
 def _positive_class_index(request: Request, model: Pipeline) -> int:
-    """
-    Returns the column index of the positive (at-risk) class in
-    model.predict_proba output, cached on app.state. Falls back to 1
-    with a warning if class 1 isn't present.
-    """
     idx = getattr(request.app.state, "risk_positive_class_idx", None)
     if idx is not None:
         return idx
     classes = getattr(model, "classes_", None)
     if classes is None:
-        logger.warning("Model has no classes_ attribute; falling back to positive-class index 1.")
+        logger.warning("Model has no classes_ attribute; falling back to index 1.")
         return 1
     try:
         idx = int(list(classes).index(1))
@@ -61,25 +53,23 @@ def _positive_class_index(request: Request, model: Pipeline) -> int:
     return idx
 
 
-def _clamp_nb_modules(nb_modules: int) -> int:
-    """Clamps nb_modules to the model's training range (3–11)."""
-    if nb_modules > 11:
-        logger.warning("nb_modules=%d clamped to 11 (training range 3-11)", nb_modules)
-        return 11
-    return nb_modules
+def _build_features_df(
+    moyenne_generale: float,
+    taux_absence: float,
+    nb_modules: int,
+    ecart_type_modules: float = 0.0,
+    nb_echecs_anterieurs: int = 0,
+) -> pd.DataFrame:
+    return pd.DataFrame([{
+        "moyenne_generale": moyenne_generale,
+        "taux_absence": taux_absence,
+        "nb_modules": nb_modules,
+        "ecart_type_modules": ecart_type_modules,
+        "nb_echecs_anterieurs": nb_echecs_anterieurs,
+    }])[FEATURE_COLS]
 
 
 def _score_to_label(probability: float) -> str:
-    """
-    Maps the raw 0-1 probability to one of the four alert levels
-    used by the Alertes table in PFA_DB.
-
-    Thresholds chosen to match typical academic risk definitions:
-      < 0.30  -> Faible   (low risk, no action needed)
-      < 0.50  -> Moyen    (moderate, worth monitoring)
-      < 0.75  -> Eleve    (high, teacher should be notified)
-      >= 0.75 -> Critique (critical, immediate intervention)
-    """
     if probability < 0.30:
         return "Faible"
     elif probability < 0.50:
@@ -97,41 +87,33 @@ def predict_risk(
     _: None = Depends(verify_internal_token),
 ) -> PredictionResponse:
     """
-    Predicts the failure-risk probability for a single student.
+    Predicts failure-risk for a single student.
 
-    Called by the .NET backend's PredictionsController:
-        POST /predict
-        Body: { "moyenne_generale": 11.5, "taux_absence": 0.25, "nb_modules": 6 }
-
-    Returns:
-        { "probabilite": 0.63, "niveau_risque": "Eleve" }
+    Uses the model's stored optimal threshold (trained via F2-score optimisation)
+    for the binary at-risk classification, while returning the raw probability
+    for the frontend to display.
     """
     model: Pipeline = _get_risk_model(request)
+    threshold = _get_chosen_threshold(model)
 
-    nb_modules = _clamp_nb_modules(payload.nb_modules)
-    features = pd.DataFrame([{
-        "moyenne_generale": payload.moyenne_generale,
-        "taux_absence":     payload.taux_absence,
-        "nb_modules":       nb_modules,
-    }])
+    features = _build_features_df(
+        payload.moyenne_generale, payload.taux_absence, payload.nb_modules,
+        payload.ecart_type_modules, payload.nb_echecs_anterieurs,
+    )
 
     pos_idx = _positive_class_index(request, model)
     probability = float(model.predict_proba(features)[0][pos_idx])
+    at_risk = int(probability >= threshold)
 
     return PredictionResponse(
         probabilite=round(probability, 4),
         niveau_risque=_score_to_label(probability),
+        threshold=round(threshold, 4),
+        at_risk=at_risk,
     )
 
 
-# ─── SHAP explanation ─────────────────────────────────────────────────────────
-
-_FEATURE_LABELS = {
-    "moyenne_generale": "Note moyenne",
-    "taux_absence":     "Taux d'absence",
-    "nb_modules":       "Modules",
-}
-_FEATURE_NAMES = list(_FEATURE_LABELS.keys())
+# ─── SHAP explanation (local) ─────────────────────────────────────────────────
 
 
 @router.post("/explain", response_model=ExplainResponse)
@@ -143,22 +125,16 @@ def explain_risk(
     """
     Returns SHAP feature contributions for one student's risk prediction.
 
-    Extracts the XGBClassifier from the pipeline, scales the input through
-    the StandardScaler step, then runs TreeExplainer to get per-feature SHAP
-    values in log-odds space.  Positive value = pushes prediction toward risk.
-
     POST /predict/explain
     Body: { "moyenne_generale": 9.5, "taux_absence": 0.35, "nb_modules": 6 }
-    Returns: { contributions: [...], base_value: float, probability: float }
     """
     model: Pipeline = _get_risk_model(request)
+    threshold = _get_chosen_threshold(model)
 
-    nb_modules = _clamp_nb_modules(payload.nb_modules)
-    features = pd.DataFrame([{
-        "moyenne_generale": payload.moyenne_generale,
-        "taux_absence":     payload.taux_absence,
-        "nb_modules":       nb_modules,
-    }])
+    features = _build_features_df(
+        payload.moyenne_generale, payload.taux_absence, payload.nb_modules,
+        payload.ecart_type_modules, payload.nb_echecs_anterieurs,
+    )
 
     pos_idx = _positive_class_index(request, model)
     probability = float(model.predict_proba(features)[0][pos_idx])
@@ -166,10 +142,7 @@ def explain_risk(
     try:
         import shap
     except ImportError:
-        raise HTTPException(
-            status_code=503,
-            detail="SHAP is not installed on the ML service.",
-        )
+        raise HTTPException(status_code=503, detail="SHAP is not installed.")
 
     explainer = getattr(request.app.state, "shap_explainer", None)
     if explainer is None:
@@ -177,29 +150,94 @@ def explain_risk(
         explainer = shap.TreeExplainer(classifier)
         request.app.state.shap_explainer = explainer
 
-    # Scale through the pipeline's preprocessor, then run SHAP on the classifier.
-    scaler     = model.named_steps["scaler"]
-    X_scaled   = pd.DataFrame(scaler.transform(features), columns=_FEATURE_NAMES)
+    scaler = model.named_steps["scaler"]
+    X_scaled = pd.DataFrame(scaler.transform(features), columns=FEATURE_COLS)
 
     shap_values = explainer.shap_values(X_scaled)
-    sv          = shap_values[0]          # shape (3,) — one value per feature
+    sv = shap_values[0]
 
     total = sum(abs(v) for v in sv) or 1.0
 
     contributions = [
         ShapContribution(
             feature=name,
-            label=_FEATURE_LABELS[name],
+            label=FEATURE_LABELS[name],
             value=round(float(sv[i]), 4),
             pct=round(float(abs(sv[i]) / total), 4),
         )
-        for i, name in enumerate(_FEATURE_NAMES)
+        for i, name in enumerate(FEATURE_COLS)
     ]
 
     return ExplainResponse(
         contributions=contributions,
         base_value=round(float(explainer.expected_value), 4),
         probability=round(probability, 4),
+    )
+
+
+# ─── SHAP global summary ──────────────────────────────────────────────────────
+
+
+@router.get("/shap-summary", response_model=GlobalShapResponse)
+def shap_global_summary(
+    request: Request,
+    _: None = Depends(verify_internal_token),
+) -> GlobalShapResponse:
+    """
+    Returns global SHAP feature importance computed from the training eval set.
+
+    Uses the saved eval_set.parquet to compute mean |SHAP value| per feature
+    across all test samples, giving a global picture of which features drive
+    risk predictions the most.
+
+    GET /predict/shap-summary
+    """
+    import json
+    from models.auto_train import SAVED_MODELS_DIR
+
+    model: Pipeline = _get_risk_model(request)
+
+    eval_path = SAVED_MODELS_DIR / "eval_set.parquet"
+    if not eval_path.exists():
+        raise HTTPException(status_code=503, detail="Eval set not found — retrain the model first.")
+
+    try:
+        import shap
+    except ImportError:
+        raise HTTPException(status_code=503, detail="SHAP is not installed.")
+
+    explainer = getattr(request.app.state, "shap_explainer", None)
+    if explainer is None:
+        classifier = model.named_steps["classifier"]
+        explainer = shap.TreeExplainer(classifier)
+        request.app.state.shap_explainer = explainer
+
+    eval_df = pd.read_parquet(eval_path)
+    X_eval = eval_df[FEATURE_COLS]
+
+    scaler = model.named_steps["scaler"]
+    X_scaled = pd.DataFrame(scaler.transform(X_eval), columns=FEATURE_COLS)
+
+    shap_values = explainer.shap_values(X_scaled)
+
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+
+    total = mean_abs_shap.sum() or 1.0
+    feature_importance = [
+        {
+            "feature": name,
+            "label": FEATURE_LABELS[name],
+            "mean_abs_shap": round(float(mean_abs_shap[i]), 4),
+            "importance_pct": round(float(mean_abs_shap[i] / total), 4),
+        }
+        for i, name in enumerate(FEATURE_COLS)
+    ]
+
+    feature_importance.sort(key=lambda x: x["mean_abs_shap"], reverse=True)
+
+    return GlobalShapResponse(
+        feature_importance=feature_importance,
+        n_samples=len(eval_df),
     )
 
 
@@ -211,15 +249,6 @@ def predict_batch(
     request: Request,
     _: None = Depends(verify_internal_token),
 ) -> list[PredictionResponse]:
-    """
-    Predicts failure-risk for multiple students in a single call.
-
-    Called by the .NET backend to assess an entire filière at once:
-        POST /predict/batch
-        Body: [ { "moyenne_generale": 11.5, ... }, { ... }, ... ]
-
-    Returns a list of PredictionResponse in the same order as input.
-    """
     if not payloads:
         return []
 
@@ -227,12 +256,15 @@ def predict_batch(
         raise HTTPException(status_code=400, detail="Batch limit is 500 students.")
 
     model: Pipeline = _get_risk_model(request)
+    threshold = _get_chosen_threshold(model)
 
     rows = [
         {
             "moyenne_generale": p.moyenne_generale,
-            "taux_absence":     p.taux_absence,
-            "nb_modules":       _clamp_nb_modules(p.nb_modules),
+            "taux_absence": p.taux_absence,
+            "nb_modules": p.nb_modules,
+            "ecart_type_modules": p.ecart_type_modules,
+            "nb_echecs_anterieurs": p.nb_echecs_anterieurs,
         }
         for p in payloads
     ]
@@ -245,6 +277,8 @@ def predict_batch(
         PredictionResponse(
             probabilite=round(float(prob), 4),
             niveau_risque=_score_to_label(float(prob)),
+            threshold=round(threshold, 4),
+            at_risk=int(prob >= threshold),
         )
         for prob in probabilities
     ]
@@ -257,30 +291,12 @@ async def retrain_models(
     request: Request,
     _: None = Depends(verify_internal_token),
 ) -> dict:
-    """
-    Forces retraining of all models from DW data (or synthetic fallback).
-
-    Trains into a sibling staging directory, then atomically swaps each new
-    file over the old one (`os.replace`). If training crashes mid-way, the
-    previous models stay live and `/predict` keeps serving — instead of being
-    bricked with deleted files and no replacements (the old behavior).
-
-    Rate-limited to one call per 60 seconds (in-memory, process-local) to keep
-    a misbehaving client from thrashing the trainer.
-
-    Called by the admin after running ETL sync:
-        POST /predict/retrain
-        Header: X-Internal-Token: <secret>
-    """
     global _last_retrain_at
 
     async with _retrain_async_lock:
         now = time.monotonic()
         if now - _last_retrain_at < _RETRAIN_COOLDOWN_S:
-            raise HTTPException(
-                status_code=429,
-                detail="Retrain en cours ou trop récent",
-            )
+            raise HTTPException(status_code=429, detail="Retrain en cours ou trop récent")
         _last_retrain_at = now
         result = await asyncio.to_thread(_do_retrain, request)
 
@@ -293,58 +309,49 @@ def _do_retrain(request: Request) -> dict:
     import joblib
     from models import auto_train, train_risk, train_clustering, train_regression
 
-    saved_dir   = auto_train.SAVED_MODELS_DIR
+    saved_dir = auto_train.SAVED_MODELS_DIR
     staging_dir = saved_dir / "staging"
 
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=True)
 
-    # Each train_*.py script writes through its own module-level MODEL_PATH.
-    # Redirect all four module-level paths at the staging dir for the duration
-    # of this call; restore them afterwards in a finally so a partial run can't
-    # leave the modules pointing at staging. The surrounding _retrain_async_lock
-    # guarantees no other request can observe or overwrite these patches.
     originals = {
-        "auto_train":      auto_train.SAVED_MODELS_DIR,
-        "train_risk":      train_risk.MODEL_PATH,
+        "auto_train": auto_train.SAVED_MODELS_DIR,
+        "train_risk": train_risk.MODEL_PATH,
         "train_clustering": train_clustering.MODEL_PATH,
         "train_regression": train_regression.MODEL_PATH,
     }
     try:
-        auto_train.SAVED_MODELS_DIR     = staging_dir
-        train_risk.MODEL_PATH           = staging_dir / "risk_model.joblib"
-        train_clustering.MODEL_PATH     = staging_dir / "cluster_model.joblib"
-        train_regression.MODEL_PATH     = staging_dir / "forecast_model.joblib"
+        auto_train.SAVED_MODELS_DIR = staging_dir
+        train_risk.MODEL_PATH = staging_dir / "risk_model.joblib"
+        train_clustering.MODEL_PATH = staging_dir / "cluster_model.joblib"
+        train_regression.MODEL_PATH = staging_dir / "forecast_model.joblib"
         auto_train.ensure_all_models()
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         logger.exception("Retraining failed; previous models left in place.")
         raise HTTPException(status_code=500, detail="Retraining failed; previous models still active.")
     finally:
-        auto_train.SAVED_MODELS_DIR     = originals["auto_train"]
-        train_risk.MODEL_PATH           = originals["train_risk"]
-        train_clustering.MODEL_PATH     = originals["train_clustering"]
-        train_regression.MODEL_PATH     = originals["train_regression"]
+        auto_train.SAVED_MODELS_DIR = originals["auto_train"]
+        train_risk.MODEL_PATH = originals["train_risk"]
+        train_clustering.MODEL_PATH = originals["train_clustering"]
+        train_regression.MODEL_PATH = originals["train_regression"]
 
-    # Atomically swap each freshly-trained file over the live one.
-    # Includes .joblib models plus eval artefacts (.parquet, .json).
     saved_dir.mkdir(parents=True, exist_ok=True)
     for new_file in staging_dir.iterdir():
-        if new_file.suffix in (".joblib", ".parquet", ".json"):
+        if new_file.suffix in (".joblib", ".parquet", ".json", ".png"):
             target = saved_dir / new_file.name
-            os.replace(new_file, target)        # atomic on same filesystem
+            os.replace(new_file, target)
             logger.info("Promoted %s into saved_models/.", new_file.name)
     shutil.rmtree(staging_dir, ignore_errors=True)
 
-    # Reload into app.state and invalidate per-request caches tied to the old
-    # classifier (positive-class index, SHAP TreeExplainer).
-    risk_path     = saved_dir / "risk_model.joblib"
-    cluster_path  = saved_dir / "cluster_model.joblib"
+    risk_path = saved_dir / "risk_model.joblib"
+    cluster_path = saved_dir / "cluster_model.joblib"
     forecast_path = saved_dir / "forecast_model.joblib"
 
-    request.app.state.risk_model     = joblib.load(risk_path)     if risk_path.exists()    else None
-    request.app.state.cluster_model  = joblib.load(cluster_path)  if cluster_path.exists() else None
+    request.app.state.risk_model = joblib.load(risk_path) if risk_path.exists() else None
+    request.app.state.cluster_model = joblib.load(cluster_path) if cluster_path.exists() else None
     request.app.state.forecast_model = joblib.load(forecast_path) if forecast_path.exists() else None
     request.app.state.risk_positive_class_idx = None
     request.app.state.shap_explainer = None
@@ -355,8 +362,8 @@ def _do_retrain(request: Request) -> dict:
         "status": "ok",
         "message": "All models retrained and reloaded.",
         "models": {
-            "risk_model":     request.app.state.risk_model     is not None,
-            "cluster_model":  request.app.state.cluster_model  is not None,
+            "risk_model": request.app.state.risk_model is not None,
+            "cluster_model": request.app.state.cluster_model is not None,
             "forecast_model": request.app.state.forecast_model is not None,
         },
     }

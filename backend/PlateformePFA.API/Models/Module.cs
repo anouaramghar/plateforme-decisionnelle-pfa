@@ -27,7 +27,7 @@ namespace PlateformePFA.API.Models
 
         [Required]
         [MaxLength(5)]
-        public string Semestre { get; set; } = string.Empty; // S1 | S2
+        public string Semestre { get; set; } = string.Empty; // S1–S9
 
         [JsonIgnore] public Filiere?              Filiere  { get; set; }
         [JsonIgnore] public ICollection<Note>?    Notes    { get; set; }

@@ -1,15 +1,16 @@
 import pandas as pd
-from models.train_risk import train, generate_data
+from models.train_risk import train
+from features import generate_synthetic_risk_data as generate_data
 
 def test_risk_training_splits_out_of_time():
     """
     Assert that if the dataset has multiple periods, an out_of_time split is used,
     and students are strictly isolated between train and test sets.
     """
-    df = generate_data(n=200, seed=42)
+    df = generate_data(200, 42)
     assert df["period_key"].nunique() > 1
 
-    pipeline, X_test, y_test = train(df)
+    pipeline, X_test, y_test, _ = train(df)
     split_strategy = getattr(pipeline, "split_strategy", "unknown")
 
     assert split_strategy == "out_of_time"
@@ -35,14 +36,14 @@ def test_risk_training_splits_grouped_student():
     Assert that if the dataset has only 1 period, a grouped_student split is used,
     and students are strictly isolated between train and test sets.
     """
-    df = generate_data(n=100, seed=42)
+    df = generate_data(100, 42)
     # Force single period by filtering
     first_period = df["period_key"].min()
     df_single = df[df.period_key == first_period].copy()
 
     assert df_single["period_key"].nunique() == 1
 
-    pipeline, X_test, y_test = train(df_single)
+    pipeline, X_test, y_test, _ = train(df_single)
     split_strategy = getattr(pipeline, "split_strategy", "unknown")
 
     assert split_strategy == "grouped_student"

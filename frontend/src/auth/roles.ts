@@ -36,3 +36,7 @@ export function canCreateStudent(role?: string | null): boolean {
 export function canRunBatchPredictions(role?: string | null): boolean {
   return role === 'Admin' || role === 'Responsable'
 }
+
+export function canUseCopilot(role?: string | null): boolean {
+  return role === 'Admin' || role === 'Responsable'
+}
