@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from models.train_risk import generate_data
 
 def test_temporal_training_contract():
     """
@@ -11,18 +10,13 @@ def test_temporal_training_contract():
     and must never change the features (moyenne_generale, taux_absence, nb_modules)
     of the current/prior period.
     """
-    # 1. Generate base dataset
-    df1 = generate_data(n=100, seed=42)
-
-    # 2. Generate another dataset with different seed to get different grades/features,
-    # but let's do a controlled modification to be absolutely precise.
     # Let's create a custom dataframe of raw records before shift-lagging,
     # apply the shift-lagging, and check.
     # Since the db_loader has parse_period_key and shift logic, we can also test it.
     # Let's mock a simple raw dataframe:
     raw_df = pd.DataFrame([
-        {"EtudiantId": 1, "period_key": 2025.1, "moyenne_generale": 12.0, "taux_absence": 0.05, "nb_modules": 5, "failed": 0},
-        {"EtudiantId": 1, "period_key": 2025.2, "moyenne_generale": 8.0,  "taux_absence": 0.10, "nb_modules": 5, "failed": 1},
+        {"EtudiantId": 1, "period_key": 2025.1, "moyenne_generale": 12.0, "taux_absence": 0.05, "nb_modules": 5, "ecart_type_modules": 2.0, "nb_echecs_anterieurs": 0, "failed": 0},
+        {"EtudiantId": 1, "period_key": 2025.2, "moyenne_generale": 8.0,  "taux_absence": 0.10, "nb_modules": 5, "ecart_type_modules": 3.5, "nb_echecs_anterieurs": 0, "failed": 1},
     ])
 
     # Apply shift logic

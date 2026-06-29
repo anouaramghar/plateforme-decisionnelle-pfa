@@ -28,7 +28,7 @@ namespace PlateformePFA.API.Models
 
         [Required]
         [MaxLength(5)]
-        public string Semestre { get; set; } = string.Empty; // S1 | S2
+        public string Semestre { get; set; } = string.Empty; // S1–S9
 
         public DateTime CreeLe { get; set; } = DateTime.UtcNow;
 

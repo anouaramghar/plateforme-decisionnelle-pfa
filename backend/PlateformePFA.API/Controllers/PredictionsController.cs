@@ -282,7 +282,7 @@ namespace PlateformePFA.API.Controllers
             var targetSemestre = request.Semestre;
             var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(targetAnnee, targetSemestre);
 
-            var validStudents = new List<(Etudiant Student, decimal MoyenneGenerale, double TauxAbsence, int NbModules)>();
+            var validStudents = new List<(Etudiant Student, decimal MoyenneGenerale, double TauxAbsence, int NbModules, double EcartTypeModules, int NbEchecsAnterieurs)>();
 
             foreach (var student in students)
             {
@@ -310,7 +310,28 @@ namespace PlateformePFA.API.Controllers
                 int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
                 double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 
-                validStudents.Add((student, moyenneGenerale, tauxAbsence, nbModules));
+                double ecartTypeModules = 0;
+                if (notesAvecFinal.Count >= 2)
+                {
+                    var mean = (double)notesAvecFinal.Average(n => n.NoteFinal!.Value);
+                    ecartTypeModules = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - mean) * ((double)n.NoteFinal!.Value - mean)) / (notesAvecFinal.Count - 1));
+                }
+
+                var priorPeriods = notes
+                    .Where(n => n.NoteFinal.HasValue)
+                    .Select(n => new { n.Annee, n.Semestre })
+                    .Distinct()
+                    .Where(p => string.Compare(p.Annee, targetAnnee) < 0 || (string.Compare(p.Annee, targetAnnee) == 0 && targetSemestre != null && string.Compare(p.Semestre, targetSemestre) < 0))
+                    .ToList();
+                int nbEchecsAnterieurs = 0;
+                foreach (var pp in priorPeriods)
+                {
+                    var periodNotes = notes.Where(n => n.Annee == pp.Annee && n.Semestre == pp.Semestre && n.NoteFinal.HasValue).ToList();
+                    if (periodNotes.Count > 0 && periodNotes.Average(n => n.NoteFinal!.Value) < 10)
+                        nbEchecsAnterieurs++;
+                }
+
+                validStudents.Add((student, moyenneGenerale, tauxAbsence, nbModules, ecartTypeModules, nbEchecsAnterieurs));
             }
 
             if (validStudents.Count > 0)
@@ -332,7 +353,9 @@ namespace PlateformePFA.API.Controllers
                     {
                         moyenne_generale = vs.MoyenneGenerale,
                         taux_absence = vs.TauxAbsence,
-                        nb_modules = vs.NbModules
+                        nb_modules = vs.NbModules,
+                        ecart_type_modules = vs.EcartTypeModules,
+                        nb_echecs_anterieurs = vs.NbEchecsAnterieurs,
                     }).ToList();
                     string jsonBody = JsonSerializer.Serialize(requestBody);
 
@@ -370,7 +393,7 @@ namespace PlateformePFA.API.Controllers
 
                 for (int i = 0; i < validStudents.Count; i++)
                 {
-                    var (student, moyenneGenerale, tauxAbsence, nbModules) = validStudents[i];
+                    var (student, moyenneGenerale, tauxAbsence, nbModules, _ /*ecartTypeModules*/, _ /*nbEchecsAnterieurs*/) = validStudents[i];
 
                     decimal? scoreRisque = null;
                     string? niveauRisque = null;
@@ -533,11 +556,33 @@ namespace PlateformePFA.API.Controllers
             var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
             var client   = _httpClientFactory.CreateClient("MLService");
 
+            double ecartTypeModulesExplain = 0;
+            if (notesAvecFinal.Count >= 2)
+            {
+                var meanExplain = (double)notesAvecFinal.Average(n => n.NoteFinal!.Value);
+                ecartTypeModulesExplain = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - meanExplain) * ((double)n.NoteFinal!.Value - meanExplain)) / (notesAvecFinal.Count - 1));
+            }
+
+            var distinctPeriodsExplain = notes
+                .Where(n => n.NoteFinal.HasValue)
+                .Select(n => new { n.Annee, n.Semestre })
+                .Distinct()
+                .ToList();
+            int nbEchecsAnterieursExplain = 0;
+            foreach (var dp in distinctPeriodsExplain)
+            {
+                var periodNotesExplain = notes.Where(n => n.Annee == dp.Annee && n.Semestre == dp.Semestre && n.NoteFinal.HasValue).ToList();
+                if (periodNotesExplain.Count > 0 && periodNotesExplain.Average(n => n.NoteFinal!.Value) < 10)
+                    nbEchecsAnterieursExplain++;
+            }
+
             var body = JsonSerializer.Serialize(new
             {
                 moyenne_generale = (double)moyenneGenerale,
                 taux_absence     = tauxAbsence,
                 nb_modules       = nbModules,
+                ecart_type_modules = ecartTypeModulesExplain,
+                nb_echecs_anterieurs = nbEchecsAnterieursExplain,
             });
 
             var req = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/predict/explain")
@@ -618,11 +663,34 @@ namespace PlateformePFA.API.Controllers
             int absenceHours = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
             double tauxAbsence = Math.Min(absenceHours / scheduledHours, 1.0);
 
+            double ecartTypeModules = 0;
+            if (notesAvecFinal.Count >= 2)
+            {
+                var mean = (double)notesAvecFinal.Average(n => n.NoteFinal!.Value);
+                ecartTypeModules = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - mean) * ((double)n.NoteFinal!.Value - mean)) / (notesAvecFinal.Count - 1));
+            }
+
+            var priorPeriods = notes
+                .Where(n => n.NoteFinal.HasValue)
+                .Select(n => new { n.Annee, n.Semestre })
+                .Distinct()
+                .Where(p => string.Compare(p.Annee, targetAnnee) < 0 || (string.Compare(p.Annee, targetAnnee) == 0 && targetSemestre != null && string.Compare(p.Semestre, targetSemestre) < 0))
+                .ToList();
+            int nbEchecsAnterieurs = 0;
+            foreach (var pp in priorPeriods)
+            {
+                var periodNotes = notes.Where(n => n.Annee == pp.Annee && n.Semestre == pp.Semestre && n.NoteFinal.HasValue).ToList();
+                if (periodNotes.Count > 0 && periodNotes.Average(n => n.NoteFinal!.Value) < 10)
+                    nbEchecsAnterieurs++;
+            }
+
             var features = new
             {
                 moyenne_generale = moyenneGenerale,
                 taux_absence = tauxAbsence,
                 nb_modules = nbModules,
+                ecart_type_modules = ecartTypeModules,
+                nb_echecs_anterieurs = nbEchecsAnterieurs,
             };
 
             decimal? scoreRisque = null;

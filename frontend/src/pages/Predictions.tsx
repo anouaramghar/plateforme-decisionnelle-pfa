@@ -16,7 +16,7 @@ import type { ConfirmData } from '../components/copilot/ConfirmCard'
 import { Modal } from '../components/ui/Modal'
 import { useAuth } from '../context/AuthContext'
 
-const FILIERES = ['TOUS', 'TCP', 'GI', 'IA', 'ROC', 'IRSI']
+const FILIERES = ['TOUS', 'EPSI', 'IA', 'ROC', 'IRSI', 'GINF']
 const NIVEAUX  = ['Toutes', 'CP1', 'CP2', 'CI1', 'CI2', 'CI3']
 
 type Risque = 'faible' | 'modere' | 'eleve'
@@ -33,6 +33,8 @@ interface PredictionsSummary {
     moyenne: number
     absences: number
     scoreRisque: number
+    ecartTypeModules?: number
+    nbEchecsAnterieurs?: number
   }[]
   runs: {
     id: string
@@ -309,22 +311,27 @@ export default function Predictions() {
     kpis.evalues > 0 ? `(${Math.round((n / kpis.evalues) * 100)}%)` : ''
 
   const trainedAt = ml?.risk?.trainedAt ?? ml?.trainedAt
+  const modelSources = [ml?.risk?.dataSource, ml?.forecast?.dataSource, ml?.dataSource].filter(Boolean)
+  const usesNonDwModel = modelSources.some(source => source !== 'dw')
+  const usesSyntheticModel = modelSources.some(source => source === 'synthetic')
 
   return (
     <div className="space-y-4">
-      {(ml?.risk?.dataSource === 'synthetic' || ml?.forecast?.dataSource === 'synthetic' || ml?.dataSource === 'synthetic') && (
+      {usesNonDwModel && (
         <div
           className="card p-3 text-[12.5px] flex items-center gap-3 mb-4"
           style={{ background: 'var(--accent-50)', borderColor: 'var(--accent-300)', color: 'var(--accent-700)' }}
         >
           <Icon name="alert" size={14} />
           <span>
-            Modèle de démonstration entraîné sur des données synthétiques — ne pas utiliser pour une décision pédagogique.
+            {usesSyntheticModel
+              ? 'Modèle de démonstration entraîné sur des données synthétiques — ne pas utiliser pour une décision pédagogique.'
+              : 'Modèle non entraîné sur PFA_DW : les métriques viennent de données externes ou de démonstration.'}
           </span>
         </div>
       )}
 
-      <div className="flex items-end justify-between">
+      <div className="page-heading">
         <div>
           <div className="cap mb-1">
             Modèle XGBoost {ml?.risk?.modelVersion ?? ml?.modelVersion ?? '…'} · AUC {ml?.risk?.auc?.toFixed(2) ?? ml?.auc?.toFixed(2) ?? '—'}
@@ -334,7 +341,7 @@ export default function Predictions() {
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight">Prédictions ML</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="page-actions">
           <button
             className="btn btn-sm"
             onClick={() => setConfirmRetrain(true)}
@@ -382,7 +389,7 @@ export default function Predictions() {
               background: 'linear-gradient(135deg, var(--accent-500), var(--accent-700))',
               color: '#fff',
               boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,.2), 0 8px 24px -8px rgba(249,115,22,.5)',
+                'inset 0 1px 0 rgba(255,255,255,.2), 0 8px 24px -8px color-mix(in oklch, var(--accent-500) 46%, transparent)',
             }}
           >
             <Icon name="brain" size={22} />
@@ -478,10 +485,16 @@ export default function Predictions() {
                   </span>
                   <Avatar name={e.nomComplet} size={26} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12.5px] font-medium truncate">{e.nomComplet}</div>
-                    <div className="cap font-mono">
-                      {e.filiere} · {e.niveau}
+                  <div className="text-[12.5px] font-medium truncate">{e.nomComplet}</div>
+                  <div className="cap font-mono">
+                    {e.filiere} · {e.niveau}
+                  </div>
+                  {(e.ecartTypeModules != null || e.nbEchecsAnterieurs != null) && (
+                    <div className="flex gap-2 mt-0.5 text-[11px]" style={{ color: 'var(--text-3)' }}>
+                      {e.ecartTypeModules != null && <span>σ {e.ecartTypeModules.toFixed(1)}</span>}
+                      {e.nbEchecsAnterieurs != null && <span>· {e.nbEchecsAnterieurs} échec{(e.nbEchecsAnterieurs as number) > 1 ? 's' : ''}</span>}
                     </div>
+                  )}
                   </div>
                   <RiskBar score={e.scoreRisque} width={50} />
                 </div>

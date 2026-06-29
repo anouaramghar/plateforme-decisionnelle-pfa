@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
-import { fetchModules, modulesForStudent, upsertNote } from './notes'
+import { buildNotePayload, fetchModules, modulesForStudent, upsertNote } from './notes'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -27,5 +27,23 @@ describe('notes service', () => {
 
     await expect(upsertNote(payload)).resolves.toEqual({ id: 9, created: false })
     expect(api.put).toHaveBeenCalledWith('/notes/upsert', payload)
+  })
+
+  it('builds note payload with the selected module semester', () => {
+    const payload = buildNotePayload({
+      etudiantId: 1,
+      moduleId: 2,
+      noteTD: '',
+      noteTP: '',
+      noteExamen: '',
+      noteFinal: '12',
+      semestre: 'S1',
+      annee: '2025/2026',
+      modules: [
+        { id: 2, code: 'ML', nom: 'ML Ops', filiereId: 3, niveau: 'CI3', semestre: 'S7' },
+      ],
+    })
+
+    expect(payload).toMatchObject({ moduleId: 2, semestre: 'S7', noteFinal: 12 })
   })
 })

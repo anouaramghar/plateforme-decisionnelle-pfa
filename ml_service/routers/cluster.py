@@ -6,27 +6,17 @@ import pandas as pd
 
 from dependencies import verify_internal_token
 from schemas.prediction_schema import ClusterRequest, ClusterResponse
+from features import FEATURE_COLS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cluster", tags=["Clustering"])
 
 
-def _clamp_nb_modules(nb_modules: int) -> int:
-    if nb_modules > 11:
-        logger.warning("nb_modules=%d clamped to 11 (training range 3-11)", nb_modules)
-        return 11
-    return nb_modules
-
-
 def _get_cluster_model(request: Request) -> Pipeline:
-    """Pulls the pre-loaded K-Means pipeline from app.state."""
     model = getattr(request.app.state, "cluster_model", None)
     if model is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Cluster model is not loaded. Check startup logs."
-        )
+        raise HTTPException(status_code=503, detail="Cluster model is not loaded.")
     return model
 
 
@@ -39,27 +29,18 @@ def assign_cluster(
     """
     Assigns a student to one of K pre-trained segments.
 
-    Called by the .NET backend when building student segmentation dashboards.
-        POST /cluster
-        Body: { "moyenne_generale": 14.0, "taux_absence": 0.05, "nb_modules": 7 }
-
-    Returns:
-        { "cluster": 2 }
-
-    The cluster index is 0-based (0 to K-1).
-    The backend maps cluster → label (e.g., "Top performers") using its own
-    lookup table — keeping the ML service stateless.
+    Model now uses 5 features. Backward-compatible: defaults for
+    ecart_type_modules (0) and nb_echecs_anterieurs (0).
     """
     model: Pipeline = _get_cluster_model(request)
 
     features = pd.DataFrame([{
         "moyenne_generale": payload.moyenne_generale,
         "taux_absence":     payload.taux_absence,
-        "nb_modules":       _clamp_nb_modules(payload.nb_modules),
-    }])
+        "nb_modules":       payload.nb_modules,
+        "ecart_type_modules": payload.ecart_type_modules,
+        "nb_echecs_anterieurs": payload.nb_echecs_anterieurs,
+    }])[FEATURE_COLS]
 
-    # KMeans.predict() returns the cluster index as an int array.
-    # We take index [0] for the single row.
     cluster_index = int(model.predict(features)[0])
-
     return ClusterResponse(cluster=cluster_index)

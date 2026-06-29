@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from models.train_regression import generate_data
 
 def test_forecast_no_leakage_of_target_into_features():
     """
@@ -10,8 +9,8 @@ def test_forecast_no_leakage_of_target_into_features():
     """
     # Create raw records representing student performance across periods
     raw_df = pd.DataFrame([
-        {"EtudiantId": 1, "period_key": 2025.1, "moyenne_generale": 14.0, "taux_absence": 0.02, "nb_modules": 6},
-        {"EtudiantId": 1, "period_key": 2025.2, "moyenne_generale": 11.0, "taux_absence": 0.08, "nb_modules": 6},
+        {"EtudiantId": 1, "period_key": 2025.1, "moyenne_generale": 14.0, "taux_absence": 0.02, "nb_modules": 6, "ecart_type_modules": 1.5, "nb_echecs_anterieurs": 0},
+        {"EtudiantId": 1, "period_key": 2025.2, "moyenne_generale": 11.0, "taux_absence": 0.08, "nb_modules": 6, "ecart_type_modules": 2.5, "nb_echecs_anterieurs": 0},
     ])
 
     def process(df):

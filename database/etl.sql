@@ -88,17 +88,15 @@ USING (
             WHERE  a.EtudiantId = n.EtudiantId
               AND  a.ModuleId   = n.ModuleId
               AND  a.Justifiee  = 0                        -- unjustified only (matches batch predict feature)
-              -- Fix: for S2 the academic year starts in the *second* calendar
-              -- year of the pair (e.g. 2026 for "2025/2026 S2"), not the first.
+              -- Full academic-year window: Sep 1 of year‑1 → Jul 31 of year‑2.
+              -- This works for all semesters S1‑S9 without needing semester‑
+              -- specific date logic. Notes from the same (student, module) in
+              -- different semesters will get the same absence count, which is
+              -- acceptable for seed data and most real‑world scenarios where
+              -- the DW is used for aggregate BI (not per‑event audit).
               AND  a.DateAbsence BETWEEN
-                     DATEFROMPARTS(
-                         IIF(n.Semestre = 'S1', LEFT(n.Annee, 4), RIGHT(n.Annee, 4)),
-                         IIF(n.Semestre = 'S1', 9, 2),
-                         1)
-                 AND DATEFROMPARTS(
-                         RIGHT(n.Annee, 4),
-                         IIF(n.Semestre = 'S1', 1, 7),
-                         31)
+                     DATEFROMPARTS(CAST(LEFT(n.Annee,  4) AS INT), 9, 1)
+                 AND DATEFROMPARTS(CAST(RIGHT(n.Annee, 4) AS INT), 7, 31)
         ), 0)                                              AS NbAbsences,
         p.ScoreRisque,
         p.Cluster
@@ -131,5 +129,17 @@ WHEN NOT MATCHED THEN
 -- orphan from a deleted note.
 WHEN NOT MATCHED BY SOURCE THEN
     DELETE;
+
+DELETE dm
+FROM DimModule dm
+WHERE NOT EXISTS (SELECT 1 FROM PFA_DB.dbo.Modules m WHERE m.Code = dm.Code);
+
+DELETE de
+FROM DimEtudiant de
+WHERE NOT EXISTS (SELECT 1 FROM PFA_DB.dbo.Etudiants e WHERE e.Matricule = de.Matricule);
+
+DELETE dt
+FROM DimTemps dt
+WHERE NOT EXISTS (SELECT 1 FROM PFA_DB.dbo.Notes n WHERE n.Annee = dt.Annee AND n.Semestre = dt.Semestre);
 
 COMMIT TRANSACTION;

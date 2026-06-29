@@ -1,11 +1,8 @@
 """
 Training script for grade forecasting (XGBoost regression).
 
-This predicts a student's FINAL average grade (note_finale) as a continuous
-number given their mid-semester average, absence rate, and module count.
-
-Usage:
-    python models/train_regression.py
+Uses shared features (5 instead of 3) from features/feature_engineering.py.
+Predicts note_finale (0-20) given current-period features.
 """
 
 import json
@@ -22,86 +19,36 @@ import xgboost as xgb
 import joblib
 
 from models.auto_train import SAVED_MODELS_DIR
+from features import (
+    FEATURE_COLS,
+    generate_synthetic_forecast_data,
+    SEED,
+    N_SAMPLES,
+)
 
-RANDOM_SEED = 42
-N_SAMPLES = 1000
-MODEL_VERSION = "1.8.0"
+RANDOM_SEED = SEED
+N_SAMPLES = 2000
+MODEL_VERSION = "2.0.0"
 MODEL_PATH = SAVED_MODELS_DIR / "forecast_model.joblib"
 
-
-# ─── 1. Generate synthetic student data ───────────────────────────────────────
-
-def generate_data(n: int, seed: int) -> pd.DataFrame:
-    """
-    Creates realistic student records over multiple periods.
-    Disjoint student groups are generated for different periods to avoid
-    total removal during student isolation in train/test splits.
-    """
-    rng = np.random.default_rng(seed)
-
-    n_students = max(n, 20)
-
-    student_ids = []
-    period_keys = []
-    moyennes = []
-    absences = []
-    nb_modules_list = []
-
-    for i in range(n_students):
-        student_base_grade = rng.uniform(6, 17)
-        student_base_absence = rng.uniform(0.01, 0.4)
-        nb_mods = int(rng.integers(3, 12))
-
-        if i < n_students // 2:
-            periods = [2025.1, 2025.2]
-        else:
-            periods = [2025.2, 2026.1]
-
-        for p in periods:
-            student_ids.append(i + 1)
-            period_keys.append(p)
-
-            grade = np.clip(student_base_grade + rng.normal(0, 1.5), 0, 20)
-            absence = np.clip(student_base_absence + rng.normal(0, 0.05), 0, 1)
-
-            moyennes.append(grade)
-            absences.append(absence)
-            nb_modules_list.append(nb_mods)
-
-    df = pd.DataFrame({
-        "EtudiantId": student_ids,
-        "period_key": period_keys,
-        "moyenne_generale": moyennes,
-        "taux_absence": absences,
-        "nb_modules": nb_modules_list
-    })
-
-    df = df.sort_values(["EtudiantId", "period_key"])
-
-    df["future_moyenne"] = df.groupby("EtudiantId")["moyenne_generale"].shift(-1)
-    df = df.dropna(subset=["future_moyenne"]).copy()
-
-    df = df.rename(columns={
-        "moyenne_generale": "moyenne_actuelle",
-        "future_moyenne": "note_finale"
-    })
-
-    return df
+FORECAST_FEATURE_COLS = [
+    "moyenne_actuelle",
+    "taux_absence",
+    "nb_modules",
+    "ecart_type_modules",
+    "nb_echecs_anterieurs",
+]
 
 
-# ─── 2. Build and train the regression model ──────────────────────────────────
-
-def train(df: pd.DataFrame) -> Pipeline:
+def train(df: pd.DataFrame) -> tuple[Pipeline, pd.DataFrame, pd.Series]:
     """
     Trains the XGBRegressor using out_of_time or grouped_student split.
     """
-    # Time/student split logic
     unique_periods = df["period_key"].nunique()
     if unique_periods > 1:
         max_period = df["period_key"].max()
         test_df = df[df.period_key == max_period].copy()
         train_df = df[df.period_key < max_period].copy()
-
         train_df = train_df[~train_df.EtudiantId.isin(test_df.EtudiantId)].copy()
         split_strategy = "out_of_time"
     else:
@@ -111,7 +58,6 @@ def train(df: pd.DataFrame) -> Pipeline:
         test_df = df.iloc[test_idx].copy()
         split_strategy = "grouped_student"
 
-    # Fallback if out_of_time leaves train_df empty
     if len(train_df) == 0 or len(test_df) == 0:
         gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_SEED)
         train_idx, test_idx = next(gss.split(df, groups=df["EtudiantId"]))
@@ -119,17 +65,21 @@ def train(df: pd.DataFrame) -> Pipeline:
         test_df = df.iloc[test_idx].copy()
         split_strategy = "grouped_student"
 
-    X_train = train_df[["moyenne_actuelle", "taux_absence", "nb_modules"]]
+    X_train = train_df[FORECAST_FEATURE_COLS]
     y_train = train_df["note_finale"]
-    X_test = test_df[["moyenne_actuelle", "taux_absence", "nb_modules"]]
+    X_test = test_df[FORECAST_FEATURE_COLS]
     y_test = test_df["note_finale"]
 
     pipeline = Pipeline([
         ("scaler", StandardScaler()),
         ("regressor", xgb.XGBRegressor(
-            n_estimators=100,
+            n_estimators=120,
             max_depth=4,
-            learning_rate=0.1,
+            learning_rate=0.08,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=1.0,
+            reg_lambda=2.0,
             eval_metric="rmse",
             random_state=RANDOM_SEED,
         )),
@@ -137,7 +87,6 @@ def train(df: pd.DataFrame) -> Pipeline:
 
     pipeline.fit(X_train, y_train)
 
-    # ── Evaluation ────────────────────────────────────────────
     y_pred = pipeline.predict(X_test)
     y_pred_clipped = np.clip(y_pred, 0, 20)
 
@@ -155,13 +104,6 @@ def train(df: pd.DataFrame) -> Pipeline:
     pipeline.n_students_test = int(test_df["EtudiantId"].nunique()) if "EtudiantId" in test_df.columns else 0
 
     return pipeline, X_test, y_test
-
-
-# ─── 3. Save the trained pipeline to disk ─────────────────────────────────────
-
-def save(pipeline: Pipeline, X_test: pd.DataFrame | None, y_test: pd.Series | None) -> None:
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save_with_metadata(pipeline, X_test, y_test, data_source="synthetic")
 
 
 def save_with_metadata(
@@ -203,17 +145,18 @@ def save_with_metadata(
         "n_samples": n_samples,
         "data_source": data_source,
         "split_strategy": getattr(pipeline, "split_strategy", "unknown"),
+        "n_features": len(FORECAST_FEATURE_COLS),
+        "features": list(FORECAST_FEATURE_COLS),
         "train_periods": [float(p) for p in getattr(pipeline, "train_periods", [])],
         "test_periods": [float(p) for p in getattr(pipeline, "test_periods", [])],
         "n_students_train": int(getattr(pipeline, "n_students_train", 0)),
-        "n_students_test": int(getattr(pipeline, "n_students_test", 0))
+        "n_students_test": int(getattr(pipeline, "n_students_test", 0)),
     }
 
     meta_path = out_dir / "forecast_metadata.json"
     meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(f"Metadata saved -> {meta_path}")
 
-    # ── MLflow tracking (best-effort) ──────────────────────────
     from mlflow_client import start_run, log_params, log_metrics, log_tags, log_artifact
 
     reg = pipeline.named_steps.get("regressor")
@@ -225,8 +168,7 @@ def save_with_metadata(
             "data_source": data_source,
             "split_strategy": getattr(pipeline, "split_strategy", "unknown"),
             "n_samples": n_samples,
-            "n_students_train": int(getattr(pipeline, "n_students_train", 0)),
-            "n_students_test": int(getattr(pipeline, "n_students_test", 0)),
+            "n_features": len(FORECAST_FEATURE_COLS),
             "n_estimators": reg_params.get("n_estimators"),
             "max_depth": reg_params.get("max_depth"),
             "learning_rate": reg_params.get("learning_rate"),
@@ -234,6 +176,7 @@ def save_with_metadata(
         log_metrics({"mae": mae, "r2": r2})
         log_tags({
             "model_name": "forecast_model",
+            "features": ",".join(FORECAST_FEATURE_COLS),
             "train_periods": ",".join(str(p) for p in getattr(pipeline, "train_periods", [])),
             "test_periods": ",".join(str(p) for p in getattr(pipeline, "test_periods", [])),
         })
@@ -243,12 +186,10 @@ def save_with_metadata(
         log_artifact(meta_path)
 
 
-# ─── Entry point ──────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     print("Generating synthetic student data...")
-    df = generate_data(N_SAMPLES, RANDOM_SEED)
-    print(f"  {len(df)} samples | avg final grade: {df['note_finale'].mean():.1f}/20\n")
+    df = generate_synthetic_forecast_data(N_SAMPLES, RANDOM_SEED)
+    print(f"  {len(df)} samples | avg final grade: {df['note_finale'].mean():.1f}/20 | {len(FORECAST_FEATURE_COLS)} features\n")
 
     print("Training XGBoost regressor...")
     pipeline, X_test, y_test = train(df)

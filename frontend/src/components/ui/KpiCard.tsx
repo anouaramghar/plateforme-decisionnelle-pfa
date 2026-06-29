@@ -14,7 +14,7 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, suffix, delta, deltaTone = 'ok', spark, hint }: KpiCardProps) {
   return (
-    <div className="card p-4 flex flex-col gap-3">
+    <div className="card-quiet p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div
           className="text-[11.5px] uppercase tracking-wider font-medium"
@@ -65,7 +65,7 @@ interface MiniKpiProps {
 export function MiniKpi({ label, value, suffix, delta, deltaTone = 'ok', hint, emphasized = false }: MiniKpiProps) {
   return (
     <div
-      className="card p-5 flex flex-col justify-between"
+      className="card-quiet p-5 flex flex-col justify-between"
       style={{
         minHeight: 124,
         background: emphasized

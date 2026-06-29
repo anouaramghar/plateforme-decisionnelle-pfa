@@ -66,7 +66,7 @@ export default function Login() {
             background: 'linear-gradient(165deg, rgba(12,10,9,0.78) 0%, rgba(28,25,23,0.72) 60%, rgba(41,37,36,0.65) 100%)',
           }}
         />
-        {/* amber glow accent */}
+        {/* teal glow accent */}
         <div
           style={{
             position: 'absolute',
@@ -74,7 +74,7 @@ export default function Login() {
             left: 0,
             right: 0,
             height: '40%',
-            background: 'linear-gradient(to top, rgba(249,115,22,0.18) 0%, transparent 100%)',
+            background: 'linear-gradient(to top, color-mix(in oklch, var(--accent-500) 18%, transparent) 0%, transparent 100%)',
           }}
         />
 
@@ -111,7 +111,7 @@ export default function Login() {
               { v: '5',   l: 'Filières' },
               { v: '0.87', l: 'AUC modèle ML' },
             ].map(s => (
-              <div key={s.l} className="border-l-2 pl-3" style={{ borderColor: 'rgba(249,115,22,.6)' }}>
+              <div key={s.l} className="border-l-2 pl-3" style={{ borderColor: 'color-mix(in oklch, var(--accent-500) 60%, transparent)' }}>
                 <div className="num text-[22px]" style={{ color: '#fff', fontWeight: 500, letterSpacing: '-0.02em' }}>
                   {s.v}
                 </div>

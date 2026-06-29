@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { useUnresolvedAlertCount } from '../services/useUnresolvedAlertCount'
-import { canCreateStudent, canRunBatchPredictions } from '../auth/roles'
+import { canCreateStudent, canRunBatchPredictions, canUseCopilot } from '../auth/roles'
 
 const BREADCRUMBS: Record<string, [string, string]> = {
   '/dashboard':   ['Pilotage', 'Tableau de bord'],
@@ -48,6 +48,7 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
   const { user, token } = useAuth()
   const breadcrumb = breadcrumbFor(pathname)
   const mayAccessAlerts = user?.role === 'Admin' || user?.role === 'Responsable'
+  const mayUseCopilot = canUseCopilot(user?.role)
   const [nouveauOpen, setNouveauOpen] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
@@ -118,10 +119,11 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
     <header
       className="flex shrink-0 items-center justify-between gap-2 px-3 sm:px-6"
       style={{
-        height: 56,
-        background: 'color-mix(in oklch, var(--surface) 80%, transparent)',
-        backdropFilter: 'saturate(140%) blur(8px)',
+        height: 60,
+        background: 'color-mix(in oklch, var(--surface) 88%, transparent)',
+        backdropFilter: 'saturate(150%) blur(10px)',
         borderBottom: '1px solid var(--border)',
+        boxShadow: '0 1px 10px rgba(8,17,14,.04)',
         position: 'sticky',
         top: 0,
         zIndex: 30,
@@ -160,8 +162,12 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
         <button
           type="button"
           onClick={onCommandOpen}
-          className="flex h-8 items-center gap-2.5 rounded-lg px-2 sm:min-w-[190px] sm:pl-2.5 lg:min-w-[240px]"
-          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          className="flex h-8 items-center gap-2.5 rounded-lg px-2 transition sm:min-w-[190px] sm:pl-2.5 lg:min-w-[260px]"
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border-2)',
+            boxShadow: '0 1px 2px rgba(8,17,14,.03)',
+          }}
           aria-label="Rechercher dans la plateforme"
         >
           <Icon name="search" size={13} style={{ color: 'var(--text-3)' }} />
@@ -202,21 +208,23 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} strokeWidth={1.8} />
         </button>
 
-        <button
-          type="button"
-          onClick={onCopilotOpen}
-          className="btn btn-sm"
-          aria-label={copilotActive ? 'Fermer ENIAD Copilot' : 'Ouvrir ENIAD Copilot'}
-          aria-expanded={copilotActive}
-          style={copilotActive ? {
-            background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
-            borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',
-            color: 'var(--accent-600)',
-          } : undefined}
-        >
-          <Icon name="brain" size={13} />
-          <span className="hidden md:inline">Copilot</span>
-        </button>
+        {mayUseCopilot && (
+          <button
+            type="button"
+            onClick={onCopilotOpen}
+            className="btn btn-sm"
+            aria-label={copilotActive ? 'Fermer ENIAD Copilot' : 'Ouvrir ENIAD Copilot'}
+            aria-expanded={copilotActive}
+            style={copilotActive ? {
+              background: 'color-mix(in oklch, var(--accent-500) 12%, transparent)',
+              borderColor: 'color-mix(in oklch, var(--accent-500) 30%, transparent)',
+              color: 'var(--accent-600)',
+            } : undefined}
+          >
+            <Icon name="brain" size={13} />
+            <span className="hidden md:inline">Copilot</span>
+          </button>
+        )}
 
         {items.length > 0 && (
           <div ref={nouveauRef} className="relative">

@@ -19,7 +19,7 @@ export function baseTheme(): ApexOptions {
   return {
     chart: {
       fontFamily: 'Geist, sans-serif',
-      foreColor: readCssVar('--text-3', '#78716c'),
+      foreColor: readCssVar('--text-3', '#6b7872'),
       toolbar: { show: false },
       zoom: { enabled: false },
       animations: { enabled: !prefersReducedMotion(), speed: 320 },
@@ -31,7 +31,7 @@ export function baseTheme(): ApexOptions {
     },
     legend: {
       fontSize: '11.5px',
-      labels: { colors: readCssVar('--text-2', '#44403c') },
+      labels: { colors: readCssVar('--text-2', '#3f4c47') },
     },
     tooltip: { theme: isDark() ? 'dark' : 'light' },
     dataLabels: { enabled: false },

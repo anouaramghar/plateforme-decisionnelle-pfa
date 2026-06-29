@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -70,14 +70,14 @@ describe('OutreachComposer', () => {
     await user.type(screen.getByLabelText('Sujet'), 'Entretien ENIAD')
     await user.type(screen.getByLabelText('Date et heure'), '2026-07-01T10:00')
     await user.type(screen.getByLabelText('Lieu'), 'Salle B12')
-    await user.click(screen.getByRole('button', { name: 'Vérifier et envoyer' }))
+    await user.click(screen.getByRole('button', { name: 'Marquer comme envoyé' }))
 
     // The confirmation dialog shows the reviewed subject and blocks the send
     // until the user explicitly confirms.
-    expect(screen.getByRole('dialog', { name: 'Confirmer l’envoi' })).toHaveTextContent('Entretien ENIAD')
+    expect(screen.getByRole('dialog', { name: 'Confirmer' })).toHaveTextContent('Entretien ENIAD')
     expect(scheduleAndSendOutreach).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('button', { name: 'Envoyer l’email' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Confirmer' })).getByRole('button', { name: 'Marquer comme envoyé' }))
     expect(scheduleAndSendOutreach).toHaveBeenCalledWith(
       12,
       draftCommunication.id,
@@ -107,7 +107,7 @@ describe('OutreachComposer', () => {
         onChanged={vi.fn()}
       />,
     )
-    expect(screen.getByText(/Vérification de l’envoi en cours/)).toBeInTheDocument()
+    expect(screen.getByText('Envoi en cours')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Renvoyer' })).not.toBeInTheDocument()
   })
 
@@ -170,3 +170,4 @@ describe('MeetingOutcomeForm', () => {
     expect(screen.queryByRole('button', { name: 'Enregistrer l’entretien' })).not.toBeInTheDocument()
   })
 })
+

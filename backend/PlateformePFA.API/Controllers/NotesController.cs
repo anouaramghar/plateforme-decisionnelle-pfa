@@ -27,6 +27,14 @@ namespace PlateformePFA.API.Controllers
             _academicAccess = academicAccess;
         }
 
+        private async Task<string?> GetModuleSemestreAsync(int moduleId)
+        {
+            return await _context.Modules
+                .Where(m => m.Id == moduleId)
+                .Select(m => m.Semestre)
+                .SingleOrDefaultAsync();
+        }
+
         // GET all (paginated)
         [HttpGet]
         public async Task<ActionResult<PaginatedResult<Note>>> GetNotes(
@@ -109,12 +117,13 @@ namespace PlateformePFA.API.Controllers
         [HttpPost]
         public async Task<ActionResult<Note>> PostNote(CreateNoteDto dto, CancellationToken ct = default)
         {
-            // Validate FKs + uniqueness up front so a bad reference or a duplicate
-            // returns 404/409 instead of letting SQL throw an unhandled 500.
             if (!await _context.Etudiants.AnyAsync(e => e.Id == dto.EtudiantId && e.DesinscritLe == null, ct))
                 return NotFound(new { message = "Etudiant actif introuvable." });
-            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId, ct))
+            var moduleSemestre = await GetModuleSemestreAsync(dto.ModuleId);
+            if (moduleSemestre == null)
                 return NotFound(new { message = "Module introuvable." });
+            if (dto.Semestre != moduleSemestre)
+                return BadRequest(new { message = $"Le semestre de la note ({dto.Semestre}) ne correspond pas au semestre du module ({moduleSemestre})." });
 
             var compatible = await _context.Etudiants
                 .Where(e => e.Id == dto.EtudiantId && e.DesinscritLe == null)
@@ -166,8 +175,11 @@ namespace PlateformePFA.API.Controllers
             if (!studentExists)
                 return NotFound(new { message = "Etudiant actif introuvable." });
 
-            if (!await _context.Modules.AnyAsync(m => m.Id == dto.ModuleId, ct))
+            var moduleSemestre = await GetModuleSemestreAsync(dto.ModuleId);
+            if (moduleSemestre == null)
                 return NotFound(new { message = "Module introuvable." });
+            if (dto.Semestre != moduleSemestre)
+                return BadRequest(new { message = $"Le semestre de la note ({dto.Semestre}) ne correspond pas au semestre du module ({moduleSemestre})." });
 
             var compatible = await _context.Etudiants
                 .Where(e => e.Id == dto.EtudiantId && e.DesinscritLe == null)
@@ -230,6 +242,10 @@ namespace PlateformePFA.API.Controllers
         {
             var note = await _context.Notes.FindAsync(new object[] { id }, ct);
             if (note == null) return NotFound();
+
+            var moduleSemestre = await GetModuleSemestreAsync(note.ModuleId);
+            if (dto.Semestre != moduleSemestre)
+                return BadRequest(new { message = $"Le semestre de la note ({dto.Semestre}) ne correspond pas au semestre du module ({moduleSemestre})." });
 
             var compatible = await _context.Etudiants
                 .Where(e => e.Id == note.EtudiantId && e.DesinscritLe == null)

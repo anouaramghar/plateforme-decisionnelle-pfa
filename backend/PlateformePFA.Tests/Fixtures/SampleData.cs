@@ -48,7 +48,7 @@ public static class SampleData
             {
                 EtudiantId = etu.Id, ModuleId = mod.Id,
                 NoteTD = 14m, NoteTP = 13m, NoteExamen = 11m, NoteFinal = 12.2m,
-                Annee = "2025/2026", Semestre = "S2",
+                Annee = "2025/2026", Semestre = "S1",
             });
             ctx.SaveChanges();
         }
@@ -82,7 +82,7 @@ public static class SampleData
         {
             EtudiantId = etu.Id, ModuleId = mod.Id,
             NoteTD = 5m, NoteTP = 5m, NoteExamen = 6m, NoteFinal = 6.0m,
-            Annee = "2025/2026", Semestre = "S2",
+            Annee = "2025/2026", Semestre = "S1",
         });
         ctx.Absences.Add(new Absence
         {

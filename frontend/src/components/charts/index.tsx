@@ -34,7 +34,7 @@ export function ChartBars({ data, height = 240, label = 'Moyenne' }: ChartBarsPr
     plotOptions: {
       bar: { columnWidth: '52%', borderRadius: 4, distributed: !!data[0]?.color },
     },
-    colors: data.map(d => d.color ?? readCssVar('--accent-500', '#f97316')),
+    colors: data.map(d => d.color ?? readCssVar('--accent-500', '#14b8a6')),
     fill: { opacity: 1 },
     tooltip: {
       ...baseTheme().tooltip,
@@ -89,7 +89,7 @@ export function ChartArea({ data, height = 240, mode = 'heures', totalEtudiants 
       type: 'gradient',
       gradient: { shadeIntensity: 0.6, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90] },
     },
-    colors: [readCssVar('--accent-500', '#f97316')],
+    colors: [readCssVar('--accent-500', '#14b8a6')],
     markers: { size: 0, hover: { size: 4 } },
     tooltip: { ...baseTheme().tooltip, y: { formatter: yFormatter } },
   }
@@ -116,7 +116,7 @@ export function ChartHistogram({ data, height = 200 }: ChartHistogramProps) {
     },
     yaxis: { labels: { style: { fontSize: '10.5px' } } },
     plotOptions: { bar: { columnWidth: '42%', borderRadius: 3, distributed: true } },
-    colors: ['#fed7aa', '#fdba74', '#fb923c', '#f97316', '#ea580c', '#9a3412'],
+    colors: ['#ccfbf1', '#99f6e4', '#5eead4', '#14b8a6', '#0d9488', '#115e59'],
     legend: { show: false },
     fill: { opacity: 1 },
   }
@@ -224,7 +224,7 @@ interface ChartRadialProps {
   color?: string
 }
 
-export function ChartRadial({ value, label, height = 180, color = '#f97316' }: ChartRadialProps) {
+export function ChartRadial({ value, label, height = 180, color = '#14b8a6' }: ChartRadialProps) {
   const k = useChartKey(label)
   const options: ApexOptions = {
     ...baseTheme(),

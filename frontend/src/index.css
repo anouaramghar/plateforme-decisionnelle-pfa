@@ -3,38 +3,38 @@
 @tailwind utilities;
 
 :root {
-  /* Warm brown/amber anchor — distinctive, not your typical BI blue */
-  --accent-50:  #fff7ed;
-  --accent-100: #ffedd5;
-  --accent-200: #fed7aa;
-  --accent-300: #fdba74;
-  --accent-400: #fb923c;
-  --accent-500: #f97316;
-  --accent-600: #ea580c;
-  --accent-700: #c2410c;
-  --accent-800: #9a3412;
-  --accent-900: #7c2d12;
-  --accent-950: #431407;
+  /* Institutional teal anchor: calm enough for daily operations, distinct from BI blue. */
+  --accent-50:  #f0fdfa;
+  --accent-100: #ccfbf1;
+  --accent-200: #99f6e4;
+  --accent-300: #5eead4;
+  --accent-400: #2dd4bf;
+  --accent-500: #14b8a6;
+  --accent-600: #0d9488;
+  --accent-700: #0f766e;
+  --accent-800: #115e59;
+  --accent-900: #134e4a;
+  --accent-950: #042f2e;
 
   /* Light theme */
-  --bg:        #fafaf9;
+  --bg:        #f7f8f7;
   --surface:   #ffffff;
-  --surface-2: #f5f5f4;
-  --surface-3: #e7e5e4;
-  --border:    #e7e5e4;
-  --border-2:  #d6d3d1;
-  --text:      #1c1917;
-  --text-2:    #44403c;
-  --text-3:    #78716c;
-  --text-4:    #a8a29e;
+  --surface-2: #f2f4f3;
+  --surface-3: #e5e8e6;
+  --border:    #e2e7e4;
+  --border-2:  #cfd8d3;
+  --text:      #17201c;
+  --text-2:    #3f4c47;
+  --text-3:    #6b7872;
+  --text-4:    #99a39e;
 
-  /* Sidebar always dark — Linear-style */
-  --side-bg:     #0c0a09;
-  --side-bg-2:   #1c1917;
-  --side-border: #292524;
-  --side-text:   #e7e5e4;
-  --side-text-2: #a8a29e;
-  --side-text-3: #78716c;
+  /* Sidebar stays dark, but uses green-black instead of espresso. */
+  --side-bg:     #08110e;
+  --side-bg-2:   #10201b;
+  --side-border: #1b312b;
+  --side-text:   #e8f0ed;
+  --side-text-2: #a9b7b1;
+  --side-text-3: #71817a;
 
   --ok:   #16a34a;
   --warn: #f59e0b;
@@ -49,19 +49,19 @@
   --pad: 1;
 }
 html.dark {
-  --bg:        #0c0a09;
-  --surface:   #131110;
-  --surface-2: #1c1917;
-  --surface-3: #292524;
-  --border:    #292524;
-  --border-2:  #44403c;
-  --text:      #f5f5f4;
-  --text-2:    #d6d3d1;
-  --text-3:    #a8a29e;
-  --text-4:    #78716c;
-  --side-bg:    #050403;
-  --side-bg-2:  #0c0a09;
-  --side-border:#1c1917;
+  --bg:        #07110e;
+  --surface:   #0d1815;
+  --surface-2: #13231e;
+  --surface-3: #1e342d;
+  --border:    #1f352f;
+  --border-2:  #315148;
+  --text:      #edf5f1;
+  --text-2:    #cad8d2;
+  --text-3:    #9baca5;
+  --text-4:    #72847c;
+  --side-bg:    #040a08;
+  --side-bg-2:  #07110e;
+  --side-border:#13231e;
 }
 
 * {
@@ -106,17 +106,19 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgba(8, 17, 14, 0.03);
 }
 .card-quiet {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 0 rgba(28, 25, 23, 0.02);
+  box-shadow: 0 1px 2px rgba(8, 17, 14, 0.03);
 }
 .card-feature {
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface) 60%, color-mix(in oklch, var(--accent-50) 60%, var(--surface)) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+  box-shadow: 0 1px 2px rgba(8, 17, 14, 0.04);
 }
 html.dark .card-feature {
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface) 60%, color-mix(in oklch, var(--accent-900) 22%, var(--surface)) 100%);
@@ -144,15 +146,15 @@ html.dark .card-feature {
   font-size: 13px;
   font-weight: 450;
   cursor: pointer;
-  transition: background .12s, color .12s;
+  transition: background .12s, color .12s, transform .12s;
   position: relative;
 }
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.055);
   color: var(--side-text);
 }
 .nav-item.active {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in oklch, var(--accent-500) 16%, transparent);
   color: #fff;
 }
 .nav-item.active::before {
@@ -228,7 +230,7 @@ html.dark .pill-accent { color: var(--accent-300); }
 }
 .btn-primary:hover { background: var(--text-2); }
 .btn-accent {
-  /* accent-700 (not 600) so the white label clears WCAG AA 4.5:1 at 12px */
+  /* accent-700 clears WCAG AA 4.5:1 at 12px */
   background: var(--accent-700);
   color: #fff;
   border-color: var(--accent-800);
@@ -275,7 +277,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
   color: var(--text-3);
   background: var(--surface-2);
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -289,7 +291,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
   color: var(--text);
   vertical-align: middle;
 }
-.tbl tbody tr:hover td { background: var(--surface-2); }
+.tbl tbody tr:hover td { background: color-mix(in oklch, var(--accent-50) 55%, var(--surface)); }
+html.dark .tbl tbody tr:hover td { background: color-mix(in oklch, var(--accent-900) 18%, var(--surface)); }
 .tbl tbody tr:last-child td { border-bottom: none; }
 
 /* KPI big number */
@@ -326,6 +329,30 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 /* sparkbar / sparkline */
 .sparkbar       { display: flex; align-items: flex-end; gap: 2px; height: 26px; }
 .sparkbar > div { flex: 1; background: var(--accent-500); border-radius: 1px; opacity: .85; min-width: 2px; }
+
+/* shared page chrome */
+.page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.empty-state {
+  display: flex;
+  min-height: 132px;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-3);
+}
 
 /* shimmer */
 @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } }
@@ -396,6 +423,14 @@ button:focus-visible,
   .app-content [class*='grid-cols-'] { grid-template-columns: 1fr !important; }
   .app-content .card:has(table.tbl) { overflow-x: auto; }
   .app-content table.tbl { min-width: 540px; }
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .page-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
 }
 
 /* skeleton */

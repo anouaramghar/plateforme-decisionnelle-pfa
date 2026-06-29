@@ -2,6 +2,7 @@ using FluentAssertions;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using PlateformePFA.API.Models;
 using Xunit;
 
 namespace PlateformePFA.Tests.Controllers
@@ -38,6 +39,36 @@ namespace PlateformePFA.Tests.Controllers
             response.Headers.TryGetValues("Set-Cookie", out var cookies);
             cookies.Should().NotBeNull();
             cookies!.Any(c => c.Contains("pfa_copilot_session=")).Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task CreateSession_as_enseignant_returns_403()
+        {
+            using (var ctx = _factory.CreateContext())
+            {
+                if (!ctx.Utilisateurs.Any(u => u.Email == "teacher-copilot@eniad.ma"))
+                {
+                    ctx.Utilisateurs.Add(new Utilisateur
+                    {
+                        Email = "teacher-copilot@eniad.ma",
+                        Nom = "Teacher",
+                        Prenom = "Copilot",
+                        MotDePasseHash = BCrypt.Net.BCrypt.HashPassword("TeacherPass!2026"),
+                        Role = "Enseignant",
+                        EstActif = true,
+                    });
+                    ctx.SaveChanges();
+                }
+            }
+
+            var client = _factory.CreateClient();
+            var token = await AuthHelper.GetTokenAsync(client, "teacher-copilot@eniad.ma", "TeacherPass!2026");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var response = await client.PostAsync("/api/copilot/session", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeFalse();
         }
 
         [Fact]

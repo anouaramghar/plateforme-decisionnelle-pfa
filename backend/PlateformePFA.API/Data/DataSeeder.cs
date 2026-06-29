@@ -7,7 +7,6 @@ namespace PlateformePFA.API.Data
     {
         public static void Initialize(AppDbContext context, IConfiguration configuration)
         {
-            // Separate block, NOT inside the Filieres block
             if (!context.Utilisateurs.Any(u => u.Role == "Admin"))
             {
                 var adminEmail    = configuration["ADMIN_SEED_EMAIL"];
@@ -39,7 +38,8 @@ namespace PlateformePFA.API.Data
                 context.SaveChanges();
             }
 
-            if (context.Filieres.Any()) return;
+            var hasExistingFilieres = context.Filieres.Any();
+            if (hasExistingFilieres && context.Modules.Count() >= 188) return;
 
             var seedSampleDataConfig = configuration["SEED_SAMPLE_DATA"];
             bool seedSampleData;
@@ -53,8 +53,6 @@ namespace PlateformePFA.API.Data
                               ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
                 seedSampleData = string.Equals(envName, "Development", StringComparison.OrdinalIgnoreCase);
             }
-            if (!seedSampleData) return;
-
             var anneeCourante = configuration["CurrentAcademicYear"]
                                 ?? CurrentAcademicYear();
 
@@ -63,63 +61,207 @@ namespace PlateformePFA.API.Data
                 .Select(u => u.Id)
                 .FirstOrDefault();
 
-            // ==========================================
-            // 1. FILIÈRES
-            // ==========================================
-            var filieres = new List<Filiere>
+            var filiereDefinitions = new List<Filiere>
             {
-                new Filiere { Code = "TCP",  Intitule = "Tronc Commun Préparatoire",                         ResponsableId = responsableId },
-                new Filiere { Code = "GI",   Intitule = "Génie Informatique",                                ResponsableId = responsableId },
-                new Filiere { Code = "IA",   Intitule = "Intelligence Artificielle",                         ResponsableId = responsableId },
-                new Filiere { Code = "ROC",  Intitule = "Robotique et Objets Connectés",                     ResponsableId = responsableId },
-                new Filiere { Code = "IRSI", Intitule = "Ingénierie en Réseaux et Systèmes d'Information",   ResponsableId = responsableId },
+                new Filiere { Code = "EPSI", Intitule = "Etudes Preparatoires en Sciences de l'Ingenieur",  ResponsableId = responsableId },
+                new Filiere { Code = "IA",   Intitule = "Intelligence Artificielle",                        ResponsableId = responsableId },
+                new Filiere { Code = "ROC",  Intitule = "Robotique et Objets Connectes",                    ResponsableId = responsableId },
+                new Filiere { Code = "IRSI", Intitule = "Ingenierie Reseaux et Securite Informatique",     ResponsableId = responsableId },
+                new Filiere { Code = "GINF", Intitule = "Genie Informatique",                               ResponsableId = responsableId },
             };
-            context.Filieres.AddRange(filieres);
+            if (hasExistingFilieres)
+            {
+                var existingFiliereCodes = context.Filieres.Select(f => f.Code).ToHashSet();
+                context.Filieres.AddRange(filiereDefinitions.Where(f => !existingFiliereCodes.Contains(f.Code)));
+            }
+            else
+            {
+                context.Filieres.AddRange(filiereDefinitions);
+            }
             context.SaveChanges();
 
-            // ==========================================
-            // 2. MODULES — 4 par filière pour que nb_modules soit significatif
-            //    comme feature ML. Chaque module reçoit des notes pour S1 et S2
-            //    dans la boucle de génération ci-dessous.
-            // ==========================================
-            var modules = new List<Module>
+            var filiereOrder = new[] { "EPSI", "IA", "ROC", "IRSI", "GINF" };
+            var filieres = context.Filieres
+                .Where(f => filiereOrder.Contains(f.Code))
+                .ToList()
+                .OrderBy(f => Array.IndexOf(filiereOrder, f.Code))
+                .ToList();
+
+            // Semester → Niveau mapping
+            var semNiveauMap = new Dictionary<string, string>
             {
-                // TCP — 4 modules (CP1 + CP2)
-                new Module { Code = "TCP11", Nom = "Analyse Mathématique",            FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "TCP12", Nom = "Algèbre Linéaire",                FiliereId = filieres[0].Id, Niveau = "CP1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "TCP21", Nom = "Physique Quantique & Mécanique",  FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 4m, Semestre = "S2" },
-                new Module { Code = "TCP22", Nom = "Initiation à l'Algorithmique",    FiliereId = filieres[0].Id, Niveau = "CP2", Coefficient = 3m, Semestre = "S2" },
-
-                // GI — 4 modules (CI1 + CI2)
-                new Module { Code = "GI01", Nom = "Architecture Logicielle",          FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "GI02", Nom = "Développement Fullstack",          FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
-                new Module { Code = "GI03", Nom = "Bases de données avancées",        FiliereId = filieres[1].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "GI04", Nom = "Systèmes d'exploitation",          FiliereId = filieres[1].Id, Niveau = "CI2", Coefficient = 3m, Semestre = "S2" },
-
-                // IA — 4 modules (CI1 + CI2)
-                new Module { Code = "IA01", Nom = "Fondamentaux du Machine Learning", FiliereId = filieres[2].Id, Niveau = "CI1", Coefficient = 5m, Semestre = "S1" },
-                new Module { Code = "IA02", Nom = "Deep Learning & Vision",           FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
-                new Module { Code = "IA03", Nom = "Traitement du langage naturel",    FiliereId = filieres[2].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "IA04", Nom = "Mathématiques pour l'IA",          FiliereId = filieres[2].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
-
-                // ROC — 4 modules (CI1 + CI2)
-                new Module { Code = "ROC01", Nom = "Systèmes Embarqués",              FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "ROC02", Nom = "Protocoles IoT & Microcontrôleurs", FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
-                new Module { Code = "ROC03", Nom = "Automatique et contrôle",         FiliereId = filieres[3].Id, Niveau = "CI1", Coefficient = 3m, Semestre = "S1" },
-                new Module { Code = "ROC04", Nom = "Communication sans fil",          FiliereId = filieres[3].Id, Niveau = "CI2", Coefficient = 3m, Semestre = "S2" },
-
-                // IRSI — 4 modules (CI1 + CI2)
-                new Module { Code = "IRSI01", Nom = "Architecture des Réseaux Avancés", FiliereId = filieres[4].Id, Niveau = "CI1", Coefficient = 4m, Semestre = "S1" },
-                new Module { Code = "IRSI02", Nom = "Cybersécurité et Cryptographie",   FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 5m, Semestre = "S2" },
-                new Module { Code = "IRSI03", Nom = "Administration système Linux",     FiliereId = filieres[4].Id, Niveau = "CI1", Coefficient = 3m, Semestre = "S1" },
-                new Module { Code = "IRSI04", Nom = "Sécurité des infrastructures",    FiliereId = filieres[4].Id, Niveau = "CI2", Coefficient = 4m, Semestre = "S2" },
+                ["S1"] = "CP1", ["S2"] = "CP1", ["S3"] = "CP2", ["S4"] = "CP2",
+                ["S5"] = "CI1", ["S6"] = "CI1", ["S7"] = "CI2", ["S8"] = "CI2", ["S9"] = "CI3",
             };
-            context.Modules.AddRange(modules);
+
+            var modules = new List<Module>();
+            int counter;
+
+            // ── EPSI (S1–S4, 7 modules each) ──
+            counter = 1;
+            foreach (var (sem, names) in new[] {
+                ("S1", new[] { "ALGEBRE 1", "ANALYSE 1", "MECANIQUE DU POINT", "ELECTROCINETIQUE",
+                              "ALGORITHMIQUE ET ARCHITECTURE DES ORDINATEURS",
+                              "METHODOLOGIE DE TRAVAIL UNIVERSITAIRE", "LANGUES ET COMMUNICATIONS 1" }),
+                ("S2", new[] { "ALGEBRE 2", "ANALYSE 2", "ELECTROMAGNETISME", "ELECTRONIQUE ANALOGIQUE",
+                              "PROGRAMMATION EN C", "CULTURE DIGITALE", "LANGUES ET COMMUNICATIONS 2" }),
+                ("S3", new[] { "ALGEBRE 3", "ANALYSE 3", "TRAITEMENT DU SIGNAL ET SYSTEMES NUMERIQUES",
+                              "ALGORITHMIQUE AVANCE & STRUCTURE DES DONNEES", "PROGRAMMATION PYTHON",
+                              "SYSTEMES D'INFORMATIONS ET BASES DE DONNEES", "LANGUES ET COMMUNICATIONS 3" }),
+                ("S4", new[] { "ANALYSE 4", "STATISTIQUES & PROBABILITES",
+                              "INTRODUCTION AUX RESEAUX INFORMATIQUES ET SYSTEMES D'EXPLOITATION",
+                              "ANALYSE NUMERIQUE", "DEVELOPPEMENT WEB", "ELECTRONIQUE NUMERIQUE",
+                              "LANGUES ET COMMUNICATIONS 4" })
+            })
+            {
+                foreach (var name in names)
+                {
+                    modules.Add(new Module { Code = $"EPSI{counter++:D2}", Nom = name, FiliereId = filieres[0].Id, Niveau = semNiveauMap[sem], Coefficient = 4m, Semestre = sem });
+                }
+            }
+
+            // ── IA (S5–S9, 8 modules each) ──
+            counter = 1;
+            foreach (var (sem, names) in new[] {
+                ("S5", new[] { "PROGRAMMATION ORIENTE OBJET EN JAVA", "PROGRAMMATION ORIENTE OBJET EN PYTHON",
+                              "INGENIERIE DES BASES DE DONNEES AVANCEE", "SYSTEME D'EXPLOITATION ET PROGRAMMATION SYSTEMES",
+                              "DEVELOPPEMENT D'APPLICATIONS WEB", "STATISTIQUES DESCRIPTIVES, INFERENTIELLES ET EXPLORATOIRES",
+                              "COMPTABILITE ET CALCUL DES COUTS", "LANGUES ET TECHNIQUES DE COMMUNICATION 1" }),
+                ("S6", new[] { "DEVELOPPEMENT D'APPLICATIONS WEB AVANCEE", "MACHINE LEARNING",
+                              "RESEAUX INFORMATIQUE", "MODELISATION LOGICIELLE ET DONNEES STRUCTUREES",
+                              "ANALYSE DE DONNEES", "RECHERCHE OPERATIONNELLE", "INGENIERIE DU PROMPTING",
+                              "LANGUES ET TECHNIQUES DE COMMUNICATION 2" }),
+                ("S7", new[] { "DEEP LEARNING", "VISION ARTIFICIELLE", "GESTION AGILE DE PROJET INFORMATIQUE",
+                              "DEVELOPPEMENT MOBILE MULTIPLATEFORME", "OPTIMISATION COMBINATOIRE ET METAHEURISTIQUES",
+                              "RESEAUX DE COMMUNICATION IOT", "MANAGEMENT ET MARKETING",
+                              "LANGUES ET TECHNIQUES DE COMMUNICATION 3" }),
+                ("S8", new[] { "SYSTEMES MULTI-AGENTS", "BUSINESS INTELLIGENCE ET ERP",
+                              "ATELIER DES ACTIVITES PRATIQUES ET PROJETS", "MODELES DE LANGAGE ET TRAITEMENT AUTOMATIQUE DU TEXTE",
+                              "VISION PAR ORDINATEUR ET INTELLIGENCE ARTIFICIELLE", "APPRENTISSAGE PAR RENFORCEMENT",
+                              "DEVELOPPEMENT PERSONNEL", "LANGUES ET TECHNIQUES DE COMMUNICATION 4" }),
+                ("S9", new[] { "INGENIERIE BIG DATA", "DEVOPS & MLOPS", "ATELIERS IA AVANCEE",
+                              "CLOUD COMPUTING ET VIRTUALISATION", "CYBERSECURITY POUR L'IA ET LA ROBOTIQUE",
+                              "EXPLAINABLE AI", "ETHIQUES ET DROITS", "LANGUES ET TECHNIQUES DE COMMUNICATION 5" })
+            })
+            {
+                foreach (var name in names)
+                {
+                    modules.Add(new Module { Code = $"IA{counter++:D2}", Nom = name, FiliereId = filieres[1].Id, Niveau = semNiveauMap[sem], Coefficient = 4m, Semestre = sem });
+                }
+            }
+
+            // ── ROC (S5–S9, 8 modules each) ──
+            counter = 1;
+            foreach (var (sem, names) in new[] {
+                ("S5", new[] { "PROGRAMMATION ORIENTE OBJET EN JAVA", "PROGRAMMATION EMBARQUEE",
+                              "STATISTIQUES DESCRIPTIVES, INFERENTIELLES ET EXPLORATOIRES",
+                              "DEVELOPPEMENT D'APPLICATIONS WEB", "SYSTEME D'EXPLOITATION ET PROGRAMMATION SYSTEMES",
+                              "PERCEPTION ET CAPTEURS POUR OBJETS ET ROBOTS CONNECTES",
+                              "COMPTABILITE ET CALCUL DES COUTS", "Langues et Techniques de Communication 1" }),
+                ("S6", new[] { "DEVELOPPEMENT D'APPLICATIONS WEB AVANCEE", "ROBOT OPERATING SYSTEM (ROS 1 & 2, RTOS)",
+                              "RESEAUX INFORMATIQUE", "METHODOLOGIES DE NAVIGATION ET DE LOCALISATION DES ROBOTS",
+                              "ANALYSE DES DONNEES", "RECHERCHE OPERATIONNELLE ET OPTIMISATION COMBINATOIRE",
+                              "INGENIERIE DU PROMPTING", "Langues et Techniques de Communication 2" }),
+                ("S7", new[] { "PROGRAMMATION EN ROBOTIQUE ET CONCEPTION 3D", "RESEAUX DE COMMUNICATION IOT",
+                              "GESTION AGILE DE PROJET INFORMATIQUE", "DEVELOPPEMENT MOBILE MULTIPLATEFORME",
+                              "MACHINE LEARNING", "VISION ARTIFICIELLE", "MANAGEMENT ET MARKETING",
+                              "Langues et Techniques de Communication 3" }),
+                ("S8", new[] { "SYSTEMES MULTI-AGENTS", "BUSINESS INTELLIGENCE ET ERP", "IA EMBARQUEE & EDGE AI",
+                              "DEEP LEARNING", "REINFORCEMENT LEARNING", "ATELIER DES ACTIVITES PRATIQUES ET PROJETS",
+                              "DEVELOPPEMENT PERSONNEL", "Langues et Techniques de Communication 4" }),
+                ("S9", new[] { "INGENIERIE BIG DATA", "REALITE VIRTUEL ET REALITE AUGMENTEE",
+                              "ATELIER ROBOTIQUE AVANCEE (COBOTIQUE, MOBILITE)",
+                              "TECHNOLOGIES POUR L'AUTOMOBILE, L'AERONAUTIQUE ET LES DRONES",
+                              "CLOUD COMPUTING ET VIRTUALISATION", "CYBERSECURITY POUR L'IA ET LA ROBOTIQUE",
+                              "ETHIQUES ET DROITS", "Langues et Techniques de Communication 5" })
+            })
+            {
+                foreach (var name in names)
+                {
+                    modules.Add(new Module { Code = $"ROC{counter++:D2}", Nom = name, FiliereId = filieres[2].Id, Niveau = semNiveauMap[sem], Coefficient = 4m, Semestre = sem });
+                }
+            }
+
+            // ── IRSI (S5–S9, 8 modules each) ──
+            counter = 1;
+            foreach (var (sem, names) in new[] {
+                ("S5", new[] { "STATISTIQUES DESCRIPTIVES, INFERENTIELLES ET EXPLORATOIRES",
+                              "PROGRAMMATION ORIENTE OBJET EN PYTHON", "SYSTEME D'EXPLOITATION ET PROGRAMMATION SYSTEMES",
+                              "RESEAUX INFORMATIQUE", "DEVELOPPEMENT D'APPLICATIONS WEB",
+                              "PROGRAMMATION ORIENTE OBJET EN JAVA", "COMPTABILITE ET CALCUL DES COUTS",
+                              "Langues et Techniques de Communication 1" }),
+                ("S6", new[] { "ANALYSE DE DONNEES", "RECHERCHE OPERATIONNELLE ET OPTIMISATION COMBINATOIRE",
+                              "ADMINISTRATION SYSTEMES LINUX", "INTERCONNEXION DES RESEAUX",
+                              "INGENIERIE DES BASES DE DONNEES AVANCEE", "PROGRAMMATION SHELL & POWERSHELL",
+                              "INGENIERIE DU PROMPTING", "Langues et Techniques de Communication 2" }),
+                ("S7", new[] { "INTERCONNEXION DES RESEAUX AVANCEE", "ADMINISTRATION ET SECURITE DES SERVICES",
+                              "GESTION AGILE DE PROJET INFORMATIQUE", "MACHINE LEARNING",
+                              "CRYPTOGRAPHIE : PROTOCOLES ET APPLICATIONS", "RESEAUX DE COMMUNICATION IOT",
+                              "MANAGEMENT ET MARKETING", "Langues et Techniques de Communication 3" }),
+                ("S8", new[] { "SECURITE DES RESEAUX", "ATELIER DES ACTIVITES PRATIQUES ET PROJETS",
+                              "CLOUD COMPUTING", "DEEP LEARNING", "APPRENTISSAGE PAR RENFORCEMENT",
+                              "CYBERSECURITE", "DEVELOPPEMENT PERSONNEL", "Langues et Techniques de Communication 4" }),
+                ("S9", new[] { "ATELIER PENTESTING WEB", "ATELIER ETHICAL HACKING", "ATELIER FIREWALL",
+                              "TECHNOLOGIE BLOCKCHAIN", "GOUVERNANCE DE LA SECURITE ET ANALYSE DES RISQUES",
+                              "ATELIER DEVSECOPS & SOC", "ETHIQUES ET DROITS", "Langues et Techniques de Communication 5" })
+            })
+            {
+                foreach (var name in names)
+                {
+                    modules.Add(new Module { Code = $"IRSI{counter++:D2}", Nom = name, FiliereId = filieres[3].Id, Niveau = semNiveauMap[sem], Coefficient = 4m, Semestre = sem });
+                }
+            }
+
+            // ── GINF (S5–S9, 8 modules each) ──
+            counter = 1;
+            foreach (var (sem, names) in new[] {
+                ("S5", new[] { "PROGRAMMATION ORIENTE OBJET EN JAVA", "PROGRAMMATION ORIENTE OBJET EN PYTHON",
+                              "INGENIERIE DES BASES DE DONNEES AVANCEE", "DEVELOPPEMENT D'APPLICATIONS WEB",
+                              "SYSTEMES D'EXPLOITATION ET PROGRAMMATION SYSTEME",
+                              "STATISTIQUES DESCRIPTIVES, INFERENTIELLES ET EXPLORATOIRES",
+                              "COMPTABILITE ET CALCUL DES COUTS", "LANGUES ET TECHNIQUES DE COMMUNICATION 1" }),
+                ("S6", new[] { "PROGRAMMATION ORIENTE OBJET EN C++", "MODELISATION LOGICIELLE ET DONNEES STRUCTUREES",
+                              "DEVELOPPEMENT D'APPLICATIONS WEB AVANCEE", "RESEAUX INFORMATIQUES",
+                              "ANALYSE DES DONNEES", "RECHERCHE OPERATIONNELLE ET OPTIMISATION COMBINATOIRE",
+                              "INGENIERIE DU PROMPTING", "LANGUES ET TECHNIQUES DE COMMUNICATION 2" }),
+                ("S7", new[] { "INGENIERIE J2E ET APPLICATIONS DISTRIBUEES", "DEVELOPPEMENT D'APPLICATION .NET",
+                              "DEVELOPPEMENT MOBILE MULTIPLATEFORME", "ADMINISTRATION DES SYSTEMES",
+                              "MACHINE LEARNING", "GESTION AGILE DE PROJET INFORMATIQUE",
+                              "MANAGEMENT ET MARKETING", "LANGUES ET TECHNIQUES DE COMMUNICATION 3" }),
+                ("S8", new[] { "INGENIERIE DEVOPS", "ADMINISTRATION DE BASES DE DONNEES", "DEEP LEARNING",
+                              "APPRENTISSAGE PAR RENFORCEMENT", "BUSINESS INTELLIGENCE ET ERP",
+                              "ATELIER DES ACTIVITES PRATIQUES ET PROJETS", "DEVELOPPEMENT PERSONNEL",
+                              "LANGUES ET TECHNIQUES DE COMMUNICATION 4" }),
+                ("S9", new[] { "URBANISATION DES SYSTEMES D'INFORMATION", "ARCHITECTURE LOGICIELLE ET DESIGN PATTERNS",
+                              "INGENIERIE BIG DATA", "CLOUD COMPUTING ET VIRTUALISATION",
+                              "ATELIER PENTESTING WEB", "INTERCONNEXION RESEAUX ET SECURITE RESEAUX",
+                              "ETHIQUES ET DROITS", "LANGUES ET TECHNIQUES DE COMMUNICATION 5" })
+            })
+            {
+                foreach (var name in names)
+                {
+                    modules.Add(new Module { Code = $"GINF{counter++:D2}", Nom = name, FiliereId = filieres[4].Id, Niveau = semNiveauMap[sem], Coefficient = 4m, Semestre = sem });
+                }
+            }
+
+            var existingModuleCodes = context.Modules.Select(m => m.Code).ToHashSet();
+            context.Modules.AddRange(modules.Where(m => !existingModuleCodes.Contains(m.Code)));
             context.SaveChanges();
 
-            // ==========================================
-            // 3. NOMS MAROCAINS
-            // ==========================================
+            if (hasExistingFilieres || !seedSampleData) return;
+
+            // Niveau → semesters for each filiere
+            var niveauSemesters = new Dictionary<string, Dictionary<string, string[]>>
+            {
+                ["EPSI"] = new() { ["CP1"] = new[] { "S1", "S2" }, ["CP2"] = new[] { "S3", "S4" } },
+                ["IA"]   = new() { ["CI1"] = new[] { "S5", "S6" }, ["CI2"] = new[] { "S7", "S8" }, ["CI3"] = new[] { "S9" } },
+                ["ROC"]  = new() { ["CI1"] = new[] { "S5", "S6" }, ["CI2"] = new[] { "S7", "S8" }, ["CI3"] = new[] { "S9" } },
+                ["IRSI"] = new() { ["CI1"] = new[] { "S5", "S6" }, ["CI2"] = new[] { "S7", "S8" }, ["CI3"] = new[] { "S9" } },
+                ["GINF"] = new() { ["CI1"] = new[] { "S5", "S6" }, ["CI2"] = new[] { "S7", "S8" }, ["CI3"] = new[] { "S9" } },
+            };
+
+            var filiereCodeById = filieres.ToDictionary(f => f.Id, f => f.Code);
+
             var prenomsMarocains = new[] {
                 "Youssef", "Fatima", "Amine", "Salma", "Karim", "Aya", "Mehdi", "Khadija", "Hamza", "Imane",
                 "Omar", "Sara", "Yassine", "Meryem", "Ilyas", "Hiba", "Marouane", "Anouar", "Aymen", "Reda",
@@ -131,54 +273,48 @@ namespace PlateformePFA.API.Data
                 "Lahlou", "El Oufir", "Benjelloun", "Belghiti", "Moutaouakil", "Zidane", "El Amrani"
             };
 
-            // ==========================================
-            // 4. ÉTUDIANTS
-            // ==========================================
-            var niveauxCP = new[] { "CP1", "CP2" };
             int matriculeCounter = 10001;
-
             var etudiantFaker = new Faker<Etudiant>()
                 .RuleFor(e => e.Nom,      f => f.PickRandom(nomsMarocains))
                 .RuleFor(e => e.Prenom,   f => f.PickRandom(prenomsMarocains))
                 .RuleFor(e => e.Matricule, _ => $"E{matriculeCounter++:D5}")
                 .RuleFor(e => e.Email,    (f, e) => f.Internet.Email(e.Prenom, e.Nom, "eniad.ma").ToLower())
-                .RuleFor(e => e.Niveau,   f => f.PickRandom(new[] { "CP1", "CP2", "CI1", "CI2", "CI3" }))
-                .RuleFor(e => e.FiliereId, (f, e) => {
-                    if (niveauxCP.Contains(e.Niveau)) return filieres[0].Id;
-                    return f.PickRandom(filieres.Skip(1)).Id;
-                })
                 .RuleFor(e => e.Annee,  anneeCourante)
                 .RuleFor(e => e.CreeLe, f => f.Date.Past(1));
 
-            var etudiants = etudiantFaker.Generate(300);
+            // Assign filiere + niveau together so each student gets a coherent
+            // curriculum slice.
+            var studentDefs = new List<(string filiereCode, string niveau)>();
+            // EPSI: 60 students (30 CP1, 30 CP2) — 20%
+            // Each engineering: 60 students (20 CI1, 20 CI2, 20 CI3) — 20% each
+            for (int i = 0; i < 30; i++) studentDefs.Add(("EPSI", "CP1"));
+            for (int i = 0; i < 30; i++) studentDefs.Add(("EPSI", "CP2"));
+            foreach (var code in new[] { "IA", "ROC", "IRSI", "GINF" })
+            {
+                for (int i = 0; i < 20; i++) studentDefs.Add((code, "CI1"));
+                for (int i = 0; i < 20; i++) studentDefs.Add((code, "CI2"));
+                for (int i = 0; i < 20; i++) studentDefs.Add((code, "CI3"));
+            }
+
+            var filiereCodeToId = filieres.ToDictionary(f => f.Code, f => f.Id);
+            var etudiants = new List<Etudiant>();
+            foreach (var (code, niveau) in studentDefs)
+            {
+                var e = etudiantFaker.Generate();
+                e.FiliereId = filiereCodeToId[code];
+                e.Niveau = niveau;
+                etudiants.Add(e);
+            }
             context.Etudiants.AddRange(etudiants);
             context.SaveChanges();
 
-            var etudiantFiliereMap = etudiants.ToDictionary(e => e.Id, e => e.FiliereId);
-            var filiereModulesMap  = modules
-                .GroupBy(m => m.FiliereId)
+            // Module lookup: filiereId + semestre → module IDs
+            var filiereSemModules = modules
+                .GroupBy(m => (m.FiliereId, m.Semestre))
                 .ToDictionary(g => g.Key, g => g.Select(m => m.Id).ToList());
 
-            // ==========================================
-            // 5. NOTES — 3 profils pour forcer le modèle ML à apprendre
-            //    une frontière probabiliste (et non binaire) :
-            //
-            //  À risque   (25 %, i%4==3) :
-            //    NoteExamen 1–7,  NoteTD 3–11, NoteTP 3–11
-            //    → NoteFinal 2–9  (clairement < 10, at_risk=1 dans DW)
-            //
-            //  Fragile    (25 %, i%4==1) :
-            //    NoteExamen 5–13, NoteTD 7–15, NoteTP 7–15
-            //    → NoteFinal 6–14 (croise le seuil 10 → zone grise)
-            //    → at_risk=1 quand moy<10, at_risk=0 quand moy≥10
-            //    → force le modèle à prédire 30–70% dans cette zone
-            //
-            //  Normal     (50 %, reste) :
-            //    NoteExamen 10–18, NoteTD 12–20, NoteTP 12–20
-            //    → NoteFinal 11–19 (clairement > 10, at_risk=0 dans DW)
-            // ==========================================
+            // Note generation — 3 profiles (same logic as before)
             var noteRng = new Random(42);
-
             var atRiskIds = new HashSet<int>(
                 etudiants.Where((_, i) => i % 4 == 3).Select(e => e.Id)
             );
@@ -191,33 +327,34 @@ namespace PlateformePFA.API.Data
             {
                 bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
                 bool isFragile = !isAtRisk && fragileIds.Contains(etudiant.Id);
-                var  moduleIds = filiereModulesMap[etudiant.FiliereId];
+                var filiereCode = filiereCodeById[etudiant.FiliereId];
+                var semesters = niveauSemesters[filiereCode][etudiant.Niveau];
 
-                foreach (var moduleId in moduleIds)
+                foreach (var semestre in semesters)
                 {
-                    foreach (var semestre in new[] { "S1", "S2" })
+                    var key = (etudiant.FiliereId, semestre);
+                    if (!filiereSemModules.TryGetValue(key, out var moduleIds)) continue;
+
+                    foreach (var moduleId in moduleIds)
                     {
                         decimal noteExamen, noteTD, noteTP;
                         if (isAtRisk)
                         {
-                            // En difficulté : NoteFinal 2–9 (clairement < 10)
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 6  + 1),  2); // 1–7
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2); // 3–11
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2); // 3–11
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 6  + 1),  2);
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2);
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 3),  2);
                         }
                         else if (isFragile)
                         {
-                            // Fragile : NoteFinal 6–14 (zone grise autour de 10)
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 5),  2); // 5–13
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2); // 7–15
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2); // 7–15
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 5),  2);
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2);
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 7),  2);
                         }
                         else
                         {
-                            // Normal : NoteFinal 11–19 (clairement > 10)
-                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 10), 2); // 10–18
-                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
-                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2); // 12–20
+                            noteExamen = Math.Round((decimal)(noteRng.NextDouble() * 8  + 10), 2);
+                            noteTD     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2);
+                            noteTP     = Math.Round((decimal)(noteRng.NextDouble() * 8  + 12), 2);
                         }
 
                         notes.Add(new Note
@@ -238,19 +375,7 @@ namespace PlateformePFA.API.Data
             context.Notes.AddRange(notes);
             context.SaveChanges();
 
-            // ==========================================
-            // 6. ABSENCES — 3 profils cohérents avec les notes
-            //
-            //  À risque : 7–14 événements × 2–6h → total 14–84h (avg ~48h)
-            //             → dépasse le seuil 30h → taux DW ~37%
-            //
-            //  Fragile  : 3–8  événements × 2–4h → total 6–32h  (avg ~20h)
-            //             → zone grise : parfois > 18h, rarement > 30h
-            //             → taux DW ~16% → model incertain
-            //
-            //  Normal   : 0–3  événements × 2–4h → total 0–12h  (avg ~4h)
-            //             → clairement sous 18h → taux DW ~3%
-            // ==========================================
+            // Absences — same 3 profiles, pick random modules from student's semesters
             var absRng   = new Random(123);
             var absences = new List<Absence>();
 
@@ -258,7 +383,17 @@ namespace PlateformePFA.API.Data
             {
                 bool isAtRisk  = atRiskIds.Contains(etudiant.Id);
                 bool isFragile = !isAtRisk && fragileIds.Contains(etudiant.Id);
-                var  moduleIds = filiereModulesMap[etudiant.FiliereId];
+                var filiereCode = filiereCodeById[etudiant.FiliereId];
+                var semesters = niveauSemesters[filiereCode][etudiant.Niveau];
+
+                var allModIds = new List<int>();
+                foreach (var sem in semesters)
+                {
+                    var key = (etudiant.FiliereId, sem);
+                    if (filiereSemModules.TryGetValue(key, out var mids))
+                        allModIds.AddRange(mids);
+                }
+                if (allModIds.Count == 0) continue;
 
                 int nbEvents = isAtRisk  ? absRng.Next(7, 15)
                              : isFragile ? absRng.Next(3, 9)
@@ -270,10 +405,10 @@ namespace PlateformePFA.API.Data
                     absences.Add(new Absence
                     {
                         EtudiantId   = etudiant.Id,
-                        ModuleId     = moduleIds[absRng.Next(moduleIds.Count)],
-                        NombreHeures = isAtRisk  ? absRng.Next(1, 4) * 2   // 2, 4 ou 6 h
-                                     : isFragile ? absRng.Next(1, 3) * 2   // 2 ou 4 h
-                                     :             absRng.Next(1, 3) * 2,   // 2 ou 4 h
+                        ModuleId     = allModIds[absRng.Next(allModIds.Count)],
+                        NombreHeures = isAtRisk  ? absRng.Next(1, 4) * 2
+                                     : isFragile ? absRng.Next(1, 3) * 2
+                                     :             absRng.Next(1, 3) * 2,
                         Justifiee    = absRng.NextDouble() < (isAtRisk ? 0.15 : isFragile ? 0.35 : 0.55),
                         DateAbsence  = dateAbsence,
                         CreeLe       = dateAbsence,

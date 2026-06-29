@@ -52,7 +52,7 @@ const DENSITIES: { value: Density; label: string; desc: string }[] = [
 ]
 
 const ACCENT_COLORS: { value: Accent; label: string; hex: string }[] = [
-  { value: 'amber',   label: 'Ambre',    hex: '#f97316' },
+  { value: 'teal',    label: 'Sarcelle', hex: '#14b8a6' },
   { value: 'indigo',  label: 'Indigo',   hex: '#6366f1' },
   { value: 'emerald', label: 'Émeraude', hex: '#10b981' },
   { value: 'rose',    label: 'Rose',     hex: '#f43f5e' },

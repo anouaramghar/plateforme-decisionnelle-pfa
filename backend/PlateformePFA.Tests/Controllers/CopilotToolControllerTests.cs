@@ -1,6 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using PlateformePFA.API.Controllers;
+using PlateformePFA.API.Services;
 using PlateformePFA.Tests.Fixtures;
 using Xunit;
 
@@ -87,6 +95,53 @@ public class CopilotToolControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         (await res.Content.ReadAsStringAsync()).Should().Contain("\"ok\":false");
+    }
+
+    [Fact]
+    public async Task Query_dw_failure_returns_generic_error_without_exception_details()
+    {
+        using var ctx = _factory.CreateContext();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AGENT_INTERNAL_TOKEN"] = InternalToken,
+                ["COPILOT_DW_READONLY_CONN"] = "not a connection string",
+            })
+            .Build();
+        var controller = new CopilotToolController(
+            ctx,
+            config,
+            new RiskScorer(ctx),
+            NullLogger<CopilotToolController>.Instance)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, "1"),
+                        new Claim(ClaimTypes.Role, "Admin"),
+                    }, "test")),
+                },
+            },
+        };
+        controller.Request.Headers["X-Internal-Token"] = InternalToken;
+
+        var result = await controller.InvokeAsync(
+            "query_dw",
+            new CopilotToolController.ToolCallBody
+            {
+                Args = JsonSerializer.SerializeToElement(new { question = "combien d'etudiants ?" }),
+            },
+            CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = JsonSerializer.Serialize(ok.Value);
+        body.Should().Contain("\"ok\":false");
+        body.Should().Contain("DW unavailable");
+        body.Should().NotContain("connection string");
+        body.Should().NotContain("Keyword not supported");
     }
 
     // ── list_at_risk tests ──────────────────────────────────────────────────────

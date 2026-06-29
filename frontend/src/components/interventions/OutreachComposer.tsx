@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon'
 import { Pill } from '../ui/Pill'
 import { Modal } from '../ui/Modal'
 import {
-  createOutreachDraft, updateOutreachDraft, scheduleAndSendOutreach,
+  createOutreachDraft, updateOutreachDraft, scheduleAndSendOutreach, retryOutreach,
   type InterventionCase, type CaseCommunication,
 } from '../../services/interventions'
 import { generateOutreachDraft } from '../../services/outreachDraft'
@@ -183,6 +183,29 @@ export function OutreachComposer({ intervention, communications, canManage, onCh
             </button>
           </div>
         </Modal>
+      </div>
+    )
+  }
+
+  // ── Failed: show error + retry button ───────────────────────────────────────
+  if (status === 'Failed') {
+    return (
+      <div className="card p-4">
+        <div className="text-[13px] font-medium mb-2">Échec de l'envoi</div>
+        <div className="cap" style={{ color: 'var(--bad)' }}>{comm?.erreur}</div>
+        <button className="btn btn-sm btn-accent mt-3" onClick={() => retryOutreach(intervention.id, comm!.id).then(onChanged)}>
+          <Icon name="refresh" size={13} /> Renvoyer
+        </button>
+      </div>
+    )
+  }
+
+  // ── Queued: in-transit, no retry possible ────────────────────────────────────
+  if (status === 'Queued') {
+    return (
+      <div className="card p-4">
+        <div className="text-[13px] font-medium mb-2">Envoi en cours</div>
+        <div className="cap">Vérification de l'envoi en cours…</div>
       </div>
     )
   }

@@ -85,10 +85,12 @@ def _load_metadata(file_path: Path) -> dict:
 
 def _compute_risk(pipeline) -> ModelMetrics:
     """Computes or loads risk model metrics."""
+    from features import FEATURE_COLS
+
     if _EVAL_PARQUET.exists() and pipeline is not None:
         try:
             df = pd.read_parquet(_EVAL_PARQUET)
-            X = df[["moyenne_generale", "taux_absence", "nb_modules"]]
+            X = df[FEATURE_COLS]
             y_true = df["y_true"]
 
             y_pred = pipeline.predict(X)
@@ -144,10 +146,12 @@ def _compute_forecast(pipeline) -> ModelMetrics:
     from sklearn.metrics import mean_absolute_error, r2_score
     import numpy as np
 
+    FORECAST_COLS = ["moyenne_actuelle", "taux_absence", "nb_modules", "ecart_type_modules", "nb_echecs_anterieurs"]
+
     if _FORECAST_EVAL_PARQUET.exists() and pipeline is not None:
         try:
             df = pd.read_parquet(_FORECAST_EVAL_PARQUET)
-            X = df[["moyenne_actuelle", "taux_absence", "nb_modules"]]
+            X = df[FORECAST_COLS]
             y_true = df["y_true"]
 
             y_pred = pipeline.predict(X)

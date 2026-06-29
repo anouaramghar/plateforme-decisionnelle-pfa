@@ -42,3 +42,18 @@ Thumbs.db
 .worktrees/
 frontend/tsconfig.app.tsbuildinfo
 frontend/tsconfig.node.tsbuildinfo
+
+# Agent / dev tooling scratch dirs
+.claude/
+.codex-dev-logs/
+.devlogs/
+
+# Runtime logs
+*.err
+*.log
+
+# Raw ML datasets (large, not for Git)
+ml_service/data/raw/
+
+# Stray root lockfile (no root package.json; frontend has its own)
+/package-lock.json

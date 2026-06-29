@@ -73,10 +73,11 @@ def trained_artefacts(tmp_path):
     Trains a tiny real model, writes eval_set.parquet + metadata.json into
     tmp_path, and returns the tmp_path for assertions.
     """
-    from models.train_risk import generate_data, train, save_with_metadata
+    from models.train_risk import train, save_with_metadata
+    from features import generate_synthetic_risk_data as generate_data
 
-    df = generate_data(200, seed=0)
-    pipeline, X_test, y_test = train(df)
+    df = generate_data(200, 0)
+    pipeline, X_test, y_test, _ = train(df)
     save_with_metadata(pipeline, X_test, y_test, models_dir=tmp_path)
     return tmp_path
 
@@ -101,12 +102,12 @@ class TestMetricsHappyPath:
         # Provenance contract
         assert "data_source" in data["risk"]
         assert "split_strategy" in data["risk"]
-        assert data["risk"]["data_source"] in {"dw", "synthetic", "unknown"}
+        assert data["risk"]["data_source"] in {"dw", "synthetic", "unknown", "uci"}
         assert data["risk"]["split_strategy"] in {"out_of_time", "grouped_student", "unknown"}
 
         assert "data_source" in data["forecast"]
         assert "split_strategy" in data["forecast"]
-        assert data["forecast"]["data_source"] in {"dw", "synthetic", "unknown"}
+        assert data["forecast"]["data_source"] in {"dw", "synthetic", "unknown", "uci"}
         assert data["forecast"]["split_strategy"] in {"out_of_time", "grouped_student", "unknown"}
 
     def test_auc_in_range(self, client, monkeypatch, trained_artefacts):

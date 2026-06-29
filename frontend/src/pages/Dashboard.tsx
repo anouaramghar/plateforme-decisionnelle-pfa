@@ -3,7 +3,7 @@ import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pill } from '../components/ui/Pill'
-import { Icon } from '../components/ui/Icon'
+import { Icon, type IconName } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { RiskBar } from '../components/ui/RiskBar'
 import { SectionHeader } from '../components/ui/SectionHeader'
@@ -73,16 +73,27 @@ async function fetchActivity(): Promise<ActivityRow[]> {
   return res.data
 }
 
-const ACTION_ICONS: Record<string, string> = {
-  PredictionBatch: '⚡',
-  PredictionRun:   '⚡',
-  NotePubliee:     '📝',
-  DwSync:          '🔄',
-  RapportGenere:   '📄',
-  AlerteResolue:   '🔔',
-  AlerteCreated:   '🔔',
-  LoginOk:         '🔑',
-  MlRetrain:       '🧠',
+function actionIconName(action: string): IconName {
+  switch (action) {
+    case 'PredictionBatch':
+    case 'PredictionRun':
+      return 'spark'
+    case 'NotePubliee':
+      return 'edit'
+    case 'DwSync':
+      return 'refresh'
+    case 'RapportGenere':
+      return 'doc'
+    case 'AlerteResolue':
+    case 'AlerteCreated':
+      return 'bell'
+    case 'LoginOk':
+      return 'user'
+    case 'MlRetrain':
+      return 'brain'
+    default:
+      return 'clock'
+  }
 }
 
 function formatAction(a: ActivityRow): string {
@@ -364,14 +375,14 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Hero header */}
-      <div className="flex items-end justify-between gap-8 pb-2">
+      <div className="page-heading pb-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-3">
             <span className="pill pill-accent" style={{ padding: '2px 8px' }}>
               <span className="pill-dot live-dot" style={{ background: 'currentColor' }} />
               {filiereLabel}
             </span>
-            <span className="cap">Semestre 2 · 2025/2026</span>
+            <span className="cap">{new Date().getMonth() >= 8 ? `Semestre courant · ${new Date().getFullYear()}/${new Date().getFullYear() + 1}` : `Semestre courant · ${new Date().getFullYear() - 1}/${new Date().getFullYear()}`}</span>
             <span style={{ color: 'var(--text-4)' }}>·</span>
             <span className="cap">{today}</span>
           </div>
@@ -392,7 +403,7 @@ export default function Dashboard() {
             prioriser cette semaine.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="page-actions">
           <div
             className="flex items-center rounded-lg overflow-hidden"
             style={{ border: '1px solid var(--border-2)', background: 'var(--surface)' }}
@@ -699,7 +710,11 @@ export default function Dashboard() {
                     className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 relative z-10"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
                   >
-                    {ACTION_ICONS[a.action] ?? '•'}
+                    <Icon
+                      name={actionIconName(a.action)}
+                      size={14}
+                      style={{ color: 'var(--text-3)' }}
+                    />
                   </div>
                   <div className="flex-1 min-w-0 pt-0.5">
                     <div className="text-[12.5px] leading-snug">
@@ -844,7 +859,11 @@ export default function Dashboard() {
                         className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 relative z-10 text-[14px]"
                         style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
                       >
-                        {ACTION_ICONS[a.action] ?? '•'}
+                        <Icon
+                          name={actionIconName(a.action)}
+                          size={14}
+                          style={{ color: 'var(--text-3)' }}
+                        />
                       </div>
                       <div className="flex-1 min-w-0 pt-0.5">
                         <div className="text-[12.5px] leading-snug">

@@ -245,6 +245,8 @@ public class PredictionsControllerTests : IClassFixture<TestWebFactory>
             root.GetProperty("nb_modules").GetInt32().Should().Be(1);
             root.GetProperty("moyenne_generale").GetDecimal().Should().Be(12.2m);
             root.GetProperty("taux_absence").GetDouble().Should().Be(0.0);
+            root.GetProperty("ecart_type_modules").GetDouble().Should().Be(0.0);
+            root.GetProperty("nb_echecs_anterieurs").GetInt32().Should().Be(0);
         }
     }
 

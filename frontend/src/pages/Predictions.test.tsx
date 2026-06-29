@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react'
-import { vi, test, expect } from 'vitest'
+import { beforeEach, vi, test, expect } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import Predictions from './Predictions'
+
+let metricsDataSource = 'synthetic'
 
 // Mock useTheme
 vi.mock('../context/ThemeContext', () => ({
@@ -63,7 +65,7 @@ vi.mock('@tanstack/react-query', async () => {
           data: {
             risk: {
               auc: 0.85,
-              dataSource: 'synthetic',
+              dataSource: metricsDataSource,
               splitStrategy: 'grouped_student',
               modelVersion: '1.7.0',
               nSamples: 200,
@@ -72,7 +74,7 @@ vi.mock('@tanstack/react-query', async () => {
             },
             forecast: {
               mae: 1.2,
-              dataSource: 'synthetic',
+              dataSource: metricsDataSource,
               splitStrategy: 'grouped_student',
               modelVersion: '1.7.0',
               nSamples: 200,
@@ -87,7 +89,7 @@ vi.mock('@tanstack/react-query', async () => {
             modelVersion: '1.7.0',
             trainedAt: '2026-06-22T02:00:00Z',
             source: 'computed',
-            dataSource: 'synthetic',
+            dataSource: metricsDataSource,
             splitStrategy: 'grouped_student',
           },
           isLoading: false,
@@ -101,6 +103,10 @@ vi.mock('@tanstack/react-query', async () => {
       isPending: false,
     }),
   }
+})
+
+beforeEach(() => {
+  metricsDataSource = 'synthetic'
 })
 
 test('renders synthetic data warning when metrics data source is synthetic', () => {
@@ -125,4 +131,25 @@ test('renders synthetic data warning when metrics data source is synthetic', () 
       /Modèle de démonstration entraîné sur des données synthétiques — ne pas utiliser pour une décision pédagogique/i
     )
   ).toBeInTheDocument()
+})
+
+test('renders non-DW warning when metrics data source is uci', () => {
+  metricsDataSource = 'uci'
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <Predictions />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+
+  expect(screen.getByText(/Modèle non entraîné sur PFA_DW/i)).toBeInTheDocument()
 })

@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 export type Theme = 'light' | 'dark'
 export type Density = 'compact' | 'comfortable' | 'spacious'
-export type Accent = 'amber' | 'indigo' | 'emerald' | 'rose'
+export type Accent = 'teal' | 'indigo' | 'emerald' | 'rose'
 
 const ACCENTS: Record<Accent, Record<string, string>> = {
-  amber:   { 50:'#fff7ed', 100:'#ffedd5', 200:'#fed7aa', 300:'#fdba74', 400:'#fb923c', 500:'#f97316', 600:'#ea580c', 700:'#c2410c', 800:'#9a3412', 900:'#7c2d12' },
+  teal:    { 50:'#f0fdfa', 100:'#ccfbf1', 200:'#99f6e4', 300:'#5eead4', 400:'#2dd4bf', 500:'#14b8a6', 600:'#0d9488', 700:'#0f766e', 800:'#115e59', 900:'#134e4a' },
   indigo:  { 50:'#eef2ff', 100:'#e0e7ff', 200:'#c7d2fe', 300:'#a5b4fc', 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3', 900:'#312e81' },
   emerald: { 50:'#ecfdf5', 100:'#d1fae5', 200:'#a7f3d0', 300:'#6ee7b7', 400:'#34d399', 500:'#10b981', 600:'#059669', 700:'#047857', 800:'#065f46', 900:'#064e3b' },
   rose:    { 50:'#fff1f2', 100:'#ffe4e6', 200:'#fecdd3', 300:'#fda4af', 400:'#fb7185', 500:'#f43f5e', 600:'#e11d48', 700:'#be123c', 800:'#9f1239', 900:'#881337' },
@@ -35,6 +35,17 @@ function applyToDocument(theme: Theme, density: Density, accent: Accent) {
   Object.entries(palette).forEach(([k, v]) => root.style.setProperty(`--accent-${k}`, v))
 }
 
+function readAccent(): Accent {
+  const stored = localStorage.getItem('pfa.accent')
+  if (stored === 'amber') {
+    localStorage.setItem('pfa.accent', 'teal')
+    return 'teal'
+  }
+  return stored === 'indigo' || stored === 'emerald' || stored === 'rose' || stored === 'teal'
+    ? stored
+    : 'teal'
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // Read once from localStorage so the toggle survives reloads. Density and
   // sidebar collapse are user-preference, not security-sensitive — fine to persist.
@@ -44,9 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [density, setDensityState] = useState<Density>(
     (localStorage.getItem('pfa.density') as Density) || 'comfortable',
   )
-  const [accent, setAccentState] = useState<Accent>(
-    (localStorage.getItem('pfa.accent') as Accent) || 'amber',
-  )
+  const [accent, setAccentState] = useState<Accent>(readAccent)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
     localStorage.getItem('pfa.sidebar') === 'collapsed',
   )
