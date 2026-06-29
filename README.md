@@ -11,10 +11,10 @@ BI & predictive-analytics platform for student performance monitoring at ENIAD B
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19 · TypeScript · Vite · TanStack Query v5 · ApexCharts · Tailwind |
+| Frontend | React 18 · TypeScript · Vite · TanStack Query v5 · ApexCharts · Tailwind |
 | Backend | ASP.NET Core 8 · EF Core · SQL Server · JWT Bearer |
 | ML Service | FastAPI 0.111 · scikit-learn · XGBoost · joblib |
-| Agent Service | FastAPI · NVIDIA NIM (OpenAI-compatible) · httpx · pydantic 2 |
+| Agent Service | Node.js · Express · CopilotKit Runtime · NVIDIA NIM (OpenAI-compatible) |
 | Infrastructure | Docker Compose · Nginx · SQL Server 2022 |
 
 ## Services
@@ -119,11 +119,12 @@ npm run build
 - 6 report templates (performance, risk, notes, absences, alerts, ML summary)
 - PDF / XLSX / CSV export, auth-aware download
 
-### ENIAD Copilot (in development)
+### ENIAD Copilot
 - AI assistant backed by NVIDIA NIM (LLaMA 3.3 70B)
-- Tool-calling agent loop with role filtering
-- Current tools: `get_student`, `list_at_risk`
-- SSE streaming via `POST /api/copilot/chat`
+- CopilotKit runtime with authenticated streaming at `/api/copilotkit`
+- Tool-calling agent loop with role filtering and backend-gated callbacks
+- Current tools: `get_student`, `list_at_risk`, `query_dw`, `draft_alert`, `explain_risk`
+- Frontend side panel mounted after login with a short-lived Copilot session cookie
 
 ---
 
@@ -137,7 +138,7 @@ Two databases on the same SQL Server instance:
 | `PFA_DB` | OLTP — daily operations (normalized) |
 | `PFA_DW` | Data Warehouse — BI queries (star schema: FaitNotes + DimEtudiant + DimModule + DimTemps) |
 
-ETL: `POST /api/admin/sync-dw` executes `database/etl.sql` MERGE statements.
+ETL: `POST /api/admin/sync-dw` executes the API-bundled `backend/PlateformePFA.API/Scripts/etl.sql`. `database/etl.sql` is the manual SQL copy and must match it.
 
 ### Security
 - JWT Bearer (24h) + DB-backed refresh tokens (7 days, single-use rotation)
@@ -159,14 +160,14 @@ See `.env.example` for the full annotated list. Required at minimum:
 - **Copilot sessions:** the chat stream is gated by a short-lived (15 min) `pfa_copilot_session` HTTP-only cookie (`SameSite=Strict`, path `/api/copilotkit`). The frontend mints it via `POST /api/copilot/session` after login and clears it via `DELETE /api/copilot/session` on logout. The runtime rejects any inference request without a verified cookie (401); only `GET /health` is anonymous.
 - **Liveness vs readiness:** `/health` is liveness only. `/ready` reports `Database.CanConnectAsync()` **plus** the `dbo.SchemaState` core marker — the backend Docker healthcheck and nginx startup gate target `/ready`, so traffic is only admitted after schema provisioning completes.
 - **DB initialization:** `database/entrypoint.sh` runs `init.sql`, `init_dw.sql`, and `copilot_readonly.sql` (all idempotent, `-b`) on **every** boot — existing or partial volumes are re-applied, not skipped. The `dbo.SchemaState` row is written only after every script succeeds; the Compose DB healthcheck requires it.
-- **Model provenance:** `/api/predictions/metrics` carries `data_source` (`dw` | `synthetic`), `split_strategy`, `trained_at`, and evaluated periods. When `data_source === 'synthetic'`, the Predictions page shows a non-dismissible demo-data warning — synthetic metrics are not production validation.
+- **Model provenance:** `/api/predictions/metrics` carries `data_source` (`dw` | `uci` | `synthetic` | `unknown`), `split_strategy`, `trained_at`, and evaluated periods. The Predictions page warns whenever the active model source is not `dw`.
 - **Retraining prerequisites:** honest training needs real `PFA_DW` data (run the ETL first). Risk labels are the *next-period* observed outcome and forecasts use *prior-period* features only; evaluation holds out the latest period (or `GroupShuffleSplit` by student when only one period exists). Without DW data the service falls back to clearly-labelled synthetic training.
 - **ETL conflict response:** `POST /api/admin/sync-dw` takes an exclusive app-lock and runs as one transaction. A concurrent call returns **HTTP 409** rather than producing duplicate `FaitNotes` grain rows.
 - **Container architecture:** the ML image derives the Microsoft ODBC repo arch from `dpkg --print-architecture`, so it builds on both `amd64` and `arm64` hosts. If a target lacks an `msodbcsql18` package, pin `platform: linux/amd64` for `ml-service` in Compose.
 
 ---
 
-## Project Status (2026-05-30)
+## Project Status (2026-06-29)
 
 | Component | Status |
 |---|---|
@@ -174,7 +175,8 @@ See `.env.example` for the full annotated list. Required at minimum:
 | Database OLTP + DW | ✅ Complete |
 | Backend API | ✅ Complete |
 | ML Service | ✅ Complete |
-| Frontend — all 5 pages | ✅ Complete |
-| Copilot (CopilotKit runtime) | 🔄 5 tools: `get_student`, `list_at_risk`, `query_dw`, `draft_alert`, `explain_risk` |
-| Copilot frontend panel | ❌ Not started |
-| End-to-end tests | ⏳ Pending |
+| Frontend application | ✅ Complete |
+| Copilot runtime + tools | ✅ Integrated: `get_student`, `list_at_risk`, `query_dw`, `draft_alert`, `explain_risk` |
+| Copilot frontend panel | ✅ Integrated |
+| Automated tests | ✅ Backend, ML, and frontend unit suites passing |
+| Playwright end-to-end tests | ⏳ Available, pending full flow coverage |
