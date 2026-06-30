@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { OutreachComposer } from '../components/interventions/OutreachComposer'
 import { MeetingOutcomeForm } from '../components/interventions/MeetingOutcomeForm'
 import type { InterventionCase, CaseCommunication } from '../services/interventions'
+import { nextActionLabel } from './CaseDetail'
 
 // Mock the outreach service functions. The components call these; we assert
 // they were called with the right payload and never on partial input.
@@ -46,6 +47,20 @@ const draftCommunication: CaseCommunication = {
   sujet: 'Invitation', corps: 'Bonjour, rendez-vous à l’ENIAD.',
   status: 'Draft', erreur: null, creeLe: '2026-06-24T10:00:00Z', envoyeLe: null,
 }
+
+describe('nextActionLabel', () => {
+  it('returns the simplest admin next action for each case state', () => {
+    expect(nextActionLabel({ ...baseCase, etat: 'Open', ownerId: null })).toBe('Assigner')
+    expect(nextActionLabel({ ...baseCase, etat: 'Open', ownerId: 2 })).toBe('Envoyer invitation')
+    expect(nextActionLabel({
+      ...baseCase,
+      etat: 'WaitingStudent',
+      meetingScheduledFor: '2026-07-01T10:00:00Z',
+      meetingAttendance: null,
+    })).toBe('Saisir resultat')
+    expect(nextActionLabel({ ...baseCase, etat: 'Resolved' })).toBe('Consulter')
+  })
+})
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })

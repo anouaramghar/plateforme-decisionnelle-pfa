@@ -22,6 +22,19 @@ const PRIORITE_TONE: Record<string, PillTone> = {
 // the generic transition buttons. Other states keep the manual controls.
 const PRIMARY_OUTREACH_STATES = ['Open', 'InProgress', 'WaitingStudent', 'Resolved']
 
+export function nextActionLabel(c: {
+  etat: string
+  ownerId: number | null
+  meetingScheduledFor?: string | null
+  meetingAttendance?: string | null
+}) {
+  if (c.etat === 'Open' && c.ownerId == null) return 'Assigner'
+  if (c.etat === 'WaitingStudent' || (c.meetingScheduledFor && !c.meetingAttendance)) return 'Saisir resultat'
+  if (c.etat === 'Resolved' || c.etat === 'Closed') return 'Consulter'
+  if (c.etat === 'Open' || c.etat === 'InProgress') return 'Envoyer invitation'
+  return 'Gerer'
+}
+
 export default function CaseDetail() {
   const { id } = useParams()
   const caseId = Number(id)
@@ -101,6 +114,7 @@ export default function CaseDetail() {
   const nextStates = c.etat === 'InProgress'
     ? rawNextStates.filter(s => s !== 'Resolved')
     : rawNextStates
+  const nextAction = nextActionLabel(c)
 
   return (
     <div className="space-y-4">
@@ -128,6 +142,15 @@ export default function CaseDetail() {
           <div className="cap mt-2">Résultat : {c.outcome} — {c.resolutionSummary}</div>
         )}
       </div>
+
+      <section className="card p-4" role="region" aria-label="Action principale">
+        <div className="cap mb-1">Prochaine action</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[15px] font-semibold">{nextAction}</div>
+          {nextAction === 'Saisir resultat' && <Pill tone="info">Rendez-vous</Pill>}
+          {nextAction === 'Consulter' && <Pill tone="ok">Termine</Pill>}
+        </div>
+      </section>
 
       {/* Primary outreach path: composer + meeting form replace manual transitions */}
       {PRIMARY_OUTREACH_STATES.includes(c.etat) && (
