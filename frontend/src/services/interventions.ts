@@ -108,6 +108,19 @@ export interface EmailTemplate {
   corps: string
 }
 
+export type TeacherFollowUpColumn = 'A voir' | 'En suivi' | 'Traite'
+
+export interface TeacherFollowUpCard {
+  caseId: number
+  etudiantId: number
+  studentName: string
+  motif: string
+  priority: string
+  column: TeacherFollowUpColumn
+  lastAction: string | null
+  creeLe: string
+}
+
 interface Paginated<T> { items: T[]; total: number; page: number; pageSize: number }
 
 // ── Case workflow ────────────────────────────────────────────────────────────
@@ -145,6 +158,18 @@ export const OUTCOMES = [
 
 export const fetchTriage = () =>
   api.get<TriageGroup[]>('/alertes/triage').then(r => r.data)
+
+export const fetchTeacherFollowUps = () =>
+  api.get<TeacherFollowUpCard[]>('/enseignant/suivi').then(r => r.data)
+
+export const addTeacherObservation = (caseId: number, contenu: string) =>
+  api.post(`/enseignant/suivi/${caseId}/observation`, { contenu })
+
+export const markTeacherTreated = (caseId: number, contenu: string) =>
+  api.post(`/enseignant/suivi/${caseId}/treated`, { contenu })
+
+export const requestTeacherIntervention = (caseId: number, contenu: string) =>
+  api.post(`/enseignant/suivi/${caseId}/request-intervention`, { contenu })
 
 export const dismissSignal = (id: number, raison: string) =>
   api.patch(`/alertes/${id}/dismiss`, { raison })

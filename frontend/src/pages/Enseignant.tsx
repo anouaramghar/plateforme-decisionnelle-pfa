@@ -4,9 +4,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
+import { Modal } from '../components/ui/Modal'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { buildNotePayload, upsertNote } from '../services/notes'
+import {
+  addTeacherObservation,
+  fetchTeacherFollowUps,
+  markTeacherTreated,
+  requestTeacherIntervention,
+  type TeacherFollowUpCard,
+} from '../services/interventions'
 import type { AxiosError } from 'axios'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -70,6 +78,9 @@ async function fetchAbsences(etudiantId: number): Promise<AbsenceRow[]> {
 // ── Component ────────────────────────────────────────────────────────────────
 
 type ActiveTab = 'notes' | 'absences'
+type FollowUpAction = 'observation' | 'request' | 'treated'
+
+const FOLLOW_UP_COLUMNS = ['A voir', 'En suivi', 'Traite'] as const
 
 export default function Enseignant() {
   const { user } = useAuth()
@@ -96,6 +107,8 @@ export default function Enseignant() {
   const [absSaving, setAbsSaving] = useState(false)
   const [absSuccess, setAbsSuccess] = useState(false)
   const [absError, setAbsError] = useState<string | null>(null)
+  const [followUpAction, setFollowUpAction] = useState<{ card: TeacherFollowUpCard; action: FollowUpAction } | null>(null)
+  const [followUpText, setFollowUpText] = useState('')
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -107,6 +120,12 @@ export default function Enseignant() {
   const { data: etudiants = [], isLoading: loadingEtudiants } = useQuery({
     queryKey: ['enseignant-etudiants'],
     queryFn: fetchMesEtudiants,
+    enabled: !!monModule,
+  })
+
+  const { data: followUps = [] } = useQuery({
+    queryKey: ['enseignant-suivi'],
+    queryFn: fetchTeacherFollowUps,
     enabled: !!monModule,
   })
 
@@ -178,6 +197,24 @@ export default function Enseignant() {
     }
   }
 
+  const saveFollowUp = async () => {
+    if (!followUpAction) return
+    const contenu = followUpText.trim()
+    if (followUpAction.action === 'observation' && !contenu) return
+
+    if (followUpAction.action === 'observation') {
+      await addTeacherObservation(followUpAction.card.caseId, contenu)
+    } else if (followUpAction.action === 'request') {
+      await requestTeacherIntervention(followUpAction.card.caseId, contenu)
+    } else {
+      await markTeacherTreated(followUpAction.card.caseId, contenu)
+    }
+
+    setFollowUpAction(null)
+    setFollowUpText('')
+    queryClient.invalidateQueries({ queryKey: ['enseignant-suivi'] })
+  }
+
   // ── Filter ────────────────────────────────────────────────────────────────
 
   const filtered = q
@@ -224,6 +261,47 @@ export default function Enseignant() {
           </div>
         )}
       </div>
+
+      <section className="space-y-3">
+        <div>
+          <div className="cap mb-1">Interventions legeres</div>
+          <h2 className="text-[18px] font-semibold tracking-tight">Suivi etudiants</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {FOLLOW_UP_COLUMNS.map(column => {
+            const items = followUps.filter(f => f.column === column)
+            return (
+              <section key={column} role="region" aria-label={column} className="card overflow-hidden">
+                <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <h3 className="text-[13px] font-semibold">{column}</h3>
+                  <span className="cap font-mono">{items.length}</span>
+                </div>
+                {items.length === 0 && <div className="px-3 py-6 cap text-center">Aucun suivi.</div>}
+                {items.map(card => (
+                  <div key={card.caseId} className="px-3 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div className="text-[12.5px] font-medium">{card.studentName}</div>
+                    <div className="cap mt-1">{card.motif}</div>
+                    {card.lastAction && <div className="text-[12px] mt-2" style={{ color: 'var(--text-2)' }}>{card.lastAction}</div>}
+                    {column !== 'Traite' && (
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        <button className="btn btn-sm" onClick={() => { setFollowUpAction({ card, action: 'observation' }); setFollowUpText('') }}>
+                          <Icon name="plus" size={13} /> Ajouter observation
+                        </button>
+                        <button className="btn btn-sm" onClick={() => { setFollowUpAction({ card, action: 'request' }); setFollowUpText('') }}>
+                          <Icon name="bookmark" size={13} /> Demander intervention
+                        </button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => { setFollowUpAction({ card, action: 'treated' }); setFollowUpText('') }}>
+                          <Icon name="check" size={13} /> Marquer traite
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )
+          })}
+        </div>
+      </section>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -511,6 +589,38 @@ export default function Enseignant() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={followUpAction !== null}
+        onClose={() => setFollowUpAction(null)}
+        title={
+          followUpAction?.action === 'request'
+            ? 'Demander intervention'
+            : followUpAction?.action === 'treated'
+              ? 'Marquer traite'
+              : 'Ajouter observation'
+        }
+      >
+        <label className="flex flex-col gap-1">
+          <span className="cap">Observation</span>
+          <textarea
+            className="input"
+            rows={3}
+            value={followUpText}
+            onChange={e => setFollowUpText(e.target.value)}
+          />
+        </label>
+        <div className="flex justify-end gap-2 mt-3">
+          <button className="btn btn-sm" onClick={() => setFollowUpAction(null)}>Annuler</button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={saveFollowUp}
+            disabled={followUpAction?.action === 'observation' && !followUpText.trim()}
+          >
+            Enregistrer
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
