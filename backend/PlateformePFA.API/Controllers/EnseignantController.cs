@@ -67,6 +67,7 @@ namespace PlateformePFA.API.Controllers
             }
 
             if (marker is not null) content = $"{marker} {content}";
+            if (content.Length > 2000) return BadRequest(new { message = "Contenu trop long." });
 
             var note = new CaseNote
             {
@@ -202,7 +203,7 @@ namespace PlateformePFA.API.Controllers
                 var treated = c.Etat is CaseWorkflowState.Resolved or CaseWorkflowState.Closed ||
                               caseNotes.Any(n => n.AuteurId == teacher.Id &&
                                                  n.Contenu.StartsWith(TreatedMarker, StringComparison.Ordinal));
-                var followed = caseNotes.Any(n => n.AuteurId == teacher.Id);
+                var followed = c.Etat != CaseWorkflowState.Open || caseNotes.Any(n => n.AuteurId == teacher.Id);
                 var column = treated ? "Traite" : followed ? "En suivi" : "A voir";
 
                 return new TeacherFollowUpCardDto(

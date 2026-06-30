@@ -49,7 +49,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
         return client;
     }
 
-    private int CreateCase(string niveau = "CI1")
+    private int CreateCase(string niveau = "CI1", string etat = CaseWorkflowState.Open)
     {
         using var ctx = _factory.CreateContext();
         var fil = ctx.Filieres.Single(f => f.Code == "GI");
@@ -72,7 +72,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
             FiliereId = etu.FiliereId,
             Motif = "Besoin de suivi",
             Priorite = "High",
-            Etat = CaseWorkflowState.Open,
+            Etat = etat,
             CreeLe = DateTime.UtcNow.AddMinutes(seq),
         };
         ctx.InterventionCases.Add(c);
@@ -99,6 +99,19 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
     }
 
     [Fact]
+    public async Task Get_suivi_returns_en_suivi_for_in_progress_case_without_teacher_note()
+    {
+        var caseId = CreateCase(etat: CaseWorkflowState.InProgress);
+        var client = await TeacherClientAsync();
+
+        var res = await client.GetAsync("/api/enseignant/suivi");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await res.Content.ReadFromJsonAsync<List<FollowUpCard>>();
+        cards!.Should().Contain(c => c.CaseId == caseId && c.Column == "En suivi");
+    }
+
+    [Fact]
     public async Task Observation_creates_public_note()
     {
         var caseId = CreateCase();
@@ -112,6 +125,20 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
         var note = ctx.CaseNotes.Single(n => n.CaseId == caseId);
         note.Contenu.Should().Be("Observation utile");
         note.IsPrivate.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Observation_too_long_returns_bad_request()
+    {
+        var caseId = CreateCase();
+        var client = await TeacherClientAsync();
+
+        var res = await client.PostAsJsonAsync($"/api/enseignant/suivi/{caseId}/observation",
+            new { contenu = new string('x', 2001) });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var ctx = _factory.CreateContext();
+        ctx.CaseNotes.Should().NotContain(n => n.CaseId == caseId);
     }
 
     [Fact]
