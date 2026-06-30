@@ -125,14 +125,16 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
     }
 
     [Fact]
-    public async Task Get_suivi_returns_traite_for_resolved_case()
+    public async Task Get_suivi_returns_traite_for_resolved_or_closed_case()
     {
-        var caseId = CreateCase(etat: CaseWorkflowState.Resolved);
+        var resolvedCaseId = CreateCase(etat: CaseWorkflowState.Resolved);
+        var closedCaseId = CreateCase(etat: CaseWorkflowState.Closed);
         var client = await TeacherClientAsync();
 
         var cards = await client.GetFromJsonAsync<List<FollowUpCard>>("/api/enseignant/suivi");
 
-        cards!.Should().Contain(c => c.CaseId == caseId && c.Column == "Traite");
+        cards!.Should().Contain(c => c.CaseId == resolvedCaseId && c.Column == "Traite");
+        cards.Should().Contain(c => c.CaseId == closedCaseId && c.Column == "Traite");
     }
 
     [Fact]
