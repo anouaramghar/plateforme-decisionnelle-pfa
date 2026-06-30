@@ -13,21 +13,23 @@ const PRIORITE_TONE: Record<string, PillTone> = {
   Critical: 'bad', High: 'bad', Medium: 'warn', Low: 'neutral',
 }
 
-// The four outreach stages the queue is organized around. Each maps a backend
-// state to the staff-facing action label. Non-primary states (Escalated,
-// Monitoring, Closed) are shown in a separate section so existing cases are
-// never hidden.
 const PRIMARY_STAGES = [
-  { state: 'Open',           label: 'À contacter' },
-  { state: 'InProgress',     label: 'Email préparé' },
-  { state: 'WaitingStudent', label: 'Entretien planifié' },
-  { state: 'Resolved',       label: 'Entretien réalisé' },
+  { key: 'new',      label: 'Nouveau' },
+  { key: 'contact',  label: 'A contacter' },
+  { key: 'meeting',  label: 'Rendez-vous' },
+  { key: 'resolved', label: 'Resolu' },
 ] as const
 
-const SECONDARY_STATES = ['Escalated', 'Monitoring', 'Closed']
-
+type StageKey = typeof PRIMARY_STAGES[number]['key']
 type OwnerFilter = 'all' | 'assigned' | 'unassigned'
-type StageFilter = 'all' | 'Open' | 'InProgress' | 'WaitingStudent' | 'Resolved'
+type StageFilter = 'all' | StageKey
+
+function stageFor(c: InterventionCase): StageKey {
+  if (c.etat === 'Resolved' || c.etat === 'Closed') return 'resolved'
+  if (c.etat === 'WaitingStudent' || (c.meetingScheduledFor && !c.meetingAttendance)) return 'meeting'
+  if (c.etat === 'Open' && c.ownerId == null) return 'new'
+  return 'contact'
+}
 
 export default function Cases() {
   const navigate = useNavigate()
@@ -49,7 +51,6 @@ export default function Cases() {
   const [priorite, setPriorite] = useState<string>('all')
   const [stage, setStage] = useState<StageFilter>('all')
 
-  // filiereId → code map so the dropdown can filter cases by their FiliereId.
   const filiereIdByCode = useMemo(() => {
     const m = new Map<string, number>()
     for (const f of filieres) m.set(f.code, f.id)
@@ -57,7 +58,7 @@ export default function Cases() {
   }, [filieres])
 
   const passCommon = (c: InterventionCase) => {
-    if (owner === 'assigned'   && c.ownerId == null) return false
+    if (owner === 'assigned' && c.ownerId == null) return false
     if (owner === 'unassigned' && c.ownerId != null) return false
     if (priorite !== 'all' && c.priorite !== priorite) return false
     if (filiereCode !== 'all') {
@@ -70,13 +71,9 @@ export default function Cases() {
   const primaryColumns = PRIMARY_STAGES.map(s => ({
     ...s,
     items: cases
-      .filter(c => c.etat === s.state && passCommon(c) && (stage === 'all' || stage === s.state))
+      .filter(c => stageFor(c) === s.key && passCommon(c) && (stage === 'all' || stage === s.key))
       .sort((a, b) => +new Date(b.creeLe) - +new Date(a.creeLe)),
   }))
-
-  const secondary = cases
-    .filter(c => SECONDARY_STATES.includes(c.etat) && passCommon(c))
-    .sort((a, b) => +new Date(b.creeLe) - +new Date(a.creeLe))
 
   return (
     <div className="space-y-4">
@@ -112,7 +109,7 @@ export default function Cases() {
           <span className="cap">Étape</span>
           <select className="input" value={stage} onChange={e => setStage(e.target.value as StageFilter)}>
             <option value="all">Toutes les étapes</option>
-            {PRIMARY_STAGES.map(s => <option key={s.state} value={s.state}>{s.label}</option>)}
+            {PRIMARY_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </label>
         {(owner !== 'all' || filiereCode !== 'all' || priorite !== 'all' || stage !== 'all') && (
@@ -134,9 +131,9 @@ export default function Cases() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {primaryColumns.map(col => (
           <section
-            key={col.state}
+            key={col.key}
             role="region"
-            aria-label={`${col.label}`}
+            aria-label={col.label}
             className="card min-w-0 overflow-hidden flex flex-col"
             style={{ minHeight: 200 }}
           >
@@ -145,7 +142,7 @@ export default function Cases() {
               <span className="cap font-mono">{col.items.length}</span>
             </div>
             <div className="flex-1">
-              {isLoading && <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Chargement…</div>}
+              {isLoading && <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Chargement...</div>}
               {!isLoading && col.items.length === 0 && (
                 <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Aucune intervention.</div>
               )}
@@ -157,18 +154,6 @@ export default function Cases() {
         ))}
       </div>
 
-      {secondary.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-            <h2 className="text-[13px] font-semibold">Autres états — Suivi / Escaladé / Clôturé</h2>
-            <span className="cap font-mono">{secondary.length}</span>
-          </div>
-          {secondary.map(c => (
-            <CaseCard key={c.id} c={c} onClick={() => navigate(`/cases/${c.id}`)} list />
-          ))}
-        </div>
-      )}
-
       {!isLoading && !isError && cases.length === 0 && (
         <Empty title="Aucune intervention" hint="Les cas ouverts depuis la file de triage apparaîtront ici." icon="bookmark" />
       )}
@@ -176,7 +161,7 @@ export default function Cases() {
   )
 }
 
-function CaseCard({ c, onClick, list }: { c: InterventionCase; onClick: () => void; list?: boolean }) {
+function CaseCard({ c, onClick }: { c: InterventionCase; onClick: () => void }) {
   const student = c.etudiant ? `${c.etudiant.prenom} ${c.etudiant.nom}` : `Étudiant #${c.etudiantId}`
   const meeting = c.meetingScheduledFor
   const due = c.dueDate
@@ -192,7 +177,7 @@ function CaseCard({ c, onClick, list }: { c: InterventionCase; onClick: () => vo
         <Pill tone={PRIORITE_TONE[c.priorite] ?? 'neutral'} dot>
           {PRIORITE_LABELS[c.priorite] ?? c.priorite}
         </Pill>
-        {!list && <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>}
+        <Pill tone="info">{ETAT_LABELS[c.etat] ?? c.etat}</Pill>
       </div>
       <div className="min-w-0">
         <div className="line-clamp-2 text-[12.5px] font-medium" title={c.motif}>{c.motif}</div>

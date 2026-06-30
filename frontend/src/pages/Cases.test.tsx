@@ -81,40 +81,49 @@ describe('Cases intervention queue', () => {
     ])
   })
 
-  it('renders the four primary stage columns with outreach labels', async () => {
+  it('renders the four admin next-action columns', async () => {
     renderCases()
     expect(await screen.findByRole('heading', { name: 'Interventions' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'À contacter' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Email préparé' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Entretien planifié' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Entretien réalisé' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Nouveau' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'A contacter' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Rendez-vous' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Resolu' })).toBeInTheDocument()
   })
 
-  it('places each case in its primary stage column', async () => {
+  it('places each case in its next-action column', async () => {
     renderCases()
     expect(await screen.findByRole('heading', { name: 'Interventions' })).toBeInTheDocument()
 
     // Wait for the first case card to appear (cases load async via useQuery).
     expect(await screen.findByRole('button', { name: /Sara Amrani/ })).toBeInTheDocument()
 
-    const contact = screen.getByRole('region', { name: /À contacter/ })
+    const contact = screen.getByRole('region', { name: /A contacter/ })
     expect(within(contact).getByRole('button', { name: /Sara Amrani/ })).toBeInTheDocument()
+    expect(within(contact).getByRole('button', { name: /Yassine Bennani/ })).toBeInTheDocument()
 
-    const prepared = screen.getByRole('region', { name: /Email préparé/ })
-    expect(within(prepared).getByRole('button', { name: /Yassine Bennani/ })).toBeInTheDocument()
-
-    const scheduled = screen.getByRole('region', { name: /Entretien planifié/ })
+    const scheduled = screen.getByRole('region', { name: /Rendez-vous/ })
     expect(within(scheduled).getByRole('button', { name: /Imane Cherkaoui/ })).toBeInTheDocument()
 
-    const held = screen.getByRole('region', { name: /Entretien réalisé/ })
+    const held = screen.getByRole('region', { name: /Resolu/ })
     expect(within(held).getByRole('button', { name: /Omar Tazi/ })).toBeInTheDocument()
+    expect(within(held).getByRole('button', { name: /Karim Alaoui/ })).toBeInTheDocument()
   })
 
-  it('keeps non-primary states in a separate section so they are never hidden', async () => {
+  it('keeps escalated active cases visible on the board', async () => {
     renderCases()
     expect(await screen.findByRole('button', { name: /Nadia Fassi/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Autres états/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Karim Alaoui/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: /A contacter/ })).getByRole('button', { name: /Nadia Fassi/ })).toBeInTheDocument()
+  })
+
+  it('puts unassigned open cases in Nouveau and assigned open cases in A contacter', async () => {
+    fetchCasesMock.mockResolvedValue([
+      buildCase({ id: 21, etat: 'Open', ownerId: null, motif: 'Non assigne', etudiant: { id: 1, prenom: 'Ali', nom: 'Naji' } }),
+      buildCase({ id: 22, etat: 'Open', ownerId: 2, motif: 'Assigne', etudiant: { id: 2, prenom: 'Mina', nom: 'Bali' } }),
+    ])
+    renderCases()
+    expect(await screen.findByRole('button', { name: /Ali Naji/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Nouveau' })).getByRole('button', { name: /Ali Naji/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'A contacter' })).getByRole('button', { name: /Mina Bali/ })).toBeInTheDocument()
   })
 
   it('clicking a primary card navigates to /cases/:id', async () => {
