@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Triage from './Triage'
-import Alerts from './Alerts'
+import Alerts, { fetchAlertes } from './Alerts'
+import { fetchTriage } from '../services/interventions'
 
 // Fused "Alertes" hub: the same Alertes data at two altitudes.
 // - Triage  : grouped by student, risk-ranked, → open a case (the worklist).
@@ -11,9 +13,19 @@ type Tab = 'triage' | 'journal'
 export default function Alertes() {
   const [tab, setTab] = useState<Tab>('triage')
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'triage', label: 'Triage' },
-    { id: 'journal', label: 'Journal' },
+  // Same query keys as the child tabs — shared cache, so the badges cost one
+  // fetch per key and stay in sync with whichever tab is open.
+  const { data: triageGroups = [] } = useQuery({
+    queryKey: ['triage'], queryFn: fetchTriage, refetchInterval: 30_000,
+  })
+  const { data: alertes = [] } = useQuery({
+    queryKey: ['alertes'], queryFn: fetchAlertes, refetchInterval: 30_000,
+  })
+  const activeCount = alertes.filter(a => !a.resolue).length
+
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: 'triage', label: 'Triage', count: triageGroups.length },
+    { id: 'journal', label: 'Journal', count: activeCount },
   ]
 
   return (
@@ -28,7 +40,7 @@ export default function Alertes() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className="px-3 py-2 text-[12.5px]"
+            className="px-3 py-2 text-[12.5px] flex items-center gap-1.5"
             style={{
               color: tab === t.id ? 'var(--text)' : 'var(--text-3)',
               fontWeight: tab === t.id ? 500 : 400,
@@ -37,6 +49,20 @@ export default function Alertes() {
             }}
           >
             {t.label}
+            {t.count > 0 && (
+              <span
+                className="num text-[10.5px] px-1.5 rounded-full"
+                style={{
+                  background: tab === t.id
+                    ? 'color-mix(in oklch, var(--accent-500) 14%, transparent)'
+                    : 'var(--surface-2)',
+                  color: tab === t.id ? 'var(--accent-700)' : 'var(--text-3)',
+                  lineHeight: '18px',
+                }}
+              >
+                {t.count}
+              </span>
+            )}
           </button>
         ))}
       </div>

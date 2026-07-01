@@ -52,18 +52,26 @@ type TypeFilter = AlertType | 'Tous'
 
 const FILTERABLE_TYPES: AlertType[] = ['NoteFaible', 'AbsenceExcessive', 'RisqueEchec']
 
-async function fetchAlertes(): Promise<BackendAlerte[]> {
+// Exported so the Alertes hub can share this query (same key → same cache)
+// for the tab count badges.
+export async function fetchAlertes(): Promise<BackendAlerte[]> {
   // Fetch up to 200 most recent alerts in a single request — enough for the UI.
   const res = await api.get<PaginatedResult<BackendAlerte>>('/alertes?pageSize=200')
   return res.data.items
 }
 
+const PAGE_SIZE = 30
+
 export default function Alerts({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth()
   const canResolve = user?.role !== 'Enseignant'
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('active')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('Tous')
+  const [tab, setTabRaw] = useState<Tab>('active')
+  const [typeFilter, setTypeFilterRaw] = useState<TypeFilter>('Tous')
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  // Changing tab or filter resets pagination so the list never opens mid-way.
+  const setTab = (t: Tab) => { setTabRaw(t); setVisibleCount(PAGE_SIZE) }
+  const setTypeFilter = (f: TypeFilter) => { setTypeFilterRaw(f); setVisibleCount(PAGE_SIZE) }
   const [resolvedName, setResolvedName] = useState<string | null>(null)
   const [confirmAllOpen, setConfirmAllOpen] = useState(false)
   const queryClient = useQueryClient()
@@ -209,7 +217,9 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
         {summary.map(c => (
           <button
             key={c.k}
-            onClick={() => setTypeFilter(c.k as TypeFilter)}
+            // Toggle: clicking the active card clears the filter again.
+            onClick={() => setTypeFilter(typeFilter === c.k ? 'Tous' : (c.k as TypeFilter))}
+            aria-pressed={typeFilter === c.k}
             className="card p-4 text-left hover:border-stone-400"
             style={{
               borderColor: typeFilter === c.k ? 'var(--accent-500)' : 'var(--border)',
@@ -268,10 +278,6 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
               onRemove={() => setTypeFilter('Tous')}
             />
           )}
-          <button className="btn btn-sm btn-ghost">
-            <Icon name="filter" size={13} />
-            Filtres
-          </button>
         </div>
       </div>
 
@@ -289,25 +295,32 @@ export default function Alerts({ embedded = false }: { embedded?: boolean } = {}
         {!isLoading && !isError && filtered.length === 0 && (
           <Empty
             title="Aucune alerte"
-            hint="Les alertes générées par le système apparaîtront ici."
+            hint={typeFilter !== 'Tous'
+              ? 'Aucune alerte de ce type dans cette vue — effacez le filtre pour tout revoir.'
+              : 'Les alertes générées par le système apparaîtront ici.'}
           />
         )}
-        {!isLoading && !isError && filtered.slice(0, 30).map((a, i) => (
+        {!isLoading && !isError && filtered.slice(0, visibleCount).map((a, i) => (
           <AlertRow
             key={a.id}
             alert={a}
-            divider={i < Math.min(filtered.length, 30) - 1}
+            divider={i < Math.min(filtered.length, visibleCount) - 1}
             canResolve={canResolve}
-            onView={() => {
-              const q = a.etudiant
-                ? `${a.etudiant.prenom} ${a.etudiant.nom}`
-                : String(a.etudiantId)
-              navigate(`/students?q=${encodeURIComponent(q)}`)
-            }}
+            onView={() => navigate(`/students/${a.etudiantId}`)}
             onResolve={() => resolveMutation.mutate(a.id)}
             resolving={resolveMutation.isPending && resolveMutation.variables === a.id}
           />
         ))}
+        {!isLoading && !isError && filtered.length > visibleCount && (
+          <div className="px-4 py-3 text-center" style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => setVisibleCount(n => n + PAGE_SIZE)}
+            >
+              Afficher plus ({filtered.length - visibleCount} restantes)
+            </button>
+          </div>
+        )}
       </div>
     <Modal open={confirmAllOpen} onClose={() => setConfirmAllOpen(false)} title="Marquer comme résolues">
         <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>
