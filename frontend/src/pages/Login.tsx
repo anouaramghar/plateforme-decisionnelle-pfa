@@ -106,10 +106,13 @@ export default function Login() {
           </p>
 
           <div className="mt-7 grid grid-cols-3 gap-4">
+            {/* Pre-auth screen: no API access, so only stable institutional
+                facts here — never live-looking numbers that could contradict
+                the real dashboard. */}
             {[
-              { v: '452', l: 'Étudiants suivis' },
-              { v: '5',   l: 'Filières' },
-              { v: '0.87', l: 'AUC modèle ML' },
+              { v: '5',     l: 'Filières · CP & ingénieur' },
+              { v: 'S1–S9', l: 'Semestres couverts' },
+              { v: '3',     l: 'Modèles ML embarqués' },
             ].map(s => (
               <div key={s.l} className="border-l-2 pl-3" style={{ borderColor: 'color-mix(in oklch, var(--accent-500) 60%, transparent)' }}>
                 <div className="num text-[22px]" style={{ color: '#fff', fontWeight: 500, letterSpacing: '-0.02em' }}>
