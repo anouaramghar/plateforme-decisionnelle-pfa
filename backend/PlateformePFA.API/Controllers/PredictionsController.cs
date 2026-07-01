@@ -609,6 +609,93 @@ namespace PlateformePFA.API.Controllers
             return Ok(result);
         }
 
+        // GET: api/predictions/forecast/5 — proxies the ML service's /forecast
+        // to predict the student's next-period average grade (0-20), as opposed
+        // to /predict which returns a failure-risk probability.
+        [HttpGet("forecast/{etudiantId:int}")]
+        public async Task<ActionResult<ForecastDto>> ForecastMoyenne(int etudiantId, CancellationToken ct)
+        {
+            var etudiant = await _context.Etudiants
+                .AsNoTracking()
+                .Include(e => e.Notes)
+                .Include(e => e.Absences)
+                .FirstOrDefaultAsync(e => e.Id == etudiantId && e.DesinscritLe == null, ct);
+
+            if (etudiant is null) return NotFound();
+
+            var notes    = etudiant.Notes    ?? new List<Note>();
+            var absences = etudiant.Absences ?? new List<Absence>();
+
+            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules      = notes.Select(n => n.ModuleId).Distinct().Count();
+
+            if (nbModules == 0 || notesAvecFinal.Count == 0)
+                return UnprocessableEntity("Données insuffisantes pour la prévision.");
+
+            decimal moyenneActuelle = notesAvecFinal.Average(n => n.NoteFinal!.Value);
+            double scheduledHours   = nbModules * AcademicPeriod.SessionsPerModule;
+            int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
+
+            double ecartTypeModules = 0;
+            if (notesAvecFinal.Count >= 2)
+            {
+                var mean = (double)notesAvecFinal.Average(n => n.NoteFinal!.Value);
+                ecartTypeModules = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - mean) * ((double)n.NoteFinal!.Value - mean)) / (notesAvecFinal.Count - 1));
+            }
+
+            var distinctPeriods = notes
+                .Where(n => n.NoteFinal.HasValue)
+                .Select(n => new { n.Annee, n.Semestre })
+                .Distinct()
+                .ToList();
+            int nbEchecsAnterieurs = 0;
+            foreach (var dp in distinctPeriods)
+            {
+                var periodNotes = notes.Where(n => n.Annee == dp.Annee && n.Semestre == dp.Semestre && n.NoteFinal.HasValue).ToList();
+                if (periodNotes.Count > 0 && periodNotes.Average(n => n.NoteFinal!.Value) < 10)
+                    nbEchecsAnterieurs++;
+            }
+
+            var body = JsonSerializer.Serialize(new
+            {
+                moyenne_actuelle = (double)moyenneActuelle,
+                taux_absence     = tauxAbsence,
+                nb_modules       = nbModules,
+                ecart_type_modules = ecartTypeModules,
+                nb_echecs_anterieurs = nbEchecsAnterieurs,
+            });
+
+            var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
+            var client   = _httpClientFactory.CreateClient("MLService");
+
+            var req = new HttpRequestMessage(HttpMethod.Post, $"{mlApiUrl}/forecast")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            req.Headers.Add("X-Internal-Token", _configuration["ML_INTERNAL_TOKEN"] ?? "");
+
+            HttpResponseMessage resp;
+            try { resp = await client.SendAsync(req, ct); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ML /forecast unreachable for etudiantId={Id}", etudiantId);
+                return StatusCode(503, "ML service unavailable");
+            }
+
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode((int)resp.StatusCode, "ML forecast failed");
+
+            var json   = await resp.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<ForecastDto>(json, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                PropertyNameCaseInsensitive = true,
+            });
+
+            return Ok(result);
+        }
+
         [HttpPost("predict/{etudiantId}")]
         public async Task<ActionResult<PredictionML>> PredictForEtudiant(
             int etudiantId,

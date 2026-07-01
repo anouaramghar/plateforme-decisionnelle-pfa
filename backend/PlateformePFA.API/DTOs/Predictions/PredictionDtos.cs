@@ -83,4 +83,9 @@ namespace PlateformePFA.API.DTOs.Predictions
         public float BaseValue   { get; set; }
         public float Probability { get; set; }
     }
+
+    public class ForecastDto
+    {
+        public decimal NotePredite { get; set; }
+    }
 }

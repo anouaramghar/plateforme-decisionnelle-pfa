@@ -41,6 +41,11 @@ async function fetchShap(id: number): Promise<ShapExplainData> {
   return res.data
 }
 
+async function fetchForecast(id: number): Promise<number> {
+  const res = await api.get<{ notePredite: number }>(`/predictions/forecast/${id}`)
+  return res.data.notePredite
+}
+
 export default function StudentProfile() {
   const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
@@ -68,6 +73,15 @@ export default function StudentProfile() {
   const { data: shap, isLoading: shapLoading } = useQuery({
     queryKey: ['etudiant-shap', studentId],
     queryFn: () => fetchShap(studentId),
+    retry: false,
+    enabled: !!studentId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+
+  const { data: notePredite, isLoading: forecastLoading } = useQuery({
+    queryKey: ['etudiant-forecast', studentId],
+    queryFn: () => fetchForecast(studentId),
     retry: false,
     enabled: !!studentId,
     staleTime: 5 * 60 * 1000,
@@ -116,6 +130,7 @@ export default function StudentProfile() {
         niveau:     'Eleve',
         message:    `Entretien à planifier — ${student.nomComplet} · ${student.filiereCode} ${student.niveau} · Score ML : ${Math.round(student.scoreRisque * 100)}%`,
       })
+      queryClient.invalidateQueries({ queryKey: ['alertes'] })
       setAlertSent(true)
       setTimeout(() => setAlertSent(false), 4000)
     } finally {
@@ -338,7 +353,7 @@ export default function StudentProfile() {
           <div style={{ width: 150, flexShrink: 0 }}>
             <ChartRadial value={student.scoreRisque} label="Risque" color={riskColor} height={160} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1" style={{ minHeight: 160 }}>
             {shapLoading && <div className="cap">Calcul SHAP en cours…</div>}
             {shap && <ChartShap data={shap} />}
             {!shapLoading && !shap && (
@@ -365,6 +380,26 @@ export default function StudentProfile() {
         <div className="text-[15px] font-semibold tracking-tight mb-4">Score de risque de décrochage</div>
         <RiskBar score={student.scoreRisque} width={600} />
         <div className="mt-3 cap">{Math.round(student.scoreRisque * 100)}% de probabilité de décrochage selon le modèle ML</div>
+      </div>
+
+      {/* Forecast */}
+      <div className="card p-5">
+        <div className="text-[15px] font-semibold tracking-tight mb-0.5">Moyenne prédite (période suivante)</div>
+        <div className="cap mb-4">Estimation du modèle de régression à partir de la moyenne actuelle, du taux d'absence et de l'historique</div>
+        <div style={{ minHeight: 34 }}>
+        {forecastLoading && <div className="cap">Calcul de la prévision…</div>}
+        {!forecastLoading && notePredite == null && (
+          <div className="cap">Prévision indisponible pour cet étudiant.</div>
+        )}
+        {notePredite != null && (
+          <div className="flex items-baseline gap-1">
+            <span className="num text-[28px] font-semibold" style={{ color: notePredite >= 10 ? 'var(--ok)' : 'var(--bad)' }}>
+              {notePredite.toFixed(2)}
+            </span>
+            <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>/20</span>
+          </div>
+        )}
+        </div>
       </div>
 
     </div>
