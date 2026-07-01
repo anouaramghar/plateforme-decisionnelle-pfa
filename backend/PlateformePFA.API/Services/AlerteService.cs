@@ -50,6 +50,7 @@ namespace PlateformePFA.API.Services
                 if (toResolve != null)
                 {
                     toResolve.Resolue = true;
+                    toResolve.ResolueeLe = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
                     _logger.LogInformation(
                         "Alerte NoteFaible résolue automatiquement : EtudiantId={E}, ModuleId={M}",
@@ -78,12 +79,13 @@ namespace PlateformePFA.API.Services
                 // Escalate if the new niveau is higher than the existing one.
                 if (NiveauRank[niveau] > NiveauRank[existing.Niveau])
                 {
+                    var old = existing.Niveau;
                     existing.Niveau  = niveau;
                     existing.Message = message;
                     await _context.SaveChangesAsync();
                     _logger.LogInformation(
                         "Alerte NoteFaible escaladée : EtudiantId={E}, ModuleId={M}, {Old}→{New}",
-                        etudiantId, moduleId, existing.Niveau, niveau);
+                        etudiantId, moduleId, old, niveau);
                 }
                 return;
             }

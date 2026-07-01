@@ -20,7 +20,7 @@ copilot-runtime:4000 → backend:8080     (pfa_public; forwards tool calls)
 copilot-runtime:4000 → NVIDIA NIM       (outbound internet — external LLM)
 ```
 
-Three isolated Docker networks: `pfa_public`, `pfa_internal_db`, `pfa_internal_ml`. The ML service and database are unreachable from the public internet by design (`internal: true`).
+Five Docker networks: `pfa_public`, `pfa_internal_db` (internal), `pfa_internal_ml` (internal), plus two non-internal single-member bridges (`pfa_db_host`, `pfa_mlflow_host`) that exist only so the DB (127.0.0.1:1433) and MLflow UI (127.0.0.1:5001) host ports work. The ML service and database are unreachable from the public internet by design (`internal: true`).
 
 **copilot-runtime** (Node/Express + CopilotKit) is an **optional** AI-assistant sidecar — never a startup gate, so the BI platform stays up if it's down. It calls an external LLM (NVIDIA NIM, `meta/llama-3.3-70b-instruct`). **Privacy note:** student data surfaced by Copilot tools (names, grades, risk levels) leaves the cluster to NVIDIA — treat this as a deliberate data-protection decision before using real student records. Copilot tools never run raw NL→SQL: `query_dw` maps keywords to fixed parameterized queries on a read-only DW login.
 
@@ -40,9 +40,9 @@ docker compose down -v  # also wipe DB volumes — needed after schema changes
 cd backend/PlateformePFA.API
 dotnet restore && dotnet build
 dotnet run                          # http://localhost:5135  (Swagger at /swagger)
-dotnet ef migrations add <Name>
-dotnet ef database update
-dotnet test                         # from solution root when tests exist
+dotnet test ../PlateformePFA.sln    # 134 xUnit tests
+# Schema evolution: RuntimeMigrations.cs (idempotent SQL run at startup) — NOT
+# EF Core migrations; there is no Migrations/ folder, do not use `dotnet ef`.
 ```
 
 ### ML service (FastAPI)
@@ -74,10 +74,10 @@ SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d 
 **Startup order in `Program.cs`:**
 1. Fail-fast validation: `JWT_SECRET` must be ≥ 32 chars and not a placeholder.
 2. `UseForwardedHeaders` — required because nginx strips `X-Forwarded-Proto/For`.
-3. CORS (`FrontendPolicy`): origins `localhost:3000`, `localhost:80`, `localhost`.
+3. CORS (`FrontendPolicy`): defaults `localhost:5173`, `localhost:3000`, `localhost`, `localhost:80`; override via `CORS_ALLOWED_ORIGINS`.
 4. Auth/Authorization middleware.
 5. Swagger (Development only).
-6. `/health` endpoint (used by Docker healthcheck and nginx `depends_on`).
+6. `/health` (liveness) and `/ready` (DB + schema marker) endpoints — Docker healthcheck and the nginx `depends_on` gate target `/ready`.
 
 **Middleware order matters:** `app.UseCors()` must come before `app.UseAuthentication()` so CORS preflight OPTIONS requests get a 200, not a 401.
 
@@ -86,8 +86,8 @@ SQLCMDPASSWORD=$SA_PASSWORD /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d 
 **Controllers:** All require `[Authorize]`. Role-based access uses `[Authorize(Roles = "Admin,Responsable")]` where needed.
 
 **Auth flow:**
-- `POST /api/auth/login` → validates bcrypt hash → returns JWT (24h) + refresh token (7 days).
-- Refresh tokens stored in an in-memory `Dictionary<string, (UserId, Expiry)>` in `AuthService` — **lost on restart**, fine for dev/demo.
+- `POST /api/auth/login` → validates bcrypt hash → returns JWT (24h) + refresh token (7 days, single-use rotation).
+- No `/api/auth/register` endpoint — accounts are created by the admin seed or via `UtilisateurController`.
 - JWT claims: `NameIdentifier` (UserId), `Email`, `Role`, `NomComplet`.
 
 **ML proxy pattern** (in `PredictionsController`):
@@ -97,9 +97,9 @@ var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
 // On exception: logs warning, saves Prediction with ScoreRisque = 0 (graceful degradation).
 ```
 
-**First admin:** Created by `DataSeeder` at startup: `admin@eniad.dz` / `Admin@ENIAD2025`.
+**First admin:** Created by `DataSeeder` at startup from `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` env vars. The seeder refuses placeholders and passwords < 12 chars — no hardcoded credentials exist.
 
-**Refresh tokens:** Stored in `RefreshTokens` SQL table (NOT in-memory). `AuthService` must query this table — never use a `Dictionary<string, ...>` in production as tokens die on restart. The `RefreshToken` model is at `Models/RefreshToken.cs`; the table is created by `database/init.sql`.
+**Refresh tokens:** Stored in the `RefreshTokens` SQL table (NOT in-memory), single-use rotation inside a transaction. The `RefreshToken` model is at `Models/RefreshToken.cs`; the table is created by `database/init.sql`.
 
 ## ETL — OLTP → Data Warehouse
 
@@ -125,7 +125,7 @@ ETL logic lives in two places:
 - Idempotent — every `CREATE TABLE` is wrapped in `IF OBJECT_ID(...) IS NULL`.
 - `init.sql` creates a least-privilege `pfa_app` SQL login (`db_datareader` + `db_datawriter`) — the backend connects as `pfa_app`, not `sa`.
 - Password is injected via sqlcmd variable `-v APP_PASSWORD=` from `entrypoint.sh`.
-- **No admin seed** — create the first user through the API `/api/auth/register` endpoint.
+- Admin account is seeded by the backend's `DataSeeder` (env-driven), not by SQL.
 
 **`entrypoint.sh`**: starts `sqlservr` in background, polls for readiness (30 attempts × 2s), exits 1 if it never comes up, then runs both scripts with `-b` (fail on SQL error).
 
@@ -133,7 +133,7 @@ ETL logic lives in two places:
 
 **Stack:** FastAPI 0.111.0 · Uvicorn · scikit-learn · XGBoost · pandas · joblib
 
-Three routers to implement: `routers/predict.py`, `routers/cluster.py`, `routers/forecast.py`. Register them in `main.py` with `app.include_router(...)`.
+Four routers, all implemented and registered in `main.py`: `routers/predict.py`, `routers/cluster.py`, `routers/forecast.py`, `routers/metrics.py`.
 
 Use FastAPI's `lifespan` context manager to load joblib models **once at startup** into `app.state.models` — never load inside route handlers (would deserialize MB of data on every request).
 
