@@ -529,7 +529,11 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions/explain/5
         [HttpGet("explain/{etudiantId:int}")]
-        public async Task<ActionResult<ShapExplainDto>> ExplainRisk(int etudiantId, CancellationToken ct)
+        public async Task<ActionResult<ShapExplainDto>> ExplainRisk(
+            int etudiantId,
+            CancellationToken ct,
+            [FromQuery] string? annee = null,
+            [FromQuery] string? semestre = null)
         {
             var etudiant = await _context.Etudiants
                 .AsNoTracking()
@@ -542,15 +546,29 @@ namespace PlateformePFA.API.Controllers
             var notes    = etudiant.Notes    ?? new List<Note>();
             var absences = etudiant.Absences ?? new List<Absence>();
 
-            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
-            int nbModules      = notes.Select(n => n.ModuleId).Distinct().Count();
+            // Per-period features, same scope as PredictForEtudiant: SHAP must
+            // explain the same inputs the prediction was computed from, otherwise
+            // the breakdown describes a different student profile than the score.
+            var targetAnnee = annee ?? _configuration["CurrentAcademicYear"] ?? AcademicPeriod.CurrentAcademicYear();
+            var targetSemestre = semestre;
+            var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(targetAnnee, targetSemestre);
+
+            var filteredNotes = notes
+                .Where(n => n.Annee == targetAnnee && (targetSemestre == null || n.Semestre == targetSemestre))
+                .ToList();
+            var notesAvecFinal = filteredNotes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules = filteredNotes.Select(n => n.ModuleId).Distinct().Count();
 
             if (nbModules == 0 || notesAvecFinal.Count == 0)
                 return UnprocessableEntity("Données insuffisantes pour l'explication SHAP.");
 
+            var filteredAbsences = absences
+                .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                .ToList();
+
             decimal moyenneGenerale = notesAvecFinal.Average(n => n.NoteFinal!.Value);
             double scheduledHours   = nbModules * AcademicPeriod.SessionsPerModule;
-            int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            int absenceHours        = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
             double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
 
             var mlApiUrl = _configuration["ML_API_URL"] ?? "http://ml-service:8000";
@@ -563,13 +581,15 @@ namespace PlateformePFA.API.Controllers
                 ecartTypeModulesExplain = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - meanExplain) * ((double)n.NoteFinal!.Value - meanExplain)) / (notesAvecFinal.Count - 1));
             }
 
-            var distinctPeriodsExplain = notes
+            // Prior-period failures only, matching PredictForEtudiant.
+            var priorPeriodsExplain = notes
                 .Where(n => n.NoteFinal.HasValue)
                 .Select(n => new { n.Annee, n.Semestre })
                 .Distinct()
+                .Where(p => string.Compare(p.Annee, targetAnnee) < 0 || (string.Compare(p.Annee, targetAnnee) == 0 && targetSemestre != null && string.Compare(p.Semestre, targetSemestre) < 0))
                 .ToList();
             int nbEchecsAnterieursExplain = 0;
-            foreach (var dp in distinctPeriodsExplain)
+            foreach (var dp in priorPeriodsExplain)
             {
                 var periodNotesExplain = notes.Where(n => n.Annee == dp.Annee && n.Semestre == dp.Semestre && n.NoteFinal.HasValue).ToList();
                 if (periodNotesExplain.Count > 0 && periodNotesExplain.Average(n => n.NoteFinal!.Value) < 10)
@@ -613,7 +633,11 @@ namespace PlateformePFA.API.Controllers
         // to predict the student's next-period average grade (0-20), as opposed
         // to /predict which returns a failure-risk probability.
         [HttpGet("forecast/{etudiantId:int}")]
-        public async Task<ActionResult<ForecastDto>> ForecastMoyenne(int etudiantId, CancellationToken ct)
+        public async Task<ActionResult<ForecastDto>> ForecastMoyenne(
+            int etudiantId,
+            CancellationToken ct,
+            [FromQuery] string? annee = null,
+            [FromQuery] string? semestre = null)
         {
             var etudiant = await _context.Etudiants
                 .AsNoTracking()
@@ -626,15 +650,34 @@ namespace PlateformePFA.API.Controllers
             var notes    = etudiant.Notes    ?? new List<Note>();
             var absences = etudiant.Absences ?? new List<Absence>();
 
-            var notesAvecFinal = notes.Where(n => n.NoteFinal.HasValue).ToList();
-            int nbModules      = notes.Select(n => n.ModuleId).Distinct().Count();
+            // Per-period features, same scope as PredictForEtudiant: the forecast
+            // model was trained on per-period moyenne/absences predicting the next
+            // period, so all-time aggregates would feed it out-of-distribution inputs.
+            var targetAnnee = annee ?? _configuration["CurrentAcademicYear"] ?? AcademicPeriod.CurrentAcademicYear();
+            var targetSemestre = semestre;
+            var (windowStart, windowEnd) = AcademicPeriod.SemesterDateRange(targetAnnee, targetSemestre);
+
+            var filteredNotes = notes
+                .Where(n => n.Annee == targetAnnee && (targetSemestre == null || n.Semestre == targetSemestre))
+                .ToList();
+            var notesAvecFinal = filteredNotes.Where(n => n.NoteFinal.HasValue).ToList();
+            int nbModules = filteredNotes.Select(n => n.ModuleId).Distinct().Count();
 
             if (nbModules == 0 || notesAvecFinal.Count == 0)
                 return UnprocessableEntity("Données insuffisantes pour la prévision.");
 
+            // ML side rejects nb_modules outside 1–30 with a 422; validate here so
+            // the client gets a clear message instead of "ML forecast failed".
+            if (nbModules > 30)
+                return UnprocessableEntity("Nombre de modules invalide pour la prévision (doit être entre 1 et 30).");
+
+            var filteredAbsences = absences
+                .Where(a => a.DateAbsence >= windowStart && a.DateAbsence < windowEnd)
+                .ToList();
+
             decimal moyenneActuelle = notesAvecFinal.Average(n => n.NoteFinal!.Value);
             double scheduledHours   = nbModules * AcademicPeriod.SessionsPerModule;
-            int absenceHours        = absences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
+            int absenceHours        = filteredAbsences.Where(a => !a.Justifiee).Sum(a => a.NombreHeures);
             double tauxAbsence      = Math.Min(absenceHours / scheduledHours, 1.0);
 
             double ecartTypeModules = 0;
@@ -644,15 +687,19 @@ namespace PlateformePFA.API.Controllers
                 ecartTypeModules = Math.Sqrt(notesAvecFinal.Sum(n => ((double)n.NoteFinal!.Value - mean) * ((double)n.NoteFinal!.Value - mean)) / (notesAvecFinal.Count - 1));
             }
 
-            var distinctPeriods = notes
+            // Prior-period failures only (strictly before the target period),
+            // matching PredictForEtudiant — counting the current period would leak
+            // the outcome the model is trying to anticipate.
+            var priorPeriods = notes
                 .Where(n => n.NoteFinal.HasValue)
                 .Select(n => new { n.Annee, n.Semestre })
                 .Distinct()
+                .Where(p => string.Compare(p.Annee, targetAnnee) < 0 || (string.Compare(p.Annee, targetAnnee) == 0 && targetSemestre != null && string.Compare(p.Semestre, targetSemestre) < 0))
                 .ToList();
             int nbEchecsAnterieurs = 0;
-            foreach (var dp in distinctPeriods)
+            foreach (var pp in priorPeriods)
             {
-                var periodNotes = notes.Where(n => n.Annee == dp.Annee && n.Semestre == dp.Semestre && n.NoteFinal.HasValue).ToList();
+                var periodNotes = notes.Where(n => n.Annee == pp.Annee && n.Semestre == pp.Semestre && n.NoteFinal.HasValue).ToList();
                 if (periodNotes.Count > 0 && periodNotes.Average(n => n.NoteFinal!.Value) < 10)
                     nbEchecsAnterieurs++;
             }

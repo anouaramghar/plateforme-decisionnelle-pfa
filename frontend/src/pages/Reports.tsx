@@ -61,6 +61,19 @@ async function fetchRapports(): Promise<RapportRow[]> {
   return res.data
 }
 
+interface NotesByFiliere {
+  filiere: string
+  moyenne: number
+  color: string
+}
+
+// Same endpoint + query key as the Dashboard page, so the preview reuses its
+// cached data and shows the same real averages instead of placeholder numbers.
+async function fetchNotesByFiliere(): Promise<NotesByFiliere[]> {
+  const res = await api.get<{ notesByFiliere: NotesByFiliere[] }>('/dashboard/summary?period=S2')
+  return res.data.notesByFiliere
+}
+
 async function generateRapport(input: {
   templateId: string
   format: Format
@@ -139,15 +152,15 @@ export default function Reports() {
     mutationFn: downloadRapport,
   })
 
-  // Static preview chart — keeps the cover artwork without round-tripping for
-  // numbers the cover doesn't really need.
-  const previewChartData = [
-    { filiere: 'GINF', moyenne: 13.06, color: '#14b8a6' },
-    { filiere: 'IA',   moyenne: 13.29, color: '#ec4899' },
-    { filiere: 'IRSI', moyenne: 12.83, color: '#0ea5e9' },
-    { filiere: 'ROC',  moyenne: 13.15, color: '#a855f7' },
-    { filiere: 'EPSI', moyenne: 12.95, color: '#94a3b8' },
-  ]
+  // Real per-filière averages for the cover preview. retry: false + fallback:
+  // roles without dashboard access (403) just see the cover without the chart.
+  const { data: previewChartData = [] } = useQuery({
+    queryKey: ['reports-notes-by-filiere'],
+    queryFn: fetchNotesByFiliere,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
 
   const pickedTemplate = TEMPLATES.find(t => t.id === picked) ?? TEMPLATES[0]
 
@@ -318,8 +331,10 @@ export default function Reports() {
                 className="flex-1 mt-5 rounded-md p-4"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >
-                <div className="text-[11px] font-semibold mb-2">Moyennes par filière (illustration)</div>
-                <ChartBars data={previewChartData} height={160} />
+                <div className="text-[11px] font-semibold mb-2">Moyennes par filière</div>
+                {previewChartData.length > 0
+                  ? <ChartBars data={previewChartData} height={160} />
+                  : <div className="cap">Aperçu graphique indisponible</div>}
               </div>
 
               <div
