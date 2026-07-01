@@ -8,9 +8,8 @@ namespace PlateformePFA.API.DTOs.Dashboard
         public int TriageQueue { get; set; }      // un-triaged signals waiting
         public int OpenCases { get; set; }         // not Resolved/Closed
         public int UnassignedCases { get; set; }   // open with no owner
-        public int EscalatedCases { get; set; }
+        public int EscalatedCases { get; set; }    // derived: Critical + past due, still open
         public int OverdueCases { get; set; }      // DueDate past, still open
-        public int OverdueTasks { get; set; }      // incomplete tasks past DueDate
         public int FailedEmails { get; set; }
 
         // ── Outreach funnel ────────────────────────────────────────────────────

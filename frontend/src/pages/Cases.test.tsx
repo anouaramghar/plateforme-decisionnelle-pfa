@@ -36,7 +36,7 @@ function buildCase(overrides: Partial<InterventionCase>): InterventionCase {
     etat: 'Open',
     ownerId: null,
     dueDate: null,
-    escaladeLe: null,
+    enRetard: false,
     outcome: null,
     resolutionSummary: null,
     followUpDate: null,
@@ -56,7 +56,7 @@ const SAMPLE: InterventionCase[] = [
   buildCase({ id: 12, etudiantId: 5, etat: 'InProgress', priorite: 'High', ownerId: 2, motif: 'Absences répétées', etudiant: { id: 5, prenom: 'Yassine', nom: 'Bennani' } }),
   buildCase({ id: 13, etudiantId: 6, etat: 'WaitingStudent', priorite: 'Critical', ownerId: 3, motif: 'Entretien planifié', meetingScheduledFor: '2026-07-01T10:00:00Z', etudiant: { id: 6, prenom: 'Imane', nom: 'Cherkaoui' } }),
   buildCase({ id: 14, etudiantId: 7, etat: 'Resolved', priorite: 'Medium', ownerId: 3, motif: 'Entretien réalisé', etudiant: { id: 7, prenom: 'Omar', nom: 'Tazi' } }),
-  buildCase({ id: 15, etudiantId: 8, etat: 'Escalated', priorite: 'Critical', ownerId: null, motif: 'Escaladé au responsable', etudiant: { id: 8, prenom: 'Nadia', nom: 'Fassi' } }),
+  buildCase({ id: 15, etudiantId: 8, etat: 'InProgress', priorite: 'Critical', ownerId: null, motif: 'Escaladé au responsable', dueDate: '2026-06-01T10:00:00Z', enRetard: true, etudiant: { id: 8, prenom: 'Nadia', nom: 'Fassi' } }),
   buildCase({ id: 16, etudiantId: 9, etat: 'Closed', priorite: 'Low', ownerId: 2, motif: 'Suivi clôturé', etudiant: { id: 9, prenom: 'Karim', nom: 'Alaoui' } }),
 ]
 
@@ -142,7 +142,7 @@ describe('Cases intervention queue', () => {
     const ownerFilter = screen.getByLabelText(/Assigné/) as HTMLSelectElement
     await user.selectOptions(ownerFilter, 'unassigned')
 
-    // Nadia Fassi (Escalated, unassigned) is in the secondary list.
+    // Nadia Fassi (overdue critical, unassigned) is in the secondary list.
     expect(screen.getByRole('button', { name: /Nadia Fassi/ })).toBeInTheDocument()
     // Sara Amrani (Open, assigned) is filtered out.
     expect(screen.queryByRole('button', { name: /Sara Amrani/ })).not.toBeInTheDocument()

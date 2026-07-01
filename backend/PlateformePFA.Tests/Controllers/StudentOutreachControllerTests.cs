@@ -133,8 +133,8 @@ public class StudentOutreachControllerTests : IClassFixture<TestWebFactory>
         var saved = verify.CaseCommunications.Single(x => x.Id == draft.Id);
         saved.Sujet.Should().Be("Entretien ENIAD");
         saved.Corps.Should().Be("Bonjour, voici la version relue.");
-        verify.CaseTimelineEvents.Should().Contain(x => x.CaseId == caseId && x.Action == "EmailDraftCreated");
-        verify.CaseTimelineEvents.Should().Contain(x => x.CaseId == caseId && x.Action == "EmailDraftEdited");
+        verify.CaseEvents.Should().Contain(x => x.CaseId == caseId && x.Type == "EmailDraftCreated");
+        verify.CaseEvents.Should().Contain(x => x.CaseId == caseId && x.Type == "EmailDraftEdited");
     }
 
     [Fact]
@@ -195,9 +195,9 @@ public class StudentOutreachControllerTests : IClassFixture<TestWebFactory>
         saved.Etat.Should().Be(CaseWorkflowState.WaitingStudent);
         var comm = verify.CaseCommunications.Single(x => x.Id == commId);
         comm.Status.Should().Be(CommunicationStatus.Sent);
-        var timeline = verify.CaseTimelineEvents.Where(x => x.CaseId == caseId).ToList();
-        timeline.Should().Contain(x => x.Action == "MeetingScheduled");
-        timeline.Should().Contain(x => x.Action == "EmailSent");
+        var timeline = verify.CaseEvents.Where(x => x.CaseId == caseId).ToList();
+        timeline.Should().Contain(x => x.Type == "MeetingScheduled");
+        timeline.Should().Contain(x => x.Type == "EmailSent");
     }
 
     [Fact]
@@ -329,7 +329,7 @@ public class StudentOutreachControllerTests : IClassFixture<TestWebFactory>
         saved.ResolutionSummary.Should().Be("Entretien réalisé.");
 
         // Audit attribution: the actor is recorded on the timeline event.
-        var held = verify.CaseTimelineEvents.Single(x => x.CaseId == caseId && x.Action == "MeetingHeld");
+        var held = verify.CaseEvents.Single(x => x.CaseId == caseId && x.Type == "MeetingHeld");
         held.UtilisateurId.Should().HaveValue();
         held.UtilisateurNom.Should().NotBeNullOrEmpty();
     }

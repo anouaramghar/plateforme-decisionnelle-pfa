@@ -35,20 +35,6 @@ namespace PlateformePFA.API.DTOs.Interventions
         public int? OwnerId { get; set; } // optional assignment alongside the transition
     }
 
-    public class CreateTaskDto
-    {
-        [Required, MaxLength(300)]
-        public string Titre { get; set; } = string.Empty;
-        public int? AssigneeId { get; set; }
-        public DateTime? DueDate { get; set; }
-    }
-
-    public class CompleteTaskDto
-    {
-        [MaxLength(500)]
-        public string? CompletionEvidence { get; set; }
-    }
-
     public class CreateNoteDto
     {
         [Required, MaxLength(2000)]

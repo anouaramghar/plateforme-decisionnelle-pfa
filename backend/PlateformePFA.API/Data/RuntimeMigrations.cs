@@ -296,7 +296,6 @@ namespace PlateformePFA.API.Data
                     Etat              NVARCHAR(20)  NOT NULL DEFAULT 'Open',
                     OwnerId           INT NULL REFERENCES Utilisateurs(Id),
                     DueDate           DATETIME2     NULL,
-                    EscaladeLe        DATETIME2     NULL,
                     Outcome           NVARCHAR(40)  NULL,
                     ResolutionSummary NVARCHAR(1000) NULL,
                     FollowUpDate      DATETIME2     NULL,
@@ -319,7 +318,7 @@ namespace PlateformePFA.API.Data
                                      AND parent_object_id = OBJECT_ID('dbo.InterventionCases'))
                     ALTER TABLE InterventionCases
                         ADD CONSTRAINT CK_InterventionCases_Etat
-                        CHECK (Etat IN ('Open','InProgress','WaitingStudent','Monitoring','Escalated','Resolved','Closed'));
+                        CHECK (Etat IN ('Open','InProgress','WaitingStudent','Monitoring','Resolved','Closed'));
             ");
             context.Database.ExecuteSqlRaw(@"
                 IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
@@ -331,25 +330,77 @@ namespace PlateformePFA.API.Data
                         CHECK (Priorite IN ('Critical','High','Medium','Low'));
             ");
 
-            // 12. CaseTimelineEvents — append-only audit trail per case.
+            // 12. CaseEvents — THE single append-only event stream per case
+            //     (v2: replaces CaseTimelineEvents + CaseNotes + CaseTasks).
+            //     Type='Note' rows carry staff commentary; every other Type is a
+            //     system/action record. The timeline is a query, not a table.
             context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseTimelineEvents', 'U') IS NULL
-                CREATE TABLE CaseTimelineEvents (
+                IF OBJECT_ID('dbo.CaseEvents', 'U') IS NULL
+                CREATE TABLE CaseEvents (
                     Id             INT IDENTITY(1,1) PRIMARY KEY,
-                    CaseId         INT           NOT NULL REFERENCES InterventionCases(Id),
-                    Action         NVARCHAR(40)  NOT NULL,
-                    Description    NVARCHAR(500) NULL,
+                    CaseId         INT            NOT NULL REFERENCES InterventionCases(Id),
+                    Type           NVARCHAR(40)   NOT NULL,
+                    Contenu        NVARCHAR(2000) NULL,
+                    IsPrivate      BIT            NOT NULL DEFAULT 0,
                     UtilisateurId  INT NULL REFERENCES Utilisateurs(Id),
-                    UtilisateurNom NVARCHAR(200) NOT NULL DEFAULT 'Système',
-                    CreeLe         DATETIME2     NOT NULL DEFAULT GETUTCDATE()
+                    UtilisateurNom NVARCHAR(200)  NOT NULL DEFAULT 'Système',
+                    CreeLe         DATETIME2      NOT NULL DEFAULT GETUTCDATE()
                 );
             ");
             context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseTimelineEvents', 'U') IS NOT NULL
+                IF OBJECT_ID('dbo.CaseEvents', 'U') IS NOT NULL
                    AND NOT EXISTS (SELECT 1 FROM sys.indexes
-                                   WHERE name = 'IX_CaseTimelineEvents_CaseId'
-                                     AND object_id = OBJECT_ID('dbo.CaseTimelineEvents'))
-                    CREATE INDEX IX_CaseTimelineEvents_CaseId ON CaseTimelineEvents(CaseId, CreeLe DESC);
+                                   WHERE name = 'IX_CaseEvents_CaseId_CreeLe'
+                                     AND object_id = OBJECT_ID('dbo.CaseEvents'))
+                    CREATE INDEX IX_CaseEvents_CaseId_CreeLe ON CaseEvents(CaseId, CreeLe DESC);
+            ");
+
+            // 12b. v1 → v2 data migration: fold the old tables into CaseEvents,
+            //      then drop them. Each block runs once — the DROP makes it
+            //      idempotent (the copy can never re-run on a later boot).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTimelineEvents', 'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO CaseEvents (CaseId, Type, Contenu, IsPrivate, UtilisateurId, UtilisateurNom, CreeLe)
+                    SELECT CaseId, Action, Description, 0, UtilisateurId, UtilisateurNom, CreeLe
+                    FROM CaseTimelineEvents;
+                    DROP TABLE CaseTimelineEvents;
+                END
+            ");
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseNotes', 'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO CaseEvents (CaseId, Type, Contenu, IsPrivate, UtilisateurId, UtilisateurNom, CreeLe)
+                    SELECT CaseId, 'Note', Contenu, IsPrivate, AuteurId, AuteurNom, CreeLe
+                    FROM CaseNotes;
+                    DROP TABLE CaseNotes;
+                END
+            ");
+            // CaseTasks: dropped without replacement (YAGNI — notes cover it).
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.CaseTasks', 'U') IS NOT NULL
+                    DROP TABLE CaseTasks;
+            ");
+
+            // 12c. Escalation is derived now, not a state. Fold any stored
+            //      'Escalated' rows back to InProgress and tighten the CHECK.
+            context.Database.ExecuteSqlRaw(@"
+                IF OBJECT_ID('dbo.InterventionCases', 'U') IS NOT NULL
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM sys.check_constraints
+                               WHERE name = 'CK_InterventionCases_Etat'
+                                 AND parent_object_id = OBJECT_ID('dbo.InterventionCases')
+                                 AND definition LIKE '%Escalated%')
+                    BEGIN
+                        UPDATE InterventionCases SET Etat = 'InProgress' WHERE Etat = 'Escalated';
+                        ALTER TABLE InterventionCases DROP CONSTRAINT CK_InterventionCases_Etat;
+                        ALTER TABLE InterventionCases
+                            ADD CONSTRAINT CK_InterventionCases_Etat
+                            CHECK (Etat IN ('Open','InProgress','WaitingStudent','Monitoring','Resolved','Closed'));
+                    END
+                    IF COL_LENGTH('dbo.InterventionCases', 'EscaladeLe') IS NOT NULL
+                        ALTER TABLE InterventionCases DROP COLUMN EscaladeLe;
+                END
             ");
 
             // 13. Alertes.CaseId — links an evidence signal to its intervention case.
@@ -368,50 +419,7 @@ namespace PlateformePFA.API.Data
                     ALTER TABLE Alertes ADD MotifTriage NVARCHAR(500) NULL;
             ");
 
-            // 15. CaseTasks — actionable items on a case.
-            context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseTasks', 'U') IS NULL
-                CREATE TABLE CaseTasks (
-                    Id                 INT IDENTITY(1,1) PRIMARY KEY,
-                    CaseId             INT           NOT NULL REFERENCES InterventionCases(Id),
-                    Titre              NVARCHAR(300) NOT NULL,
-                    AssigneeId         INT NULL REFERENCES Utilisateurs(Id),
-                    DueDate            DATETIME2     NULL,
-                    Done               BIT           NOT NULL DEFAULT 0,
-                    DoneLe             DATETIME2     NULL,
-                    CompletionEvidence NVARCHAR(500) NULL,
-                    CreeLe             DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
-                    CreeParId          INT NULL REFERENCES Utilisateurs(Id)
-                );
-            ");
-            context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseTasks', 'U') IS NOT NULL
-                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
-                                   WHERE name = 'IX_CaseTasks_CaseId_Done'
-                                     AND object_id = OBJECT_ID('dbo.CaseTasks'))
-                    CREATE INDEX IX_CaseTasks_CaseId_Done ON CaseTasks(CaseId, Done);
-            ");
-
-            // 16. CaseNotes — internal notes (IsPrivate = Admin/Responsable-only).
-            context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseNotes', 'U') IS NULL
-                CREATE TABLE CaseNotes (
-                    Id        INT IDENTITY(1,1) PRIMARY KEY,
-                    CaseId    INT           NOT NULL REFERENCES InterventionCases(Id),
-                    Contenu   NVARCHAR(2000) NOT NULL,
-                    IsPrivate BIT           NOT NULL DEFAULT 0,
-                    AuteurId  INT NULL REFERENCES Utilisateurs(Id),
-                    AuteurNom NVARCHAR(200) NOT NULL DEFAULT 'Système',
-                    CreeLe    DATETIME2     NOT NULL DEFAULT GETUTCDATE()
-                );
-            ");
-            context.Database.ExecuteSqlRaw(@"
-                IF OBJECT_ID('dbo.CaseNotes', 'U') IS NOT NULL
-                   AND NOT EXISTS (SELECT 1 FROM sys.indexes
-                                   WHERE name = 'IX_CaseNotes_CaseId'
-                                     AND object_id = OBJECT_ID('dbo.CaseNotes'))
-                    CREATE INDEX IX_CaseNotes_CaseId ON CaseNotes(CaseId);
-            ");
+            // 15+16 (v1 CaseTasks / CaseNotes) removed — folded into CaseEvents (block 12).
 
             // 17. CaseCommunications — outbound emails; rendered text stored as sent.
             context.Database.ExecuteSqlRaw(@"

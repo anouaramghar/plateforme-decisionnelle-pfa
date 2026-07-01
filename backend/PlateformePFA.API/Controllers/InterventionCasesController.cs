@@ -110,18 +110,22 @@ namespace PlateformePFA.API.Controllers
             return new PaginatedResult<InterventionCase>(items, total, page, pageSize);
         }
 
-        // GET: api/intervention-cases/5  (with full timeline)
+        // GET: api/intervention-cases/5  (with the full event stream)
         [HttpGet("{id}")]
         public async Task<ActionResult<InterventionCase>> GetCase(int id)
         {
             var c = await _context.InterventionCases
                 .Include(x => x.Etudiant)
-                .Include(x => x.Timeline!.OrderByDescending(t => t.CreeLe))
+                .Include(x => x.Events!.OrderByDescending(e => e.CreeLe))
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (c == null) return NotFound(new { message = "Cas introuvable." });
             if (!await CanAccessCaseAsync(c.EtudiantId))
                 return NotFound(new { message = "Cas introuvable." });
+
+            // Private notes are Admin/Responsable-only; strip them for teachers.
+            if (!IsPrivileged() && c.Events != null)
+                c.Events = c.Events.Where(e => !e.IsPrivate).ToList();
             return c;
         }
 
@@ -171,9 +175,9 @@ namespace PlateformePFA.API.Controllers
             _context.InterventionCases.Add(newCase);
             await _context.SaveChangesAsync(); // need the Id for timeline + alert link
 
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _context.CaseEvents.Add(new CaseEvent
             {
-                CaseId = newCase.Id, Action = "Created", Description = dto.Motif,
+                CaseId = newCase.Id, Type = "Created", Contenu = dto.Motif,
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
 
@@ -184,10 +188,10 @@ namespace PlateformePFA.API.Controllers
                 if (alerte != null && alerte.EtudiantId == newCase.EtudiantId)
                 {
                     alerte.CaseId = newCase.Id;
-                    _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+                    _context.CaseEvents.Add(new CaseEvent
                     {
-                        CaseId = newCase.Id, Action = "SignalLinked",
-                        Description = $"Alerte #{alerte.Id} liée au cas.",
+                        CaseId = newCase.Id, Type = "SignalLinked",
+                        Contenu = $"Alerte #{alerte.Id} liée au cas.",
                         UtilisateurId = userId, UtilisateurNom = userName,
                     });
                 }
@@ -247,11 +251,11 @@ namespace PlateformePFA.API.Controllers
                 a.CaseId = c.Id;
             }
 
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _context.CaseEvents.Add(new CaseEvent
             {
                 CaseId = c.Id,
-                Action = "SignalLinked",
-                Description = $"{alertes.Count} signal(aux) lié(s) au cas : {string.Join(", ", alertes.Select(a => a.Id))}.",
+                Type = "SignalLinked",
+                Contenu = $"{alertes.Count} signal(aux) lié(s) au cas : {string.Join(", ", alertes.Select(a => a.Id))}.",
                 UtilisateurId = userId,
                 UtilisateurNom = userName,
             });
@@ -306,18 +310,17 @@ namespace PlateformePFA.API.Controllers
                 c.FollowUpDate      = dto.FollowUpDate;
             }
             if (to == CaseWorkflowState.Closed)      c.ClotureLe  = DateTime.UtcNow;
-            if (to == CaseWorkflowState.Escalated)   c.EscaladeLe = DateTime.UtcNow;
 
             var isReopen = (from == CaseWorkflowState.Resolved || from == CaseWorkflowState.Closed)
                            && to == CaseWorkflowState.InProgress;
 
             c.Etat = to;
 
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _context.CaseEvents.Add(new CaseEvent
             {
                 CaseId = c.Id,
-                Action = isReopen ? "Reopened" : "StateChanged",
-                Description = $"{from} → {to}" + (string.IsNullOrWhiteSpace(dto.Raison) ? "" : $" — {dto.Raison}"),
+                Type = isReopen ? "Reopened" : "StateChanged",
+                Contenu = $"{from} → {to}" + (string.IsNullOrWhiteSpace(dto.Raison) ? "" : $" — {dto.Raison}"),
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
 
@@ -328,82 +331,13 @@ namespace PlateformePFA.API.Controllers
             return NoContent();
         }
 
-        // ── Tasks ─────────────────────────────────────────────────────────────
-
-        // GET: api/intervention-cases/5/tasks
-        [HttpGet("{id}/tasks")]
-        public async Task<ActionResult<IEnumerable<CaseTask>>> GetTasks(int id)
-        {
-            var owningEtudiantId = await _context.InterventionCases
-                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
-            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
-                return NotFound(new { message = "Cas introuvable." });
-
-            return await _context.CaseTasks.AsNoTracking()
-                .Where(t => t.CaseId == id)
-                .OrderBy(t => t.Done).ThenBy(t => t.DueDate)
-                .ToListAsync();
-        }
-
-        // POST: api/intervention-cases/5/tasks
-        [HttpPost("{id}/tasks")]
-        public async Task<ActionResult<CaseTask>> CreateTask(int id, CreateTaskDto dto)
-        {
-            var owningEtudiantId = await _context.InterventionCases
-                .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
-            if (owningEtudiantId == null || !await CanAccessCaseAsync(owningEtudiantId.Value))
-                return NotFound(new { message = "Cas introuvable." });
-
-            var (userId, userName) = CurrentUser();
-            var task = new CaseTask
-            {
-                CaseId     = id,
-                Titre      = dto.Titre,
-                AssigneeId = dto.AssigneeId,
-                DueDate    = dto.DueDate,
-                CreeParId  = userId,
-            };
-            _context.CaseTasks.Add(task);
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
-            {
-                CaseId = id, Action = "TaskAdded", Description = dto.Titre,
-                UtilisateurId = userId, UtilisateurNom = userName,
-            });
-            await _context.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetTasks), new { id }, task);
-        }
-
-        // PATCH: api/intervention-cases/5/tasks/9/complete
-        [HttpPatch("{id}/tasks/{taskId}/complete")]
-        public async Task<IActionResult> CompleteTask(int id, int taskId, CompleteTaskDto dto)
-        {
-            var task = await _context.CaseTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.CaseId == id);
-            if (task == null) return NotFound(new { message = "Tâche introuvable." });
-            if (task.Done) return BadRequest(new { message = "Tâche déjà terminée." });
-            if (!await CanAccessCaseAsync(
-                    await _context.InterventionCases.Where(c => c.Id == id)
-                        .Select(c => c.EtudiantId).FirstAsync()))
-                return NotFound(new { message = "Cas introuvable." });
-
-            var (userId, userName) = CurrentUser();
-            task.Done               = true;
-            task.DoneLe             = DateTime.UtcNow;
-            task.CompletionEvidence = dto.CompletionEvidence;
-
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
-            {
-                CaseId = id, Action = "TaskCompleted", Description = task.Titre,
-                UtilisateurId = userId, UtilisateurNom = userName,
-            });
-            await _context.SaveChangesAsync();
-            return NoContent();
-        }
-
         // ── Notes ─────────────────────────────────────────────────────────────
+        // A note IS an event (Type='Note') — it appears in the case history
+        // automatically, no parallel table to keep in sync.
 
         // GET: api/intervention-cases/5/notes
         [HttpGet("{id}/notes")]
-        public async Task<ActionResult<IEnumerable<CaseNote>>> GetNotes(int id)
+        public async Task<ActionResult<IEnumerable<CaseEvent>>> GetNotes(int id)
         {
             var owningEtudiantId = await _context.InterventionCases
                 .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
@@ -411,14 +345,15 @@ namespace PlateformePFA.API.Controllers
                 return NotFound(new { message = "Cas introuvable." });
 
             // Non-privileged callers (Enseignant) never see private notes.
-            var notesQuery = _context.CaseNotes.AsNoTracking().Where(n => n.CaseId == id);
-            if (!IsPrivileged()) notesQuery = notesQuery.Where(n => !n.IsPrivate);
-            return await notesQuery.OrderByDescending(n => n.CreeLe).ToListAsync();
+            var notesQuery = _context.CaseEvents.AsNoTracking()
+                .Where(e => e.CaseId == id && e.Type == "Note");
+            if (!IsPrivileged()) notesQuery = notesQuery.Where(e => !e.IsPrivate);
+            return await notesQuery.OrderByDescending(e => e.CreeLe).ToListAsync();
         }
 
         // POST: api/intervention-cases/5/notes
         [HttpPost("{id}/notes")]
-        public async Task<ActionResult<CaseNote>> CreateNote(int id, CreateNoteDto dto)
+        public async Task<ActionResult<CaseEvent>> CreateNote(int id, CreateNoteDto dto)
         {
             var owningEtudiantId = await _context.InterventionCases
                 .Where(c => c.Id == id).Select(c => (int?)c.EtudiantId).FirstOrDefaultAsync();
@@ -426,21 +361,16 @@ namespace PlateformePFA.API.Controllers
                 return NotFound(new { message = "Cas introuvable." });
 
             var (userId, userName) = CurrentUser();
-            var note = new CaseNote
+            var note = new CaseEvent
             {
-                CaseId    = id,
-                Contenu   = dto.Contenu,
-                IsPrivate = IsPrivileged() && dto.IsPrivate,
-                AuteurId  = userId,
-                AuteurNom = userName,
+                CaseId        = id,
+                Type          = "Note",
+                Contenu       = dto.Contenu,
+                IsPrivate     = IsPrivileged() && dto.IsPrivate,
+                UtilisateurId = userId,
+                UtilisateurNom = userName,
             };
-            _context.CaseNotes.Add(note);
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
-            {
-                CaseId = id, Action = "NoteAdded",
-                Description = note.IsPrivate ? "Note privée ajoutée." : "Note ajoutée.",
-                UtilisateurId = userId, UtilisateurNom = userName,
-            });
+            _context.CaseEvents.Add(note);
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetNotes), new { id }, note);
         }
@@ -531,11 +461,11 @@ namespace PlateformePFA.API.Controllers
             comm.Erreur = error;
             if (ok) comm.EnvoyeLe = DateTime.UtcNow;
 
-            _context.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _context.CaseEvents.Add(new CaseEvent
             {
                 CaseId = comm.CaseId,
-                Action = ok ? "EmailSent" : "EmailFailed",
-                Description = ok ? comm.Sujet : $"Échec : {comm.Sujet}",
+                Type = ok ? "EmailSent" : "EmailFailed",
+                Contenu = ok ? comm.Sujet : $"Échec : {comm.Sujet}",
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
             await _context.SaveChangesAsync();

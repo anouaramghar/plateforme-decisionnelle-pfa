@@ -193,14 +193,14 @@ namespace PlateformePFA.API.Controllers
                 })
                 .ToListAsync();
 
-            var caseEvents = await _context.CaseTimelineEvents.AsNoTracking()
-                .Where(t => t.Case.EtudiantId == id)
+            var caseEvents = await _context.CaseEvents.AsNoTracking()
+                .Where(t => t.Case.EtudiantId == id && !t.IsPrivate)
                 .Select(t => new TimelineItemDto
                 {
                     Date   = t.CreeLe,
                     Source = "Case",
-                    Action = t.Action,
-                    Label  = t.Description,
+                    Action = t.Type,
+                    Label  = t.Contenu,
                     RefId  = t.CaseId,
                 })
                 .ToListAsync();

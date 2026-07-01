@@ -24,9 +24,7 @@ namespace PlateformePFA.API.Data
 
         // ── Intervention cases (Release 1) ────────────────────────────────────
         public DbSet<InterventionCase>  InterventionCases  { get; set; }
-        public DbSet<CaseTimelineEvent> CaseTimelineEvents { get; set; }
-        public DbSet<CaseTask>          CaseTasks          { get; set; }
-        public DbSet<CaseNote>          CaseNotes          { get; set; }
+        public DbSet<CaseEvent>         CaseEvents         { get; set; }
         public DbSet<CaseCommunication> CaseCommunications { get; set; }
 
         // ── Copilot ──────────────────────────────────────────────────────────
@@ -102,15 +100,13 @@ namespace PlateformePFA.API.Data
                 .OnDelete(DeleteBehavior.SetNull);
 
             // ── Intervention cases ────────────────────────────────────────────
-            modelBuilder.Entity<CaseTimelineEvent>()
-                .HasOne(t => t.Case)
-                .WithMany(c => c.Timeline)
-                .HasForeignKey(t => t.CaseId);
+            modelBuilder.Entity<CaseEvent>()
+                .HasOne(e => e.Case)
+                .WithMany(c => c.Events)
+                .HasForeignKey(e => e.CaseId);
+            modelBuilder.Entity<CaseEvent>()
+                .HasIndex(e => new { e.CaseId, e.CreeLe });
 
-            modelBuilder.Entity<CaseTask>()
-                .HasIndex(t => new { t.CaseId, t.Done });
-            modelBuilder.Entity<CaseNote>()
-                .HasIndex(n => n.CaseId);
             modelBuilder.Entity<CaseCommunication>()
                 .HasIndex(cc => new { cc.CaseId, cc.Status });
 

@@ -32,7 +32,13 @@ namespace PlateformePFA.API.Models
         public int? OwnerId { get; set; }
 
         public DateTime? DueDate { get; set; }
-        public DateTime? EscaladeLe { get; set; }
+
+        // Escalation is derived, not stored: a Critical case past its due date
+        // IS escalated. No background worker, no extra state to keep in sync.
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public bool EnRetard =>
+            DueDate.HasValue && DueDate.Value < DateTime.UtcNow
+            && Etat != CaseWorkflowState.Resolved && Etat != CaseWorkflowState.Closed;
 
         // Set on Resolved; both required by the workflow.
         [MaxLength(40)]
@@ -54,6 +60,6 @@ namespace PlateformePFA.API.Models
 
         [JsonIgnore] public Etudiant Etudiant { get; set; } = null!;
         [JsonIgnore] public Utilisateur? Owner { get; set; }
-        [JsonIgnore] public ICollection<CaseTimelineEvent>? Timeline { get; set; }
+        [JsonIgnore] public ICollection<CaseEvent>? Events { get; set; }
     }
 }

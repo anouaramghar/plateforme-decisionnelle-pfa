@@ -35,7 +35,7 @@ import {
 
 const baseCase: InterventionCase = {
   id: 12, etudiantId: 4, filiereId: 1, motif: 'Résultats en baisse', priorite: 'High',
-  etat: 'InProgress', ownerId: 2, dueDate: null, escaladeLe: null, outcome: null,
+  etat: 'InProgress', ownerId: 2, dueDate: null, enRetard: false, outcome: null,
   resolutionSummary: null, followUpDate: null, meetingScheduledFor: null,
   meetingLocation: null, meetingAttendance: null, meetingHeldAt: null,
   creeLe: '2026-06-24T09:00:00Z', clotureLe: null,

@@ -8,12 +8,11 @@ namespace PlateformePFA.API.Services
         public const string InProgress     = "InProgress";
         public const string WaitingStudent = "WaitingStudent";
         public const string Monitoring     = "Monitoring";
-        public const string Escalated      = "Escalated";
         public const string Resolved       = "Resolved";
         public const string Closed         = "Closed";
 
         public static readonly string[] All =
-            { Open, InProgress, WaitingStudent, Monitoring, Escalated, Resolved, Closed };
+            { Open, InProgress, WaitingStudent, Monitoring, Resolved, Closed };
     }
 
     /// <summary>
@@ -22,13 +21,14 @@ namespace PlateformePFA.API.Services
     /// </summary>
     public static class CaseWorkflow
     {
+        // Escalation is no longer a state: "Critical and past due" is derived
+        // from data the case already carries (see InterventionCase.EnRetard).
         private static readonly Dictionary<string, string[]> Allowed = new()
         {
             [CaseWorkflowState.Open]           = new[] { CaseWorkflowState.InProgress },
-            [CaseWorkflowState.InProgress]     = new[] { CaseWorkflowState.WaitingStudent, CaseWorkflowState.Monitoring, CaseWorkflowState.Escalated, CaseWorkflowState.Resolved },
-            [CaseWorkflowState.WaitingStudent] = new[] { CaseWorkflowState.InProgress, CaseWorkflowState.Monitoring, CaseWorkflowState.Escalated },
+            [CaseWorkflowState.InProgress]     = new[] { CaseWorkflowState.WaitingStudent, CaseWorkflowState.Monitoring, CaseWorkflowState.Resolved },
+            [CaseWorkflowState.WaitingStudent] = new[] { CaseWorkflowState.InProgress, CaseWorkflowState.Monitoring },
             [CaseWorkflowState.Monitoring]     = new[] { CaseWorkflowState.InProgress, CaseWorkflowState.Resolved },
-            [CaseWorkflowState.Escalated]      = new[] { CaseWorkflowState.InProgress, CaseWorkflowState.Resolved },
             [CaseWorkflowState.Resolved]       = new[] { CaseWorkflowState.Closed, CaseWorkflowState.InProgress }, // → InProgress = reopen
             [CaseWorkflowState.Closed]         = new[] { CaseWorkflowState.InProgress },                            // reopen only
         };
@@ -75,17 +75,5 @@ namespace PlateformePFA.API.Services
             return (true, null);
         }
 
-        /// <summary>
-        /// True when a case must auto-escalate: Critical priority, past its due
-        /// date, and not already in a terminal/escalated state.
-        /// </summary>
-        public static bool IsCriticalOverdue(string etat, string priorite, DateTime? dueDate, DateTime now)
-        {
-            if (priorite != "Critical") return false;
-            if (etat == CaseWorkflowState.Resolved
-                || etat == CaseWorkflowState.Closed
-                || etat == CaseWorkflowState.Escalated) return false;
-            return dueDate.HasValue && dueDate.Value < now;
-        }
     }
 }

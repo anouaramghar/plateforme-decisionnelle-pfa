@@ -55,10 +55,10 @@ namespace PlateformePFA.API.Controllers
                                       .CountAsync(a => !a.Resolue && a.CaseId == null);
             var openCases       = await open.CountAsync();
             var unassignedCases = await open.CountAsync(c => c.OwnerId == null);
-            var escalatedCases  = await cases.CountAsync(c => c.Etat == CaseWorkflowState.Escalated);
+            // Escalation is derived, not stored: Critical + past due + still open.
+            var escalatedCases  = await open.CountAsync(c => c.Priorite == "Critical"
+                                      && c.DueDate != null && c.DueDate < now);
             var overdueCases    = await open.CountAsync(c => c.DueDate != null && c.DueDate < now);
-            var overdueTasks    = await _context.CaseTasks.AsNoTracking()
-                                      .CountAsync(t => !t.Done && t.DueDate != null && t.DueDate < now);
             var failedEmails    = await _context.CaseCommunications.AsNoTracking()
                                       .CountAsync(cc => cc.Status == "Failed");
 
@@ -131,7 +131,6 @@ namespace PlateformePFA.API.Controllers
                 UnassignedCases = unassignedCases,
                 EscalatedCases  = escalatedCases,
                 OverdueCases    = overdueCases,
-                OverdueTasks    = overdueTasks,
                 FailedEmails    = failedEmails,
                 NeedsContact    = needsContact,
                 EmailPrepared   = emailPrepared,
