@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import Chart from 'react-apexcharts'
 import type { ApexOptions } from 'apexcharts'
 import { baseTheme, readCssVar } from './baseTheme'
@@ -225,7 +226,12 @@ interface ChartRadialProps {
 
 export function ChartRadial({ value, label, height = 180, color = '#14b8a6' }: ChartRadialProps) {
   const k = useChartKey(label)
-  const options: ApexOptions = {
+  const rounded = Math.round(value * 100)
+
+  // Memoized on the values that actually matter — a fresh object identity on
+  // every unrelated parent re-render made react-apexcharts call updateOptions()
+  // each time, which redrew the arc and looked like a zigzag/flash.
+  const options: ApexOptions = useMemo(() => ({
     ...baseTheme(),
     chart: { ...baseTheme().chart, type: 'radialBar', height, sparkline: { enabled: true }, animations: { enabled: false } },
     colors: [color],
@@ -247,7 +253,9 @@ export function ChartRadial({ value, label, height = 180, color = '#14b8a6' }: C
     },
     labels: [label],
     stroke: { lineCap: 'round' },
-  }
-  const series = [Math.round(value * 100)]
+  }), [k, height, color, label])
+
+  const series = useMemo(() => [rounded], [rounded])
+
   return <Chart key={k} options={options} series={series} type="radialBar" height={height} />
 }

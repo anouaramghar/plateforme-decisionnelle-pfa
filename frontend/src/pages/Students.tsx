@@ -79,6 +79,7 @@ async function fetchShap(id: number): Promise<ShapExplainData> {
 
 export default function Students() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const { data: all = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['etudiants-with-stats'],
     queryFn: fetchStudents,
@@ -228,6 +229,7 @@ export default function Students() {
       niveau: NIVEAU_MAP[pendingAlert.severite] ?? 'Moyen',
       message: pendingAlert.message,
     })
+    queryClient.invalidateQueries({ queryKey: ['alertes'] })
     setPendingAlert(null)
   }
 
@@ -520,14 +522,18 @@ function StudentDrawer({
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ['etudiant-notes', student.id],
     queryFn: () => fetchStudentNotes(student.id),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
-  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules })
+  const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 10 * 60 * 1000 })
   const availableModules = modulesForStudent(modules, student.filiereId, student.niveau)
 
   const { data: shap, isLoading: shapLoading } = useQuery({
     queryKey: ['etudiant-shap', student.id],
     queryFn: () => fetchShap(student.id),
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   // ── Note form ──────────────────────────────────────────────────────────────
@@ -579,6 +585,7 @@ function StudentDrawer({
         niveau:     'Eleve',
         message:    `Entretien à planifier — ${student.nomComplet} · ${student.filiereCode} ${student.niveau} · Score ML : ${Math.round(student.scoreRisque * 100)}%`,
       })
+      queryClient.invalidateQueries({ queryKey: ['alertes'] })
       setEntretienSent(true)
       setTimeout(() => setEntretienSent(false), 3000)
     } finally {
@@ -879,7 +886,7 @@ function StudentDrawer({
                   height={140}
                 />
               </div>
-              <div className="flex-1">
+              <div className="flex-1" style={{ minHeight: 140 }}>
                 {shapLoading && (
                   <div className="text-[12px]" style={{ color: 'var(--text-4)' }}>
                     Calcul SHAP en cours…
