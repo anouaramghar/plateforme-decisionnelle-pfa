@@ -1,0 +1,17 @@
+// Palette validée (mode sombre, surface #1a1a19) — voir skill dataviz.
+export const T = {
+  page: '#0d0d0d',
+  surface: '#1a1a19',
+  border: 'rgba(255,255,255,0.10)',
+  ink: '#ffffff',
+  ink2: '#c3c2b7',
+  muted: '#898781',
+  grid: '#2c2c2a',
+  blue: '#3987e5',
+  aqua: '#199e70',
+  yellow: '#c98500',
+  good: '#0ca30c',
+  warning: '#fab219',
+  critical: '#d03b3b',
+  font: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+};
