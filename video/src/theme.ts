@@ -2,6 +2,7 @@
 export const T = {
   page: '#0d0d0d',
   surface: '#1a1a19',
+  surface2: '#242423',
   border: 'rgba(255,255,255,0.10)',
   ink: '#ffffff',
   ink2: '#c3c2b7',
@@ -10,8 +11,13 @@ export const T = {
   blue: '#3987e5',
   aqua: '#199e70',
   yellow: '#c98500',
+  violet: '#9085e9',
+  red: '#e66767',
+  green: '#008300',
   good: '#0ca30c',
   warning: '#fab219',
+  serious: '#ec835a',
   critical: '#d03b3b',
+  gradText: 'linear-gradient(90deg, #3987e5, #199e70)',
   font: 'system-ui, -apple-system, "Segoe UI", sans-serif',
 };
