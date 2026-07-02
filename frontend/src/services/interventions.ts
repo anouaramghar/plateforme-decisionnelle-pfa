@@ -9,11 +9,14 @@ export interface EtudiantRef {
   matricule?: string
 }
 
-export interface TimelineEvent {
+// One row of the case's single event stream. type='Note' rows are staff
+// commentary (contenu = the note text); everything else is a system record.
+export interface CaseEvent {
   id: number
   caseId: number
-  action: string
-  description: string | null
+  type: string
+  contenu: string | null
+  isPrivate: boolean
   utilisateurNom: string
   creeLe: string
 }
@@ -29,7 +32,7 @@ export interface InterventionCase {
   etat: string
   ownerId: number | null
   dueDate: string | null
-  escaladeLe: string | null
+  enRetard: boolean // derived server-side: past due & still open
   outcome: string | null
   resolutionSummary: string | null
   followUpDate: string | null
@@ -40,7 +43,7 @@ export interface InterventionCase {
   creeLe: string
   clotureLe: string | null
   etudiant?: EtudiantRef | null
-  timeline?: TimelineEvent[]
+  events?: CaseEvent[]
 }
 
 export interface TriageSignal {
@@ -65,27 +68,6 @@ export interface TriageGroup {
   resume: string            // one-line motif
   openCaseId: number | null
   signals: TriageSignal[]
-}
-
-export interface CaseTask {
-  id: number
-  caseId: number
-  titre: string
-  assigneeId: number | null
-  dueDate: string | null
-  done: boolean
-  doneLe: string | null
-  completionEvidence: string | null
-  creeLe: string
-}
-
-export interface CaseNote {
-  id: number
-  caseId: number
-  contenu: string
-  isPrivate: boolean
-  auteurNom: string
-  creeLe: string
 }
 
 export interface CaseCommunication {
@@ -129,20 +111,20 @@ interface Paginated<T> { items: T[]; total: number; page: number; pageSize: numb
 // the UI only offers legal next states. The backend re-validates regardless.
 export const CASE_TRANSITIONS: Record<string, string[]> = {
   Open:           ['InProgress'],
-  InProgress:     ['WaitingStudent', 'Monitoring', 'Escalated', 'Resolved'],
-  WaitingStudent: ['InProgress', 'Monitoring', 'Escalated'],
+  InProgress:     ['WaitingStudent', 'Monitoring', 'Resolved'],
+  WaitingStudent: ['InProgress', 'Monitoring'],
   Monitoring:     ['InProgress', 'Resolved'],
-  Escalated:      ['InProgress', 'Resolved'],
   Resolved:       ['Closed', 'InProgress'],
   Closed:         ['InProgress'],
 }
 
 // Outreach-flavoured labels: the four primary stages read as the action loop
 // (À contacter → Email préparé → Entretien planifié → Entretien réalisé).
-// Monitoring/Escalated/Closed keep their operational names.
+// Monitoring/Closed keep their operational names. Escalation is not a state —
+// it's the derived enRetard flag rendered as a badge.
 export const ETAT_LABELS: Record<string, string> = {
   Open: 'À contacter', InProgress: 'Email préparé', WaitingStudent: 'Entretien planifié',
-  Monitoring: 'Suivi', Escalated: 'Escaladé', Resolved: 'Entretien réalisé', Closed: 'Clôturé',
+  Monitoring: 'Suivi', Resolved: 'Entretien réalisé', Closed: 'Clôturé',
 }
 
 export const PRIORITE_LABELS: Record<string, string> = {
@@ -196,15 +178,8 @@ export interface TransitionBody {
 export const transitionCase = (id: number, body: TransitionBody) =>
   api.patch(`/intervention-cases/${id}/transition`, body)
 
-export const fetchTasks = (id: number) =>
-  api.get<CaseTask[]>(`/intervention-cases/${id}/tasks`).then(r => r.data)
-export const createTask = (id: number, body: { titre: string; dueDate?: string }) =>
-  api.post(`/intervention-cases/${id}/tasks`, body)
-export const completeTask = (id: number, taskId: number, completionEvidence?: string) =>
-  api.patch(`/intervention-cases/${id}/tasks/${taskId}/complete`, { completionEvidence })
-
 export const fetchNotes = (id: number) =>
-  api.get<CaseNote[]>(`/intervention-cases/${id}/notes`).then(r => r.data)
+  api.get<CaseEvent[]>(`/intervention-cases/${id}/notes`).then(r => r.data)
 export const createNote = (id: number, body: { contenu: string; isPrivate: boolean }) =>
   api.post(`/intervention-cases/${id}/notes`, body)
 
@@ -246,7 +221,7 @@ export const fetchFilieres = () =>
 
 export interface InterventionKpis {
   triageQueue: number; openCases: number; unassignedCases: number
-  escalatedCases: number; overdueCases: number; overdueTasks: number; failedEmails: number
+  escalatedCases: number; overdueCases: number; failedEmails: number
   needsContact: number; emailPrepared: number; meetingsScheduled: number; meetingsHeld: number
   duplicateCasesPrevented: number
   contactedEligiblePercent: number; emailDeliverySuccessPercent: number

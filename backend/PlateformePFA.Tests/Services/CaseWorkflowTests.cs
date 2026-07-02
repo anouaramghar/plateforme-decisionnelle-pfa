@@ -36,7 +36,7 @@ public class CaseWorkflowTests
 
     [Theory]
     [InlineData("Monitoring")]
-    [InlineData("Escalated")]
+    [InlineData("InProgress")]
     public void Every_path_to_resolved_requires_a_held_meeting(string from)
     {
         CaseWorkflow.CanTransition(from, "Resolved", Facts(meetingHeld: false)).ok.Should().BeFalse();
@@ -66,18 +66,23 @@ public class CaseWorkflowTests
     }
 
     [Fact]
-    public void IsCriticalOverdue_only_for_critical_past_due_active_cases()
+    public void Escalated_is_no_longer_a_state()
     {
-        var now = new DateTime(2026, 6, 23, 12, 0, 0, DateTimeKind.Utc);
-        var past = now.AddDays(-1);
-        var future = now.AddDays(1);
+        // Escalation is derived (InterventionCase.EnRetard), not a workflow state.
+        CaseWorkflow.CanTransition("InProgress", "Escalated", Facts()).ok.Should().BeFalse();
+        CaseWorkflowState.All.Should().NotContain("Escalated");
+    }
 
-        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", past, now).Should().BeTrue();
-        CaseWorkflow.IsCriticalOverdue("InProgress", "High",     past, now).Should().BeFalse(); // not critical
-        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", future, now).Should().BeFalse(); // not overdue
-        CaseWorkflow.IsCriticalOverdue("InProgress", "Critical", null, now).Should().BeFalse(); // no due date
-        CaseWorkflow.IsCriticalOverdue("Resolved",   "Critical", past, now).Should().BeFalse(); // terminal
-        CaseWorkflow.IsCriticalOverdue("Closed",     "Critical", past, now).Should().BeFalse(); // terminal
-        CaseWorkflow.IsCriticalOverdue("Escalated",  "Critical", past, now).Should().BeFalse(); // already escalated
+    [Fact]
+    public void EnRetard_is_true_only_for_past_due_active_cases()
+    {
+        var past = DateTime.UtcNow.AddDays(-1);
+        var future = DateTime.UtcNow.AddDays(1);
+
+        new API.Models.InterventionCase { Etat = "InProgress", DueDate = past }.EnRetard.Should().BeTrue();
+        new API.Models.InterventionCase { Etat = "InProgress", DueDate = future }.EnRetard.Should().BeFalse();
+        new API.Models.InterventionCase { Etat = "InProgress", DueDate = null }.EnRetard.Should().BeFalse();
+        new API.Models.InterventionCase { Etat = "Resolved",   DueDate = past }.EnRetard.Should().BeFalse();
+        new API.Models.InterventionCase { Etat = "Closed",     DueDate = past }.EnRetard.Should().BeFalse();
     }
 }

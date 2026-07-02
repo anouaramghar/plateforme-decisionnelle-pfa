@@ -48,7 +48,7 @@ namespace PlateformePFA.API.Controllers
                     c.Etudiant.Niveau == teacher.Module.Niveau);
         }
 
-        private async Task<ActionResult<CaseNote>> CreateFollowUpNoteAsync(
+        private async Task<ActionResult<CaseEvent>> CreateFollowUpNoteAsync(
             int caseId,
             TeacherFollowUpActionDto? dto,
             string? marker,
@@ -69,15 +69,16 @@ namespace PlateformePFA.API.Controllers
             if (marker is not null) content = $"{marker} {content}";
             if (content.Length > 2000) return BadRequest(new { message = "Contenu trop long." });
 
-            var note = new CaseNote
+            var note = new CaseEvent
             {
                 CaseId = caseId,
+                Type = "Note",
                 Contenu = content,
                 IsPrivate = false,
-                AuteurId = teacher.Id,
-                AuteurNom = CurrentUserName,
+                UtilisateurId = teacher.Id,
+                UtilisateurNom = CurrentUserName,
             };
-            _context.CaseNotes.Add(note);
+            _context.CaseEvents.Add(note);
             await _context.SaveChangesAsync();
             return Created($"/api/enseignant/suivi/{caseId}", note);
         }
@@ -188,9 +189,9 @@ namespace PlateformePFA.API.Controllers
                 .ToListAsync();
 
             var caseIds = cases.Select(c => c.Id).ToArray();
-            var notes = await _context.CaseNotes
+            var notes = await _context.CaseEvents
                 .AsNoTracking()
-                .Where(n => caseIds.Contains(n.CaseId) && !n.IsPrivate)
+                .Where(n => caseIds.Contains(n.CaseId) && n.Type == "Note" && !n.IsPrivate)
                 .OrderByDescending(n => n.CreeLe)
                 .ToListAsync();
             var notesByCase = notes.GroupBy(n => n.CaseId).ToDictionary(g => g.Key, g => g.ToList());
@@ -198,12 +199,12 @@ namespace PlateformePFA.API.Controllers
             return Ok(cases.Select(c =>
             {
                 notesByCase.TryGetValue(c.Id, out var caseNotes);
-                caseNotes ??= new List<CaseNote>();
+                caseNotes ??= new List<CaseEvent>();
 
                 var treated = c.Etat is CaseWorkflowState.Resolved or CaseWorkflowState.Closed ||
-                              caseNotes.Any(n => n.AuteurId == teacher.Id &&
-                                                 n.Contenu.StartsWith(TreatedMarker, StringComparison.Ordinal));
-                var followed = c.Etat != CaseWorkflowState.Open || caseNotes.Any(n => n.AuteurId == teacher.Id);
+                              caseNotes.Any(n => n.UtilisateurId == teacher.Id &&
+                                                 (n.Contenu ?? "").StartsWith(TreatedMarker, StringComparison.Ordinal));
+                var followed = c.Etat != CaseWorkflowState.Open || caseNotes.Any(n => n.UtilisateurId == teacher.Id);
                 var column = treated ? "Traite" : followed ? "En suivi" : "A voir";
 
                 return new TeacherFollowUpCardDto(
@@ -219,15 +220,15 @@ namespace PlateformePFA.API.Controllers
         }
 
         [HttpPost("suivi/{caseId:int}/observation")]
-        public Task<ActionResult<CaseNote>> CreateObservation(int caseId, TeacherFollowUpActionDto? dto) =>
+        public Task<ActionResult<CaseEvent>> CreateObservation(int caseId, TeacherFollowUpActionDto? dto) =>
             CreateFollowUpNoteAsync(caseId, dto, marker: null, defaultContent: null);
 
         [HttpPost("suivi/{caseId:int}/treated")]
-        public Task<ActionResult<CaseNote>> MarkTreated(int caseId, TeacherFollowUpActionDto? dto) =>
+        public Task<ActionResult<CaseEvent>> MarkTreated(int caseId, TeacherFollowUpActionDto? dto) =>
             CreateFollowUpNoteAsync(caseId, dto, TreatedMarker, "Traite par l'enseignant.");
 
         [HttpPost("suivi/{caseId:int}/request-intervention")]
-        public Task<ActionResult<CaseNote>> RequestIntervention(int caseId, TeacherFollowUpActionDto? dto) =>
+        public Task<ActionResult<CaseEvent>> RequestIntervention(int caseId, TeacherFollowUpActionDto? dto) =>
             CreateFollowUpNoteAsync(caseId, dto, RequestedMarker, "Intervention demandee par l'enseignant.");
     }
 }

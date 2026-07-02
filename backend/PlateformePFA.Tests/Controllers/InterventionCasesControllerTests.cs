@@ -131,8 +131,8 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         verify.Alertes.Single(a => a.Id == s1).CaseId.Should().Be(caseId);
         verify.Alertes.Single(a => a.Id == s2).CaseId.Should().Be(caseId);
         // A SignalLinked timeline event was appended.
-        verify.CaseTimelineEvents.Should().Contain(e =>
-            e.CaseId == caseId && e.Action == "SignalLinked");
+        verify.CaseEvents.Should().Contain(e =>
+            e.CaseId == caseId && e.Type == "SignalLinked");
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
         var caseId = await CreateCaseAsync(client, etuId);
 
         using var verify = _factory.CreateContext();
-        var created = verify.CaseTimelineEvents.Single(e => e.CaseId == caseId && e.Action == "Created");
+        var created = verify.CaseEvents.Single(e => e.CaseId == caseId && e.Type == "Created");
         created.UtilisateurNom.Should().NotBeNullOrEmpty();
         created.UtilisateurId.Should().HaveValue();
     }
@@ -348,9 +348,9 @@ public class InterventionCasesControllerTests : IClassFixture<TestWebFactory>
 
         // List notes: the private responsable note is hidden; the teacher's own is forced public.
         var notes = await (await teacher.GetAsync($"/api/intervention-cases/{caseId}/notes"))
-            .Content.ReadFromJsonAsync<List<CaseNote>>();
-        notes!.Should().NotContain(n => n.Contenu.StartsWith("PRIVATE"));
-        notes!.Single(n => n.Contenu.StartsWith("Module evidence")).IsPrivate.Should().BeFalse();
+            .Content.ReadFromJsonAsync<List<CaseEvent>>();
+        notes!.Should().NotContain(n => n.Contenu!.StartsWith("PRIVATE"));
+        notes!.Single(n => n.Contenu!.StartsWith("Module evidence")).IsPrivate.Should().BeFalse();
 
         // Close / transition: forbidden.
         (await teacher.PatchAsJsonAsync($"/api/intervention-cases/{caseId}/transition",

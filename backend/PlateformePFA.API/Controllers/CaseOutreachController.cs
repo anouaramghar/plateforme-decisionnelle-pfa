@@ -43,6 +43,31 @@ namespace PlateformePFA.API.Controllers
             return (id, name);
         }
 
+        public record OutreachDraftInput(
+            string FirstName,
+            string ConcernSummary,
+            string ScheduledFor,
+            string Location);
+
+        public record OutreachDraftOutput(string Subject, string Body);
+
+        // POST: api/outreach/draft — renders a meeting-invitation draft from the
+        // template (absorbed from the former OutreachDraftController; absolute
+        // route keeps the URL stable for the frontend).
+        [HttpPost("/api/outreach/draft")]
+        public ActionResult<OutreachDraftOutput> GenerateDraft([FromBody] OutreachDraftInput input)
+        {
+            if (string.IsNullOrWhiteSpace(input.FirstName))
+                return BadRequest(new { message = "Le prénom est requis." });
+
+            var template = EmailTemplates.All["meeting_outreach"];
+            var dt = DateTime.Parse(input.ScheduledFor, null, System.Globalization.DateTimeStyles.RoundtripKind);
+            var (subject, body) = EmailTemplates.RenderMeeting(
+                template, input.FirstName, "", dt.ToString("dd/MM/yyyy"), dt.ToString("HH:mm"), input.Location);
+
+            return Ok(new OutreachDraftOutput(subject, body));
+        }
+
         // POST: api/intervention-cases/5/outreach/draft
         // Creates the single editable draft and moves the case to InProgress.
         [HttpPost("draft")]
@@ -104,9 +129,9 @@ namespace PlateformePFA.API.Controllers
                 }
             }
             _db.CaseCommunications.Add(comm);
-            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _db.CaseEvents.Add(new CaseEvent
             {
-                CaseId = caseId, Action = "EmailDraftCreated", Description = comm.Sujet,
+                CaseId = caseId, Type = "EmailDraftCreated", Contenu = comm.Sujet,
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
             await _db.SaveChangesAsync();
@@ -129,9 +154,9 @@ namespace PlateformePFA.API.Controllers
             var (userId, userName) = CurrentUser();
             comm.Sujet = dto.Subject.Trim();
             comm.Corps = dto.Body.Trim();
-            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _db.CaseEvents.Add(new CaseEvent
             {
-                CaseId = caseId, Action = "EmailDraftEdited", Description = comm.Sujet,
+                CaseId = caseId, Type = "EmailDraftEdited", Contenu = comm.Sujet,
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
             await _db.SaveChangesAsync();
@@ -163,10 +188,10 @@ namespace PlateformePFA.API.Controllers
             var (userId, userName) = CurrentUser();
             c.MeetingScheduledFor = dto.ScheduledFor.ToUniversalTime();
             c.MeetingLocation = dto.Location.Trim();
-            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _db.CaseEvents.Add(new CaseEvent
             {
-                CaseId = caseId, Action = "MeetingScheduled",
-                Description = $"Rendez-vous le {c.MeetingScheduledFor:dd/MM/yyyy HH:mm} — {c.MeetingLocation}",
+                CaseId = caseId, Type = "MeetingScheduled",
+                Contenu = $"Rendez-vous le {c.MeetingScheduledFor:dd/MM/yyyy HH:mm} — {c.MeetingLocation}",
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
 
@@ -205,9 +230,9 @@ namespace PlateformePFA.API.Controllers
                 c.Outcome           = dto.Outcome;
                 c.ResolutionSummary = dto.Summary;
                 c.Etat              = CaseWorkflowState.Resolved;
-                _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+                _db.CaseEvents.Add(new CaseEvent
                 {
-                    CaseId = caseId, Action = "MeetingHeld", Description = dto.Summary,
+                    CaseId = caseId, Type = "MeetingHeld", Contenu = dto.Summary,
                     UtilisateurId = userId, UtilisateurNom = userName,
                 });
             }
@@ -216,11 +241,11 @@ namespace PlateformePFA.API.Controllers
                 // Absent/Cancelled: the intervention stays active — a later
                 // reschedule/send is required before it can resolve.
                 c.MeetingHeldAt = null;
-                _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+                _db.CaseEvents.Add(new CaseEvent
                 {
                     CaseId = caseId,
-                    Action = dto.Attendance == "Absent" ? "MeetingAbsent" : "MeetingCancelled",
-                    Description = dto.Attendance == "Absent" ? "Étudiant absent au rendez-vous." : "Rendez-vous annulé.",
+                    Type = dto.Attendance == "Absent" ? "MeetingAbsent" : "MeetingCancelled",
+                    Contenu = dto.Attendance == "Absent" ? "Étudiant absent au rendez-vous." : "Rendez-vous annulé.",
                     UtilisateurId = userId, UtilisateurNom = userName,
                 });
             }
@@ -240,11 +265,11 @@ namespace PlateformePFA.API.Controllers
             comm.EnvoyeLe = DateTime.UtcNow;
             comm.ConcurrencyToken = Guid.NewGuid();
             c.Etat = CaseWorkflowState.WaitingStudent;
-            _db.CaseTimelineEvents.Add(new CaseTimelineEvent
+            _db.CaseEvents.Add(new CaseEvent
             {
                 CaseId = c.Id,
-                Action = "EmailSent",
-                Description = comm.Sujet,
+                Type = "EmailSent",
+                Contenu = comm.Sujet,
                 UtilisateurId = userId, UtilisateurNom = userName,
             });
             try

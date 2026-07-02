@@ -156,23 +156,26 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
         var caseId = CreateCase();
         using (var ctx = _factory.CreateContext())
         {
-            ctx.CaseNotes.AddRange(
-                new CaseNote
+            ctx.CaseEvents.AddRange(
+                new CaseEvent
                 {
+                    Type = "Note",
                     CaseId = caseId,
                     Contenu = "[teacher-follow-up:requested] Ancienne action",
                     IsPrivate = false,
                     CreeLe = DateTime.UtcNow.AddMinutes(-2),
                 },
-                new CaseNote
+                new CaseEvent
                 {
+                    Type = "Note",
                     CaseId = caseId,
                     Contenu = "PRIVATE latest",
                     IsPrivate = true,
                     CreeLe = DateTime.UtcNow.AddMinutes(1),
                 },
-                new CaseNote
+                new CaseEvent
                 {
+                    Type = "Note",
                     CaseId = caseId,
                     Contenu = "[teacher-follow-up:treated] Derniere action",
                     IsPrivate = false,
@@ -198,7 +201,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.Created);
         using var ctx = _factory.CreateContext();
-        var note = ctx.CaseNotes.Single(n => n.CaseId == caseId);
+        var note = ctx.CaseEvents.Single(n => n.CaseId == caseId);
         note.Contenu.Should().Be("Observation utile");
         note.IsPrivate.Should().BeFalse();
     }
@@ -214,7 +217,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var ctx = _factory.CreateContext();
-        ctx.CaseNotes.Should().NotContain(n => n.CaseId == caseId);
+        ctx.CaseEvents.Should().NotContain(n => n.CaseId == caseId);
     }
 
     [Fact]
@@ -228,7 +231,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var ctx = _factory.CreateContext();
-        ctx.CaseNotes.Should().NotContain(n => n.CaseId == caseId);
+        ctx.CaseEvents.Should().NotContain(n => n.CaseId == caseId);
     }
 
     [Fact]
@@ -242,7 +245,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.Created);
         using var ctx = _factory.CreateContext();
-        var note = ctx.CaseNotes.Single(n => n.CaseId == caseId);
+        var note = ctx.CaseEvents.Single(n => n.CaseId == caseId);
         note.Contenu.Should().StartWith("[teacher-follow-up:treated]");
         note.IsPrivate.Should().BeFalse();
     }
@@ -258,7 +261,7 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.Created);
         using var ctx = _factory.CreateContext();
-        var note = ctx.CaseNotes.Single(n => n.CaseId == caseId);
+        var note = ctx.CaseEvents.Single(n => n.CaseId == caseId);
         note.Contenu.Should().StartWith("[teacher-follow-up:requested]");
         note.IsPrivate.Should().BeFalse();
     }
@@ -274,6 +277,6 @@ public class EnseignantFollowUpControllerTests : IClassFixture<TestWebFactory>
 
         res.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var ctx = _factory.CreateContext();
-        ctx.CaseNotes.Should().NotContain(n => n.CaseId == caseId);
+        ctx.CaseEvents.Should().NotContain(n => n.CaseId == caseId);
     }
 }

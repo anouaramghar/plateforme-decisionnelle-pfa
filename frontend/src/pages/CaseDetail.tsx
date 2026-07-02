@@ -9,7 +9,7 @@ import { MeetingOutcomeForm } from '../components/interventions/MeetingOutcomeFo
 import { useAuth } from '../context/AuthContext'
 import type { AxiosError } from 'axios'
 import {
-  fetchCase, transitionCase, fetchTasks, createTask, completeTask,
+  fetchCase, transitionCase,
   fetchNotes, createNote, fetchCommunications, sendCommunication, retryCommunication,
   fetchTemplates, CASE_TRANSITIONS, ETAT_LABELS, PRIORITE_LABELS, OUTCOMES,
 } from '../services/interventions'
@@ -182,12 +182,9 @@ export default function CaseDetail() {
         </details>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TasksCard caseId={caseId} onChange={invalidate} />
-        <NotesCard caseId={caseId} onChange={invalidate} />
-      </div>
+      <NotesCard caseId={caseId} onChange={invalidate} />
       <CommunicationsCard caseId={caseId} onChange={invalidate} />
-      <TimelineCard events={c.timeline ?? []} />
+      <TimelineCard events={c.events ?? []} />
 
       <Modal
         open={!!dialog}
@@ -251,55 +248,6 @@ export default function CaseDetail() {
   )
 }
 
-// ── Tasks ────────────────────────────────────────────────────────────────────
-
-function TasksCard({ caseId, onChange }: { caseId: number; onChange: () => void }) {
-  const qc = useQueryClient()
-  const [titre, setTitre] = useState('')
-  const { data: tasks = [] } = useQuery({ queryKey: ['case', caseId, 'tasks'], queryFn: () => fetchTasks(caseId) })
-
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['case', caseId, 'tasks'] }); onChange() }
-  const add = useMutation({ mutationFn: () => createTask(caseId, { titre }), onSuccess: () => { setTitre(''); refresh() } })
-  const done = useMutation({ mutationFn: (taskId: number) => completeTask(caseId, taskId), onSuccess: refresh })
-
-  return (
-    <div className="card p-4">
-      <div className="text-[13px] font-medium mb-2">Tâches</div>
-      <div className="space-y-1.5 mb-3">
-        {tasks.length === 0 && <div className="cap">Aucune tâche.</div>}
-        {tasks.map(t => (
-          <div key={t.id} className="flex items-center gap-2 text-[12.5px]">
-            <button
-              type="button"
-              onClick={() => !t.done && done.mutate(t.id)}
-              disabled={t.done}
-              title={t.done ? 'Terminée' : 'Marquer terminée'}
-              aria-label={t.done ? `${t.titre} terminée` : `Marquer ${t.titre} comme terminée`}
-            >
-              <Icon name="check" size={14} style={{ color: t.done ? 'var(--ok)' : 'var(--text-3)' }} />
-            </button>
-            <span style={{ textDecoration: t.done ? 'line-through' : 'none', color: t.done ? 'var(--text-3)' : 'var(--text)' }}>
-              {t.titre}
-            </span>
-          </div>
-        ))}
-      </div>
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={e => { e.preventDefault(); if (titre.trim()) add.mutate() }}
-      >
-        <input
-          className="input flex-1" placeholder="Nouvelle tâche…"
-          value={titre} onChange={e => setTitre(e.target.value)}
-        />
-        <button className="btn btn-sm btn-accent" disabled={!titre.trim() || add.isPending} aria-label="Ajouter la tâche">
-          <Icon name="plus" size={13} />
-        </button>
-      </form>
-    </div>
-  )
-}
-
 // ── Notes ────────────────────────────────────────────────────────────────────
 
 function NotesCard({ caseId, onChange }: { caseId: number; onChange: () => void }) {
@@ -321,7 +269,7 @@ function NotesCard({ caseId, onChange }: { caseId: number; onChange: () => void 
         {notes.map(n => (
           <div key={n.id} className="text-[12.5px]">
             <div className="flex items-center gap-1.5">
-              <span className="font-medium">{n.auteurNom}</span>
+              <span className="font-medium">{n.utilisateurNom}</span>
               {n.isPrivate && <Pill tone="warn">privée</Pill>}
               <span className="cap">{new Date(n.creeLe).toLocaleDateString('fr-FR')}</span>
             </div>
@@ -419,7 +367,7 @@ function CommunicationsCard({ caseId, onChange }: { caseId: number; onChange: ()
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
-function TimelineCard({ events }: { events: { id: number; action: string; description: string | null; utilisateurNom: string; creeLe: string }[] }) {
+function TimelineCard({ events }: { events: { id: number; type: string; contenu: string | null; utilisateurNom: string; creeLe: string }[] }) {
   return (
     <div className="card p-4">
       <div className="text-[13px] font-medium mb-3">Historique</div>
@@ -429,8 +377,8 @@ function TimelineCard({ events }: { events: { id: number; action: string; descri
           <div key={ev.id} className="flex items-start gap-2.5 text-[12.5px]">
             <span className="pill-dot" style={{ background: 'var(--accent-500)', marginTop: 5 }} />
             <div className="flex-1">
-              <span className="font-medium">{ev.action}</span>
-              {ev.description && <span style={{ color: 'var(--text-2)' }}> — {ev.description}</span>}
+              <span className="font-medium">{ev.type}</span>
+              {ev.contenu && <span style={{ color: 'var(--text-2)' }}> — {ev.contenu}</span>}
               <div className="cap">
                 {ev.utilisateurNom} · {new Date(ev.creeLe).toLocaleString('fr-FR')}
               </div>
