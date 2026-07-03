@@ -374,9 +374,14 @@ html.dark .tbl tbody tr:hover td { background: color-mix(in oklch, var(--accent-
 @keyframes thinkDot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
 .think-dot { animation: thinkDot 1.2s ease-in-out infinite; }
 
-/* Copilot panel slide-in */
+/* Copilot panel slide-in — same motion and shadow as .drawer, the two
+   right-hand surfaces should read as siblings. */
 @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-.copilot-panel { animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+.copilot-panel {
+  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .18);
+}
+html.dark .copilot-panel { box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .5); }
 
 /* page-load entrance (Login) — one orchestrated moment, not scattered effects.
    Reduced-motion users get the neutralized version via the global media query. */
@@ -557,6 +562,23 @@ html.dark .drawer { box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .5); }
   --ring: var(--accent-500);
   font-size: 13px;
 }
+/* Empty-state suggestion pills (see COPILOT_SUGGESTIONS in AppShell) — same
+   language as the app's filter chips: hairline, pill radius, teal on hover. */
+.copilot-panel [data-slot='suggestion-pill'] {
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.copilot-panel [data-slot='suggestion-pill']:hover {
+  background: color-mix(in oklch, var(--accent-500) 10%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent-500) 45%, var(--border-2));
+  color: var(--accent-700);
+}
+html.dark .copilot-panel [data-slot='suggestion-pill']:hover { color: var(--accent-300); }
 
 @media (max-width: 639px) {
   .copilot-panel {

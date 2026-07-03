@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -10,6 +11,25 @@ const CopilotChat = lazy(() =>
   import("@copilotkit/react-core/v2").then((m) => ({ default: m.CopilotChat }))
 );
 
+// Empty-state suggestion pills — one per Copilot capability, shown by the
+// widget before the first message and gone after. Titles stay short (pill
+// labels); messages are the full questions actually sent to the agent.
+// E10001 is a real seeded matricule — keep it valid or the demo chip 404s.
+const COPILOT_SUGGESTIONS = [
+  {
+    title: "Étudiants à risque",
+    message: "Quels étudiants sont actuellement à risque ?",
+  },
+  {
+    title: "Profil étudiant",
+    message: "Donne-moi le profil de l'étudiant E10001.",
+  },
+  {
+    title: "Moyennes par filière",
+    message: "Quelle est la moyenne générale par filière ?",
+  },
+];
+
 export function AppShell() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
@@ -19,6 +39,9 @@ export function AppShell() {
   const navigate = useNavigate();
   const { copilotActive } = useAuth();
   const copilotTitleId = "eniad-copilot-title";
+
+  // Registered once; the widget shows these before the first message only.
+  useConfigureSuggestions({ suggestions: COPILOT_SUGGESTIONS }, []);
 
   const closeCopilot = useCallback(() => setCopilotOpen(false), []);
 
@@ -189,7 +212,20 @@ export function AppShell() {
                 >
                   ENIAD Copilot
                 </h2>
-                <div className="cap mt-1">Connecté aux données étudiantes</div>
+                <div className="cap mt-1 flex items-center gap-1.5">
+                  <span
+                    className="live-dot"
+                    aria-hidden="true"
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: 999,
+                      background: "var(--ok)",
+                      display: "inline-block",
+                    }}
+                  />
+                  Connecté aux données étudiantes
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -217,7 +253,7 @@ export function AppShell() {
                     agentId="default"
                     labels={{
                       welcomeMessageText:
-                        "Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.",
+                        "Bonjour ! Posez une question sur vos étudiants, leurs risques ou leurs résultats — ou partez d'une suggestion.",
                       chatInputPlaceholder: "Posez une question sur les données…",
                     }}
                   />

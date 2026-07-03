@@ -16,6 +16,7 @@ vi.mock('./Topbar', () => ({
 }))
 vi.mock('@copilotkit/react-core/v2', () => ({
   CopilotChat: () => <div data-testid="copilot-chat">Chat</div>,
+  useConfigureSuggestions: () => {},
 }))
 
 function renderShell(copilotActive = true) {
