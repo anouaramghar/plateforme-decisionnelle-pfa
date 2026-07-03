@@ -125,7 +125,7 @@ namespace PlateformePFA.API.Controllers
             });
         }
 
-        /// <summary>Returns students enrolled in the filière of the enseignant's module.</summary>
+        /// <summary>Returns students enrolled in the filière+niveau of the enseignant's module.</summary>
         [HttpGet("mes-etudiants")]
         public async Task<IActionResult> GetMesEtudiants()
         {
@@ -141,10 +141,11 @@ namespace PlateformePFA.API.Controllers
                 return Ok(Array.Empty<object>());
 
             var filiereId = utilisateur.Module!.FiliereId;
+            var niveau    = utilisateur.Module!.Niveau;
 
             var etudiants = await _context.Etudiants
                 .AsNoTracking()
-                .Where(e => e.FiliereId == filiereId && e.DesinscritLe == null)
+                .Where(e => e.FiliereId == filiereId && e.Niveau == niveau && e.DesinscritLe == null)
                 .OrderBy(e => e.Nom).ThenBy(e => e.Prenom)
                 .Select(e => new
                 {

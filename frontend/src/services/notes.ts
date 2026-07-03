@@ -55,8 +55,18 @@ export function buildNotePayload(input: BuildNotePayloadInput): NoteUpsertPayloa
 }
 
 export async function fetchModules(): Promise<ModuleOption[]> {
-  const response = await api.get<{ items: ModuleOption[] }>('/modules?pageSize=100')
-  return response.data.items
+  // /modules caps pageSize at 100 server-side; page through all of them so
+  // filières whose modules land past the first page aren't silently dropped
+  // from the note-entry module picker.
+  const items: ModuleOption[] = []
+  let page = 1
+  while (true) {
+    const response = await api.get<{ items: ModuleOption[]; total: number }>(`/modules?page=${page}&pageSize=100`)
+    items.push(...response.data.items)
+    if (items.length >= response.data.total || response.data.items.length === 0) break
+    page += 1
+  }
+  return items
 }
 
 export function modulesForStudent(
