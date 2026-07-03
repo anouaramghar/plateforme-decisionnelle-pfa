@@ -46,6 +46,11 @@ async function fetchForecast(id: number): Promise<number> {
   return res.data.notePredite
 }
 
+async function fetchMonModule(): Promise<{ moduleId: number } | null> {
+  const res = await api.get<{ moduleId: number } | null>('/enseignant/mon-module')
+  return res.data
+}
+
 export default function StudentProfile() {
   const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
@@ -69,6 +74,13 @@ export default function StudentProfile() {
     refetchOnWindowFocus: false,
   })
   const { data: modules = [] } = useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 10 * 60 * 1000 })
+
+  const { data: monModule } = useQuery({
+    queryKey: ['enseignant-module'],
+    queryFn: fetchMonModule,
+    enabled: user?.role === 'Enseignant',
+    staleTime: 10 * 60 * 1000,
+  })
 
   const { data: shap, isLoading: shapLoading } = useQuery({
     queryKey: ['etudiant-shap', studentId],
@@ -176,7 +188,9 @@ export default function StudentProfile() {
   }
 
   const riskColor = student.risque === 'eleve' ? '#dc2626' : student.risque === 'modere' ? '#f59e0b' : '#16a34a'
-  const availableModules = modulesForStudent(modules, student.filiereId, student.niveau)
+  const availableModules = user?.role === 'Enseignant'
+    ? modulesForStudent(modules, student.filiereId, student.niveau).filter(m => m.id === monModule?.moduleId)
+    : modulesForStudent(modules, student.filiereId, student.niveau)
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
@@ -248,7 +262,12 @@ export default function StudentProfile() {
             <div className="text-[15px] font-semibold tracking-tight">Notes par module</div>
             <div className="cap mt-0.5">{student.niveau} — {student.filiereIntitule}</div>
           </div>
-          {canEnterNotes(user?.role) && <button className="btn btn-sm" onClick={() => setShowNoteForm(v => !v)}>
+          {canEnterNotes(user?.role) && <button className="btn btn-sm" onClick={() => {
+            if (!showNoteForm && user?.role === 'Enseignant' && availableModules.length === 1) {
+              setNoteForm(f => ({ ...f, moduleId: availableModules[0].id }))
+            }
+            setShowNoteForm(v => !v)
+          }}>
             <Icon name="plus" size={12} />
             {showNoteForm ? 'Fermer' : 'Saisir'}
           </button>}
@@ -270,7 +289,13 @@ export default function StudentProfile() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="cap mb-1">Module</div>
-                {availableModules.length > 0 ? (
+                {user?.role === 'Enseignant' ? (
+                  availableModules.length === 1 ? (
+                    <input className="input" value={`${availableModules[0].code} — ${availableModules[0].nom}`} readOnly />
+                  ) : (
+                    <div className="cap py-2">Cet étudiant n'est pas dans votre module.</div>
+                  )
+                ) : availableModules.length > 0 ? (
                   <select className="input" value={noteForm.moduleId}
                     onChange={e => setNoteForm(f => ({ ...f, moduleId: parseInt(e.target.value) }))}
                   >

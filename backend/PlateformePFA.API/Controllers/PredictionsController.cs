@@ -16,7 +16,7 @@ using System.Text.Json.Serialization;
 
 namespace PlateformePFA.API.Controllers
 {
-    [Authorize(Roles = "Admin,Responsable")]
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class PredictionsController : ControllerBase
@@ -52,6 +52,7 @@ namespace PlateformePFA.API.Controllers
         // from metadata.json or live-computed values from eval_set.parquet
         // depending on what the ML service has on disk.
         [HttpGet("metrics")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<MlMetricsDto>> GetMlMetrics()
         {
             try
@@ -134,6 +135,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions/summary — feeds the Predictions page
         [HttpGet("summary")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<PredictionsSummaryDto>> GetSummary()
         {
             // Per-student snapshot: moyenne + absence hours + filière + niveau.
@@ -258,6 +260,7 @@ namespace PlateformePFA.API.Controllers
         // small in this PFA). Returns counts; per-student details land in the
         // PredictionsML table and trigger automatic alerts.
         [HttpPost("batch")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<BatchResultDto>> RunBatch([FromBody] BatchRequestDto request)
         {
             var query = _context.Etudiants
@@ -476,6 +479,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions?page=1&pageSize=20&etudiantId=5&status=Ok
         [HttpGet]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<PaginatedResult<PredictionML>>> GetPredictions(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
@@ -504,6 +508,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions/5
         [HttpGet("{id:int}")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<PredictionML>> GetPrediction(int id)
         {
             var prediction = await _context.PredictionsML
@@ -516,6 +521,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions/etudiant/5  (latest 200 for one student)
         [HttpGet("etudiant/{etudiantId}")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<IEnumerable<PredictionML>>> GetPredictionsByEtudiant(int etudiantId)
         {
             return await _context.PredictionsML
@@ -529,6 +535,7 @@ namespace PlateformePFA.API.Controllers
 
         // GET: api/predictions/explain/5
         [HttpGet("explain/{etudiantId:int}")]
+        [Authorize(Roles = "Admin,Responsable,Enseignant")]
         public async Task<ActionResult<ShapExplainDto>> ExplainRisk(int etudiantId, CancellationToken ct)
         {
             var etudiant = await _context.Etudiants
@@ -613,6 +620,7 @@ namespace PlateformePFA.API.Controllers
         // to predict the student's next-period average grade (0-20), as opposed
         // to /predict which returns a failure-risk probability.
         [HttpGet("forecast/{etudiantId:int}")]
+        [Authorize(Roles = "Admin,Responsable,Enseignant")]
         public async Task<ActionResult<ForecastDto>> ForecastMoyenne(int etudiantId, CancellationToken ct)
         {
             var etudiant = await _context.Etudiants
@@ -697,6 +705,7 @@ namespace PlateformePFA.API.Controllers
         }
 
         [HttpPost("predict/{etudiantId}")]
+        [Authorize(Roles = "Admin,Responsable")]
         public async Task<ActionResult<PredictionML>> PredictForEtudiant(
             int etudiantId,
             [FromQuery] string? annee = null,

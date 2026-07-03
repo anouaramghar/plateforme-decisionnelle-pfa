@@ -230,7 +230,7 @@ export default function Enseignant() {
         {[
           { l: 'Module',       v: monModule?.moduleCode ?? '—',    sub: monModule?.semestre },
           { l: 'Filière',      v: monModule?.filiereCode ?? '—',    sub: monModule?.niveau },
-          { l: 'Étudiants',    v: etudiants.length,                 sub: 'dans la filière' },
+          { l: 'Étudiants',    v: etudiants.length,                 sub: monModule ? `${monModule.filiereCode} · ${monModule.niveau}` : undefined },
           { l: 'Coefficient',  v: monModule ? `×${monModule.coefficient}` : '—', sub: 'du module' },
         ].map(k => (
           <div key={k.l} className="card p-4">
