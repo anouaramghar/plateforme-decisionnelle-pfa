@@ -519,6 +519,45 @@ html.dark .drawer { box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .5); }
   }
 }
 
+/* ── ENIAD Copilot chat theming ──────────────────────────────────────────────
+   CopilotKit v2 ships a self-contained shadcn theme as CSS variables scoped to
+   [data-copilotkit] (see public/copilotkit-v2.css — neutral grayscale). Re-
+   declaring those variables at higher specificity re-skins the entire chat to
+   our tokens, light AND dark, since our tokens already flip with html.dark.
+   No widget internals are targeted, so a CopilotKit upgrade degrades
+   gracefully to its stock theme instead of breaking. */
+.copilot-panel {
+  /* Alias: the widget names its hairline token --border too; assigning
+     --border: var(--border) on the same element would self-reference. */
+  --app-border: var(--border);
+}
+.copilot-panel [data-copilotkit] {
+  --cpk-default-font-family: 'Geist', system-ui, sans-serif;
+  --cpk-font-sans: 'Geist', system-ui, sans-serif;
+  --cpk-font-mono: 'Geist Mono', ui-monospace, monospace;
+  --radius: 10px;
+  --background: var(--surface);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent-700);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-3);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--text);
+  --destructive: var(--bad);
+  --destructive-foreground: var(--bad);
+  --border: var(--app-border);
+  --input: var(--border-2);
+  --ring: var(--accent-500);
+  font-size: 13px;
+}
+
 @media (max-width: 639px) {
   .copilot-panel {
     width: 100% !important;

@@ -168,39 +168,68 @@ export function AppShell() {
           }}
         >
           <div
-            className="flex items-center justify-between p-4"
+            className="flex items-center justify-between px-4 py-3"
             style={{ borderBottom: "1px solid var(--border)" }}
           >
-            <h2 id={copilotTitleId} className="text-lg font-semibold">
-              ENIAD Copilot
-            </h2>
-            <button
-              type="button"
-              onClick={closeCopilot}
-              className="btn btn-ghost flex h-11 w-11 items-center justify-center p-0"
-              aria-label="Fermer le panneau Copilot"
-            >
-              <Icon name="x" size={18} />
-            </button>
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                style={{
+                  background:
+                    "color-mix(in oklch, var(--accent-500) 14%, transparent)",
+                  color: "var(--accent-600)",
+                }}
+              >
+                <Icon name="spark" size={15} />
+              </div>
+              <div>
+                <h2
+                  id={copilotTitleId}
+                  className="text-[14px] font-semibold leading-none tracking-tight"
+                >
+                  ENIAD Copilot
+                </h2>
+                <div className="cap mt-1">Connecté aux données étudiantes</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="hidden sm:inline-block">Ctrl J</kbd>
+              <button
+                type="button"
+                onClick={closeCopilot}
+                className="btn btn-ghost flex h-11 w-11 items-center justify-center p-0"
+                aria-label="Fermer le panneau Copilot"
+              >
+                <Icon name="x" size={18} />
+              </button>
+            </div>
           </div>
 
           {copilotActive ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <Suspense fallback={
-                <div className="flex items-center justify-center h-full text-sm" style={{ color: 'var(--text-3)' }}>
-                  Chargement…
-                </div>
-              }>
-                <CopilotChat
-                  agentId="default"
-                  labels={{
-                    welcomeMessageText:
-                      "Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.",
-                    chatInputPlaceholder: "Posez une question sur les données…",
-                  }}
-                />
-              </Suspense>
-            </div>
+            <>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <Suspense fallback={
+                  <div className="flex items-center justify-center h-full text-sm" style={{ color: 'var(--text-3)' }}>
+                    Chargement…
+                  </div>
+                }>
+                  <CopilotChat
+                    agentId="default"
+                    labels={{
+                      welcomeMessageText:
+                        "Bonjour ! Interrogez les données étudiantes, les scores de risque et le DW en langage naturel.",
+                      chatInputPlaceholder: "Posez une question sur les données…",
+                    }}
+                  />
+                </Suspense>
+              </div>
+              <div
+                className="cap shrink-0 px-4 py-2 text-center"
+                style={{ borderTop: "1px solid var(--border)" }}
+              >
+                Réponses générées par IA — vérifiez avant toute décision.
+              </div>
+            </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
               <div className="mb-4" style={{ color: "var(--accent-500)" }}>

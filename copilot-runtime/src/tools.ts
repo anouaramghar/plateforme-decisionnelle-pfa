@@ -10,17 +10,23 @@ const AGENT_INTERNAL_TOKEN = requireEnv("AGENT_INTERNAL_TOKEN");
 
 async function backendToolCall(name: string, args: unknown): Promise<unknown> {
   const token = authStore.getStore() ?? "";
-  const res = await fetch(`${BACKEND_URL}/api/copilot/tool/${name}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      "X-Internal-Token": AGENT_INTERNAL_TOKEN,
-    },
-    body: JSON.stringify({ args }),
-  });
-  if (!res.ok) return { ok: false, error: `Backend error ${res.status}` };
-  return res.json();
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/copilot/tool/${name}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-Internal-Token": AGENT_INTERNAL_TOKEN,
+      },
+      body: JSON.stringify({ args }),
+    });
+    if (!res.ok) return { ok: false, error: `Backend error ${res.status}` };
+    return res.json();
+  } catch {
+    // Backend unreachable: surface a tool-level error the model can relay
+    // in French instead of crashing the whole agent run with RUN_ERROR.
+    return { ok: false, error: "Backend unreachable" };
+  }
 }
 
 export const serverTools = [
