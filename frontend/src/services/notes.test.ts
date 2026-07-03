@@ -6,10 +6,24 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('notes service', () => {
   it('fetches the real module catalogue', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ data: { items: [{ id: 7, code: 'GI01', nom: 'Architecture', filiereId: 2, niveau: 'CI1', semestre: 'S1' }] } })
+    vi.spyOn(api, 'get').mockResolvedValue({ data: { items: [{ id: 7, code: 'GI01', nom: 'Architecture', filiereId: 2, niveau: 'CI1', semestre: 'S1' }], total: 1 } })
 
     await expect(fetchModules()).resolves.toHaveLength(1)
-    expect(api.get).toHaveBeenCalledWith('/modules?pageSize=100')
+    expect(api.get).toHaveBeenCalledWith('/modules?page=1&pageSize=100')
+  })
+
+  it('pages through the catalogue until total is reached', async () => {
+    const makeModule = (id: number) => ({ id, code: `M${id}`, nom: `Module ${id}`, filiereId: 1, niveau: 'CI1', semestre: 'S1' })
+    vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+      const page = Number(new URLSearchParams(url.split('?')[1]).get('page'))
+      const items = page === 1
+        ? Array.from({ length: 100 }, (_, i) => makeModule(i + 1))
+        : Array.from({ length: 88 }, (_, i) => makeModule(100 + i + 1))
+      return { data: { items, total: 188 } }
+    })
+
+    await expect(fetchModules()).resolves.toHaveLength(188)
+    expect(api.get).toHaveBeenCalledTimes(2)
   })
 
   it('filters modules by student filiere and level', () => {
