@@ -35,7 +35,7 @@ const agent = new BuiltInAgent({
   // .chat() forces the OpenAI Chat Completions API (/v1/chat/completions).
   // Default nim(model) uses the Responses API (/v1/responses), which NVIDIA NIM
   // does not implement → 404 "Not Found".
-  model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
+  model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "z-ai/glm-5.2"),
   prompt:
     "Tu es ENIAD Copilot, un assistant d'aide à la décision pour le personnel " +
     "pédagogique de l'ENIAD (École Nationale d'Ingénieurs et d'Architectes, Berkane, Maroc). " +
@@ -123,7 +123,7 @@ app.post("/api/outreach/draft", express.json(), async (req, res) => {
   try {
     const draft = await createOutreachDraft(parsed.data, async ({ system, user }) => {
       const { text } = await generateText({
-        model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "meta/llama-3.3-70b-instruct"),
+        model: nim.chat(process.env.COPILOT_MODEL_ROUTER ?? "z-ai/glm-5.2"),
         system,
         prompt: user,
       });

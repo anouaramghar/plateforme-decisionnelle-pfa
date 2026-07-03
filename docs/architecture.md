@@ -8,7 +8,7 @@ BI reste disponible s'il tombe.
 ```mermaid
 flowchart TB
     internet(["Internet / Utilisateur"])
-    nim["NVIDIA NIM<br/>LLaMA 3.3 70B (externe)"]
+    nim["NVIDIA NIM<br/>GLM-5.2 (externe)"]
     host[/"Hôte (127.0.0.1)<br/>SSMS :1433 · MLflow UI :5001 · Swagger :5135"/]
 
     subgraph public["pfa_public"]

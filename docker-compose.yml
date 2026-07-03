@@ -217,7 +217,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
       - NVIDIA_NIM_BASE_URL=${NVIDIA_NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
-      - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-meta/llama-3.3-70b-instruct}
+      - COPILOT_MODEL_ROUTER=${COPILOT_MODEL_ROUTER:-z-ai/glm-5.2}
       - AGENT_INTERNAL_TOKEN=${AGENT_INTERNAL_TOKEN}
       # Internal service URL — hardcoded (NOT ${BACKEND_URL}) so a local-dev
       # BACKEND_URL=http://localhost:5135 in .env can't leak into the container.

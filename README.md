@@ -120,7 +120,7 @@ npm run build
 - PDF / XLSX / CSV export, auth-aware download
 
 ### ENIAD Copilot
-- AI assistant backed by NVIDIA NIM (LLaMA 3.3 70B)
+- AI assistant backed by NVIDIA NIM (GLM-5.2, model swappable via `COPILOT_MODEL_ROUTER`)
 - CopilotKit runtime with authenticated streaming at `/api/copilotkit`
 - Tool-calling agent loop with role filtering and backend-gated callbacks
 - Current tools: `get_student`, `list_at_risk`, `query_dw`, `draft_alert`, `explain_risk`

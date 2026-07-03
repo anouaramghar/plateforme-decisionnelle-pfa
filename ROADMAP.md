@@ -74,7 +74,7 @@
 
 ## Phase 5 — ENIAD Copilot ✅
 
-Assistant IA basé sur **copilot-runtime** (Node 20 / Express + CopilotKit Runtime v2) et NVIDIA NIM (LLaMA 3.3 70B). Sidecar optionnel : jamais un gate de démarrage, la plateforme BI reste disponible s'il tombe.
+Assistant IA basé sur **copilot-runtime** (Node 20 / Express + CopilotKit Runtime v2) et NVIDIA NIM (GLM-5.2, modèle interchangeable via `COPILOT_MODEL_ROUTER`). Sidecar optionnel : jamais un gate de démarrage, la plateforme BI reste disponible s'il tombe.
 
 - [x] Runtime CopilotKit authentifié en streaming à `/api/copilotkit`
 - [x] Session gated par cookie HTTP-only 15 min (`pfa_copilot_session`, SameSite=Strict) minté après login
