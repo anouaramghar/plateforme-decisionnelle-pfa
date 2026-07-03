@@ -85,20 +85,20 @@ describe('Enseignant follow-up board', () => {
     ;(api.post as Mock).mockResolvedValue({ data: {} })
   })
 
-  it('renders heading "Suivi etudiants" and three regions', async () => {
+  it('renders heading "Suivi étudiants" and three regions', async () => {
     renderEnseignant()
 
-    expect(await screen.findByRole('heading', { name: 'Suivi etudiants' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'A voir' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Suivi étudiants' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'À voir' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'En suivi' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Traite' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Traité' })).toBeInTheDocument()
   })
 
   it('submits an observation with non-empty text', async () => {
     const user = userEvent.setup()
     renderEnseignant()
 
-    const todo = await screen.findByRole('region', { name: 'A voir' })
+    const todo = await screen.findByRole('region', { name: 'À voir' })
     await user.click(await within(todo).findByRole('button', { name: 'Ajouter observation' }))
     await user.type(screen.getByLabelText('Observation'), 'Vu apres le cours')
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
@@ -121,13 +121,13 @@ describe('Enseignant follow-up board', () => {
     })
   })
 
-  it('does not show action buttons on Traite cards', async () => {
+  it('does not show action buttons on Traité cards', async () => {
     renderEnseignant()
 
-    const treated = await screen.findByRole('region', { name: 'Traite' })
+    const treated = await screen.findByRole('region', { name: 'Traité' })
     expect(await within(treated).findByText('Imane Cherkaoui')).toBeInTheDocument()
     expect(within(treated).queryByRole('button', { name: 'Ajouter observation' })).not.toBeInTheDocument()
     expect(within(treated).queryByRole('button', { name: 'Demander intervention' })).not.toBeInTheDocument()
-    expect(within(treated).queryByRole('button', { name: 'Marquer traite' })).not.toBeInTheDocument()
+    expect(within(treated).queryByRole('button', { name: 'Marquer traité' })).not.toBeInTheDocument()
   })
 })

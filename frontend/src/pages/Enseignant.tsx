@@ -82,6 +82,15 @@ type FollowUpAction = 'observation' | 'request' | 'treated'
 
 const FOLLOW_UP_COLUMNS = ['A voir', 'En suivi', 'Traite'] as const
 
+// Display-only accents. FOLLOW_UP_COLUMNS itself must stay byte-identical to
+// the backend's TeacherFollowUpCard.column values (EnseignantController.cs) —
+// it's used for filtering, not just labels.
+const COLUMN_LABELS: Record<typeof FOLLOW_UP_COLUMNS[number], string> = {
+  'A voir': 'À voir',
+  'En suivi': 'En suivi',
+  'Traite': 'Traité',
+}
+
 export default function Enseignant() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -264,16 +273,16 @@ export default function Enseignant() {
 
       <section className="space-y-3">
         <div>
-          <div className="cap mb-1">Interventions legeres</div>
-          <h2 className="text-[18px] font-semibold tracking-tight">Suivi etudiants</h2>
+          <div className="cap mb-1">Interventions légères</div>
+          <h2 className="text-[18px] font-semibold tracking-tight">Suivi étudiants</h2>
         </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           {FOLLOW_UP_COLUMNS.map(column => {
             const items = followUps.filter(f => f.column === column)
             return (
-              <section key={column} role="region" aria-label={column} className="card overflow-hidden">
+              <section key={column} role="region" aria-label={COLUMN_LABELS[column]} className="card overflow-hidden">
                 <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <h3 className="text-[13px] font-semibold">{column}</h3>
+                  <h3 className="text-[13px] font-semibold">{COLUMN_LABELS[column]}</h3>
                   <span className="cap font-mono">{items.length}</span>
                 </div>
                 {items.length === 0 && <div className="px-3 py-6 cap text-center">Aucun suivi.</div>}
@@ -291,7 +300,7 @@ export default function Enseignant() {
                           <Icon name="bookmark" size={13} /> Demander intervention
                         </button>
                         <button className="btn btn-sm btn-ghost" onClick={() => { setFollowUpAction({ card, action: 'treated' }); setFollowUpText('') }}>
-                          <Icon name="check" size={13} /> Marquer traite
+                          <Icon name="check" size={13} /> Marquer traité
                         </button>
                       </div>
                     )}
@@ -597,7 +606,7 @@ export default function Enseignant() {
           followUpAction?.action === 'request'
             ? 'Demander intervention'
             : followUpAction?.action === 'treated'
-              ? 'Marquer traite'
+              ? 'Marquer traité'
               : 'Ajouter observation'
         }
       >
