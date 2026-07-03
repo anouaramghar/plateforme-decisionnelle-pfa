@@ -223,6 +223,10 @@ html.dark .pill-accent { color: var(--accent-300); }
 }
 .btn:active { transform: translateY(0.5px); }
 .btn:hover  { background: var(--surface-2); }
+.btn:disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
 .btn-primary {
   background: var(--text);
   color: var(--bg);
@@ -244,6 +248,11 @@ html.dark .pill-accent { color: var(--accent-300); }
 
 /* Native <dialog> backdrop (used by ui/Modal) */
 dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+/* Soft entrance — scoped to [open] so programmatic .close() stays instant. */
+@keyframes dialogIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+dialog[open]            { animation: dialogIn 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+dialog[open]::backdrop  { animation: fadeIn 0.18s ease; }
 
 /* Input */
 .input {
@@ -369,6 +378,12 @@ html.dark .tbl tbody tr:hover td { background: color-mix(in oklch, var(--accent-
 @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
 .copilot-panel { animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 
+/* page-load entrance (Login) — one orchestrated moment, not scattered effects.
+   Reduced-motion users get the neutralized version via the global media query. */
+@keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.rise-in   { animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.rise-in-2 { animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both; }
+
 /* divider */
 .divider { height: 1px; background: var(--border); }
 
@@ -409,6 +424,7 @@ button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0.01ms !important; /* a delayed 'both' fill would flash blank otherwise */
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
@@ -464,7 +480,11 @@ kbd {
 html.dark .cmd-shadow { box-shadow: 0 24px 56px -12px rgba(0, 0, 0, .62), 0 0 0 1px var(--border); }
 
 /* drawer */
-.drawer { box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .18); }
+.drawer {
+  box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .18);
+  /* Same entrance as .copilot-panel — the two right-hand surfaces should move alike. */
+  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
 html.dark .drawer { box-shadow: -24px 0 40px -12px rgba(0, 0, 0, .5); }
 /* Drawer panel: full-width on phones, capped at min(640px, 92vw) from sm up
    so a sliver of backdrop stays tappable on narrow desktop windows. */

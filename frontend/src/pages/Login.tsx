@@ -86,7 +86,7 @@ export default function Login() {
           />
         </div>
 
-        <div className="relative z-10 max-w-[440px]">
+        <div className="relative z-10 max-w-[440px] rise-in">
           <div
             className="text-[11px] uppercase tracking-[0.18em] mb-3"
             style={{ color: 'var(--accent-300)', fontWeight: 500 }}
@@ -142,7 +142,7 @@ export default function Login() {
       >
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="w-full max-w-[400px]"
+          className="w-full max-w-[400px] rise-in-2"
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--border-2)',

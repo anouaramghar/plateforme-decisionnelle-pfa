@@ -17,7 +17,7 @@ export function KpiCard({ label, value, suffix, delta, deltaTone = 'ok', spark, 
     <div className="card-quiet p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div
-          className="text-[11.5px] uppercase tracking-wider font-medium"
+          className="text-[11px] uppercase tracking-[0.08em] font-medium"
           style={{ color: 'var(--text-3)' }}
         >
           {label}
