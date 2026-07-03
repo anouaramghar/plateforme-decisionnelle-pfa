@@ -130,6 +130,8 @@ npm run build
 
 ## Architecture
 
+Full service diagram with network segmentation: [docs/architecture.md](docs/architecture.md)
+
 ### Database
 Two databases on the same SQL Server instance:
 
