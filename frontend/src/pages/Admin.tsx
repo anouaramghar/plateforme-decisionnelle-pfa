@@ -85,8 +85,19 @@ async function fetchFilieres(): Promise<Filiere[]> {
 
 interface ModuleItem { id: number; code: string; nom: string; filiereCode: string; niveau: string }
 async function fetchModules(): Promise<ModuleItem[]> {
-  const res = await api.get<{ items: ModuleItem[] }>('/modules?pageSize=100')
-  return res.data.items
+  // /modules caps pageSize at 100 server-side, but the school now has 188+
+  // modules across 5 filières — page through all of them so the "module
+  // enseigné" dropdown isn't silently missing whichever filières land past
+  // the first page (was hiding GINF/IRSI entirely).
+  const items: ModuleItem[] = []
+  let page = 1
+  while (true) {
+    const res = await api.get<{ items: ModuleItem[]; total: number }>(`/modules?page=${page}&pageSize=100`)
+    items.push(...res.data.items)
+    if (items.length >= res.data.total || res.data.items.length === 0) break
+    page += 1
+  }
+  return items
 }
 
 type EtudiantPayload = {
