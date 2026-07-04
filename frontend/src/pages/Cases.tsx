@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Empty } from '../components/ui/Empty'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import {
   fetchCases, fetchFilieres, ETAT_LABELS, PRIORITE_LABELS,
   type InterventionCase,
@@ -142,7 +143,7 @@ export default function Cases() {
               <span className="cap font-mono">{col.items.length}</span>
             </div>
             <div className="flex-1">
-              {isLoading && <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Chargement...</div>}
+              {isLoading && <SkeletonRows rows={3} />}
               {!isLoading && col.items.length === 0 && (
                 <div className="px-3 py-6 cap text-center" style={{ color: 'var(--text-3)' }}>Aucune intervention.</div>
               )}

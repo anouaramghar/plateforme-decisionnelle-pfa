@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
@@ -345,7 +346,7 @@ export default function StudentProfile() {
           </thead>
           <tbody>
             {loadingNotes ? (
-              <tr><td colSpan={8} className="cap text-center py-6">Chargement…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 0 }}><SkeletonRows rows={4} /></td></tr>
             ) : notes.length === 0 ? (
               <tr><td colSpan={8} className="cap text-center py-6">Aucune note enregistrée</td></tr>
             ) : notes.map(n => (

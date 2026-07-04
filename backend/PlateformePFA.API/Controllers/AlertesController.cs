@@ -31,7 +31,7 @@ namespace PlateformePFA.API.Controllers
         // alerts UI, so reads are restricted server-side (defense in depth).
         [Authorize(Roles = "Admin,Responsable")]
         [HttpGet]
-        public async Task<ActionResult<PaginatedResult<Alerte>>> GetAlertes(
+        public async Task<ActionResult<PaginatedResult<AlerteListDto>>> GetAlertes(
             [FromQuery] bool? resolue = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
@@ -44,13 +44,59 @@ namespace PlateformePFA.API.Controllers
 
             var ordered = query.OrderByDescending(a => a.CreeLe);
             var total   = await ordered.CountAsync();
+            // Projected to a DTO because Alerte.Etudiant is [JsonIgnore]'d —
+            // returning the entity ships rows with a permanently-null student.
             var items   = await ordered
-                .Include(a => a.Etudiant)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(a => new AlerteListDto
+                {
+                    Id         = a.Id,
+                    EtudiantId = a.EtudiantId,
+                    ModuleId   = a.ModuleId,
+                    Type       = a.Type,
+                    Niveau     = a.Niveau,
+                    Message    = a.Message,
+                    Resolue    = a.Resolue,
+                    CreeLe     = a.CreeLe,
+                    Etudiant   = new AlerteEtudiantDto
+                    {
+                        Id         = a.Etudiant.Id,
+                        Matricule  = a.Etudiant.Matricule,
+                        Nom        = a.Etudiant.Nom,
+                        Prenom     = a.Etudiant.Prenom,
+                        NomComplet = a.Etudiant.Prenom + " " + a.Etudiant.Nom,
+                        Filiere    = a.Etudiant.Filiere != null ? a.Etudiant.Filiere.Code : "",
+                        Niveau     = a.Etudiant.Niveau,
+                    },
+                })
                 .ToListAsync();
 
-            return new PaginatedResult<Alerte>(items, total, page, pageSize);
+            return new PaginatedResult<AlerteListDto>(items, total, page, pageSize);
+        }
+
+        // GET: api/alertes/stats — global counts for the UI stat cards. The
+        // list endpoint is paginated (capped at 100), so per-type totals must
+        // come from the database, not from whatever window the client fetched.
+        [Authorize(Roles = "Admin,Responsable")]
+        [HttpGet("stats")]
+        public async Task<ActionResult<AlerteStatsDto>> GetStats()
+        {
+            var parType = await _context.Alertes.AsNoTracking()
+                .Where(a => !a.Resolue)
+                .GroupBy(a => a.Type)
+                .Select(g => new { Type = g.Key, N = g.Count() })
+                .ToListAsync();
+            var resolue = await _context.Alertes.AsNoTracking().CountAsync(a => a.Resolue);
+            var active  = parType.Sum(x => x.N);
+
+            return new AlerteStatsDto
+            {
+                Active  = active,
+                Resolue = resolue,
+                Total   = active + resolue,
+                ParType = parType.ToDictionary(x => x.Type, x => x.N),
+            };
         }
 
         // GET: api/alertes/5

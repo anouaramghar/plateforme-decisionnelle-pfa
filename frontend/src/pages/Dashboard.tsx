@@ -8,7 +8,7 @@ import { Avatar } from '../components/ui/Avatar'
 import { RiskBar } from '../components/ui/RiskBar'
 import { SectionHeader } from '../components/ui/SectionHeader'
 import { MiniKpi } from '../components/ui/KpiCard'
-import { Skeleton } from '../components/ui/Skeleton'
+import { Skeleton, SkeletonRows } from '../components/ui/Skeleton'
 import { useDialog } from '../components/ui/useDialog'
 import { ChartArea, ChartBars, ChartHistogram } from '../components/charts'
 import { api } from '../services/api'
@@ -538,7 +538,8 @@ export default function Dashboard() {
           <MiniKpi
             label="Alertes actives"
             value={k.alertesActives}
-            delta={k.alertesActivesDelta}
+            // A near-zero baseline turns the % into noise ("+1770%") — hide it.
+            delta={Math.abs(k.alertesActivesDelta) <= 500 ? k.alertesActivesDelta : undefined}
             deltaTone={k.alertesActivesDelta > 0 ? 'bad' : 'ok'}
             hint="vs il y a 7 jours"
             emphasized
@@ -636,7 +637,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-[15px] font-semibold tracking-tight">Étudiants à surveiller</h2>
               <div className="cap mt-0.5">
-                Score de risque ML le plus élevé · mis à jour il y a 2h
+                Score de risque ML le plus élevé
               </div>
             </div>
             <button className="btn btn-sm btn-ghost" style={{ color: 'var(--accent-700)' }} onClick={() => navigate('/students')}>
@@ -844,7 +845,7 @@ export default function Dashboard() {
             </div>
             <div className="overflow-y-auto flex-1 p-5">
               {journalLoading ? (
-                <div className="cap text-center py-8">Chargement…</div>
+                <SkeletonRows rows={5} />
               ) : allActivity.length === 0 ? (
                 <div className="cap text-center py-8">Aucune activité enregistrée</div>
               ) : (

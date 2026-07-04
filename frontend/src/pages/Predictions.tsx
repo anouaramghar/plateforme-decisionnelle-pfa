@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCopilotReadable, useCopilotAction } from '@copilotkit/react-core'
 import { useNavigate } from 'react-router-dom'
 import { Icon } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { KpiCard } from '../components/ui/KpiCard'
@@ -290,8 +291,8 @@ export default function Predictions() {
 
   if (isLoading) {
     return (
-      <div className="card p-8 text-center" style={{ color: 'var(--text-3)' }}>
-        Chargement…
+      <div className="card">
+        <SkeletonRows rows={6} />
       </div>
     )
   }

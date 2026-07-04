@@ -5,7 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Students from './pages/Students'
 import StudentProfile from './pages/StudentProfile'
-import Alertes from './pages/Alertes'
+import Alerts from './pages/Alerts'
 import Cases from './pages/Cases'
 import CaseDetail from './pages/CaseDetail'
 import Reports from './pages/Reports'
@@ -45,7 +45,7 @@ export default function App() {
           <Route path="dashboard" element={<RoleRoute roles={['Admin', 'Responsable']}><Dashboard /></RoleRoute>} />
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
-          <Route path="alerts" element={<RoleRoute roles={['Admin', 'Responsable']}><Alertes /></RoleRoute>} />
+          <Route path="alerts" element={<RoleRoute roles={['Admin', 'Responsable']}><Alerts /></RoleRoute>} />
           <Route path="triage" element={<Navigate to="/alerts" replace />} />
           <Route path="cases" element={<RoleRoute roles={['Admin', 'Responsable']}><Cases /></RoleRoute>} />
           <Route path="cases/:id" element={<RoleRoute roles={['Admin', 'Responsable']}><CaseDetail /></RoleRoute>} />

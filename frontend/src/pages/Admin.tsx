@@ -4,6 +4,7 @@ import type { AxiosError } from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { Icon, type IconName } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Pill } from '../components/ui/Pill'
 import { Avatar } from '../components/ui/Avatar'
 import { PasswordInput } from '../components/ui/PasswordInput'
@@ -229,9 +230,7 @@ function UsersTab() {
       )}
 
       <div className="card overflow-x-auto" role="region" aria-label="Utilisateurs" tabIndex={0}>
-        {isLoading && (
-          <div className="px-4 py-8 text-center cap">Chargement…</div>
-        )}
+        {isLoading && <SkeletonRows rows={6} />}
         {isError && (
           <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>
             Impossible de charger les utilisateurs.
@@ -596,7 +595,7 @@ function EtudiantsTab({ initialOpenCreate = false }: { initialOpenCreate?: boole
       )}
 
       <div className="card overflow-hidden">
-        {isLoading && <div className="px-4 py-8 text-center cap">Chargement…</div>}
+        {isLoading && <SkeletonRows rows={6} />}
         {isError   && <div className="px-4 py-8 text-center cap" style={{ color: 'var(--bad)' }}>Impossible de charger les étudiants.</div>}
         {!isLoading && !isError && (
           <>

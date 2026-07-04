@@ -8,7 +8,7 @@ import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
 import { Select } from '../components/ui/Select'
 import { SectionHeader } from '../components/ui/SectionHeader'
-import { Skeleton } from '../components/ui/Skeleton'
+import { Skeleton, SkeletonRows } from '../components/ui/Skeleton'
 import { ChartRadial, ChartShap } from '../components/charts'
 import type { ShapExplainData } from '../components/charts'
 import { api } from '../services/api'
@@ -837,7 +837,7 @@ function StudentDrawer({
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={7} className="cap text-center py-4">Chargement…</td>
+                      <td colSpan={7} style={{ padding: 0 }}><SkeletonRows rows={3} /></td>
                     </tr>
                   ) : notes.length === 0 ? (
                     <tr>

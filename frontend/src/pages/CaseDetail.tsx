@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Pill, type PillTone } from '../components/ui/Pill'
 import { Modal } from '../components/ui/Modal'
 import { OutreachComposer } from '../components/interventions/OutreachComposer'
@@ -104,7 +105,7 @@ export default function CaseDetail() {
     }
   }
 
-  if (isLoading) return <div className="cap" style={{ color: 'var(--text-3)' }}>Chargement…</div>
+  if (isLoading) return <div className="card"><SkeletonRows rows={5} /></div>
   if (isError || !c) return <div className="cap" style={{ color: 'var(--bad)' }}>Cas introuvable.</div>
 
   // When the case is InProgress the only way to reach Resolved is through the

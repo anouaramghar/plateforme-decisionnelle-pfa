@@ -47,7 +47,10 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
       runtimeUrl={copilotRuntimeUrl}
       useSingleEndpoint
       headers={headers}
-      showDevConsole={import.meta.env.DEV}
+      // Never show CopilotKit's dev console: its error toasts render on top of
+      // the app (including the login screen, where the anon mount always 401s
+      // until a session exists). Real errors still land in the browser console.
+      showDevConsole={false}
     >
       {children}
     </CopilotKit>

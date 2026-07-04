@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon, type IconName } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Pill } from '../components/ui/Pill'
 import { Field } from '../components/ui/Field'
 import { SectionHeader } from '../components/ui/SectionHeader'
@@ -375,7 +376,7 @@ export default function Reports() {
           </thead>
           <tbody>
             {listLoading ? (
-              <tr><td colSpan={8} className="cap text-center py-6">Chargement…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 0 }}><SkeletonRows rows={4} /></td></tr>
             ) : rapports.length === 0 ? (
               <tr>
                 <td colSpan={8} className="cap text-center py-6">

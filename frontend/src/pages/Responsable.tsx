@@ -5,6 +5,7 @@ import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { RiskBar, RiskPill } from '../components/ui/RiskBar'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { useAuth } from '../context/AuthContext'
 import { useFiliere } from '../context/FiliereContext'
 import { api } from '../services/api'
@@ -20,7 +21,7 @@ interface EtudiantRow {
 interface AlerteRow {
   id: number; type: string; niveau: string; message: string; resolue: boolean
   creeLe: string; etudiantId: number
-  etudiant: { nomComplet: string; matricule: string; filiere?: { code: string } }
+  etudiant: { nomComplet: string; matricule: string; filiere?: string } | null
 }
 
 async function fetchStudents(): Promise<EtudiantRow[]> {
@@ -28,9 +29,9 @@ async function fetchStudents(): Promise<EtudiantRow[]> {
   return res.data
 }
 
-async function fetchAlertes(): Promise<AlerteRow[]> {
+async function fetchAlertes(): Promise<{ items: AlerteRow[]; total: number }> {
   const res = await api.get<{ items: AlerteRow[]; total: number }>('/alertes?pageSize=50&resolue=false')
-  return res.data.items
+  return res.data
 }
 
 export default function Responsable() {
@@ -44,9 +45,10 @@ export default function Responsable() {
   const { data: students = [], isLoading: loadingStudents } = useQuery({
     queryKey: ['etudiants-with-stats'], queryFn: fetchStudents, refetchInterval: 60_000,
   })
-  const { data: alertes = [], isLoading: loadingAlertes } = useQuery({
+  const { data: alertesData = { items: [], total: 0 }, isLoading: loadingAlertes } = useQuery({
     queryKey: ['responsable-alertes'], queryFn: fetchAlertes, refetchInterval: 30_000,
   })
+  const alertes = alertesData.items
   const { data: kpis } = useQuery({
     queryKey: ['dashboard', 'interventions'], queryFn: fetchInterventionKpis, refetchInterval: 60_000,
   })
@@ -89,7 +91,7 @@ export default function Responsable() {
           { l: 'Étudiants suivis',  v: scopedStudents.length, s: '',     t: '' },
           { l: 'Moyenne globale',   v: moyGlobal.toFixed(2),  s: '/20',  t: moyGlobal >= 10 ? 'ok' : 'warn' },
           { l: 'Taux de réussite',  v: tauxReussite.toFixed(1), s: '%',  t: tauxReussite >= 50 ? 'ok' : 'warn' },
-          { l: 'Alertes actives',   v: alertes.length,         s: '',    t: alertes.length > 0 ? 'bad' : 'ok' },
+          { l: 'Alertes actives',   v: alertesData.total,      s: '',    t: alertesData.total > 0 ? 'bad' : 'ok' },
         ].map(m => (
           <div key={m.l} className="card p-4">
             <div className="cap mb-1">{m.l}</div>
@@ -161,7 +163,7 @@ export default function Responsable() {
             <Pill tone="bad">{atRisk.length}</Pill>
           </div>
           {loadingStudents ? (
-            <div className="p-6 cap text-center">Chargement…</div>
+            <SkeletonRows rows={5} />
           ) : atRisk.length === 0 ? (
             <div className="p-8 cap text-center" style={{ color: 'var(--ok)' }}>
               <Icon name="check" size={24} style={{ margin: '0 auto 8px' }} />
@@ -234,7 +236,7 @@ export default function Responsable() {
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
             {loadingAlertes ? (
-              <div className="p-6 cap text-center">Chargement…</div>
+              <SkeletonRows rows={4} />
             ) : alertes.length === 0 ? (
               <div className="p-8 cap text-center" style={{ color: 'var(--ok)' }}>
                 <Icon name="check" size={24} style={{ margin: '0 auto 8px' }} />

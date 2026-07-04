@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '../components/ui/Icon'
+import { SkeletonRows } from '../components/ui/Skeleton'
 import { Avatar } from '../components/ui/Avatar'
 import { Pill } from '../components/ui/Pill'
 import { Modal } from '../components/ui/Modal'
@@ -345,7 +346,7 @@ export default function Enseignant() {
           </div>
 
           {loadingEtudiants ? (
-            <div className="px-4 py-8 text-center cap">Chargement…</div>
+            <SkeletonRows rows={6} />
           ) : filtered.length === 0 ? (
             <div className="px-4 py-8 text-center cap">Aucun étudiant trouvé.</div>
           ) : (
