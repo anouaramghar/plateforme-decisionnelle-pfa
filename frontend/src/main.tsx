@@ -51,6 +51,9 @@ function CopilotBridge({ children }: { children: React.ReactNode }) {
       // the app (including the login screen, where the anon mount always 401s
       // until a session exists). Real errors still land in the browser console.
       showDevConsole={false}
+      // showDevConsole only covers toasts — the floating AG-UI inspector button
+      // (bottom-right gem) is separate and auto-enables on localhost.
+      enableInspector={false}
     >
       {children}
     </CopilotKit>
