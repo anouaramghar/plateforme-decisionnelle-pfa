@@ -68,6 +68,8 @@ namespace PlateformePFA.API.Controllers
                         NomComplet = a.Etudiant.Prenom + " " + a.Etudiant.Nom,
                         Filiere    = a.Etudiant.Filiere != null ? a.Etudiant.Filiere.Code : "",
                         Niveau     = a.Etudiant.Niveau,
+                        // Lexicographic max is correct for the S1–S9 range.
+                        Semestre   = a.Etudiant.Notes!.Max(n => n.Semestre),
                     },
                 })
                 .ToListAsync();

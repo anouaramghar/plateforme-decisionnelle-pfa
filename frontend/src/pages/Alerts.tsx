@@ -35,6 +35,7 @@ interface BackendEtudiant {
   nomComplet: string
   filiere: string
   niveau: string
+  semestre: string | null
 }
 
 // Global counts from /alertes/stats — the list endpoint is capped at 100 rows,
@@ -190,6 +191,7 @@ export default function Alerts() {
       Etudiant:  a.etudiant ? `${a.etudiant.prenom} ${a.etudiant.nom}` : `#${a.etudiantId}`,
       Filière:   a.etudiant?.filiere ?? '',
       Niveau_Et: a.etudiant?.niveau ?? '',
+      Semestre:  a.etudiant?.semestre ?? '',
       Message:   a.message,
       Statut:    a.resolue ? 'Résolue' : 'Active',
       'Créée le': new Date(a.creeLe).toLocaleString('fr-FR'),
@@ -487,7 +489,10 @@ function AlertRow({
   const etudiantName = alert.etudiant
     ? `${alert.etudiant.prenom} ${alert.etudiant.nom}`
     : `Étudiant #${alert.etudiantId}`
-  const filiere = alert.etudiant?.filiere ?? '—'
+  // "IA · CI2 · S8" — enough context to navigate without opening the profile.
+  const contexte = alert.etudiant
+    ? [alert.etudiant.filiere, alert.etudiant.niveau, alert.etudiant.semestre].filter(Boolean).join(' · ')
+    : '—'
 
   return (
     <div
@@ -523,7 +528,7 @@ function AlertRow({
           >
             {etudiantName}
           </button>
-          <span className="cap font-mono">· {filiere}</span>
+          <span className="cap font-mono">· {contexte}</span>
           {!alert.resolue && (
             <span className="pill-dot live-dot ml-1" style={{ background: 'var(--bad)' }} />
           )}

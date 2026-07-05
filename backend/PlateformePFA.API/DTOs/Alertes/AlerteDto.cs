@@ -37,6 +37,8 @@ namespace PlateformePFA.API.DTOs.Alertes
         /// <summary>Filière code (e.g. GI), not the nav object.</summary>
         public string Filiere { get; set; } = string.Empty;
         public string Niveau { get; set; } = string.Empty;
+        /// <summary>Current semester (S1–S9) — the latest semestre among the student's notes.</summary>
+        public string? Semestre { get; set; }
     }
 
     public class AlerteListDto
