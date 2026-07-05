@@ -114,6 +114,7 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
       adminOnly: true,
     },
   ]
+  const visibleItems = items.filter(item => !item.adminOnly || isAdmin)
 
   return (
     <header
@@ -226,7 +227,7 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
           </button>
         )}
 
-        {items.length > 0 && (
+        {visibleItems.length > 0 && (
           <div ref={nouveauRef} className="relative">
             <button
               type="button"
@@ -246,7 +247,7 @@ export function Topbar({ onCommandOpen, onCopilotOpen, onMenuOpen, navOpen = fal
                 className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[220px] overflow-hidden rounded-[10px] py-1"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,.22)' }}
               >
-                {items.filter(item => !item.adminOnly || isAdmin).map(item => (
+                {visibleItems.map(item => (
                   <button
                     type="button"
                     role="menuitem"
